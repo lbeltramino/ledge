@@ -318,6 +318,21 @@ enum SelfTest {
 
     /// A tab's title is small bold text on a pastel. If any of these pairs is
     /// short of 4.5:1 the deck is pretty and unreadable.
+    static func contrastRatio(_ a: NSColor, _ b: NSColor) -> Double {
+        func luminance(_ color: NSColor) -> Double {
+            guard let c = color.usingColorSpace(.sRGB) else { return 0 }
+            func channel(_ value: CGFloat) -> Double {
+                let v = Double(value)
+                return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(c.redComponent)
+                 + 0.7152 * channel(c.greenComponent)
+                 + 0.0722 * channel(c.blueComponent)
+        }
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+
     static func checkContrast() {
         func luminance(_ color: NSColor) -> Double {
             guard let c = color.usingColorSpace(.sRGB) else { return 0 }
@@ -906,6 +921,21 @@ enum SelfTest {
                       "…and changing it back restores the paper it had")
             }
         }
+
+        // Text has to be readable on the paper it is actually painted on, in
+        // either appearance. The highlighter repaints every character on each
+        // keystroke and used to keep the ink it was constructed with, so a card
+        // built under one appearance and shown under the other wrote near-white
+        // on a pastel: a caret moving over text nobody could see.
+        for (name, appearance) in [("light", NSAppearance(named: .aqua)),
+                                   ("dark", NSAppearance(named: .darkAqua))] {
+            if let painted = deck.debugInkOnPaper(forcing: appearance) {
+                let ratio = contrastRatio(painted.text, painted.paper)
+                check(ratio >= 4.5,
+                      String(format: "note text is readable on its paper in %@ (%.1f:1)", name, ratio))
+            }
+        }
+        _ = deck.debugInkOnPaper(forcing: nil)
 
         deck.debugBeginEditingFirst()
         check(abs(deck.debugGeometry().cardRotation) < 0.001,

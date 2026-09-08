@@ -170,6 +170,24 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) { layout() }
 
+    /// Same hazard as the card: the highlighter owns the text's colour, so it
+    /// has to be told when light and dark swap over.
+    func windowDidChangeBackingProperties(_ notification: Notification) { restyle() }
+
+    private func restyle() {
+        let dark = NSApp.effectiveAppearance.isDark
+        let ink = Palette.ink(dark: dark)
+        window.backgroundColor = Palette.paper(record.color, dark: dark,
+                                               tint: Jitter(id: record.id).paperTint)
+        titleField.textColor = ink
+        textView.textColor = ink
+        textView.insertionPointColor = ink
+        highlighter.ink = ink
+        highlighter.accent = Palette.tab(record.color)
+            .blended(withFraction: 0.35, of: ink) ?? ink
+        if let storage = textView.textStorage { highlighter.highlight(storage) }
+    }
+
     func windowWillClose(_ notification: Notification) {
         commitTitle()
         onEdit?(textView.string)

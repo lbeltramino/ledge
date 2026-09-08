@@ -210,6 +210,32 @@ final class NoteCardView: NSView {
             + NoteChromeBar.height + 60 + (bandRunsAlongTheTop ? Metrics.Card.labelStrip : 0)
     }
 
+    /// The colour the text is *actually* drawn in, and the paper it is actually
+    /// drawn on — read back rather than recomputed, so a check on them means
+    /// something.
+    var paintedTextAndPaper: (text: NSColor, paper: NSColor)? {
+        guard let storage = textView.textStorage, storage.length > 0,
+              let background = layer?.backgroundColor.flatMap({ NSColor(cgColor: $0) })
+        else { return nil }
+        let applied = storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+        return (applied ?? textView.textColor ?? .black, background)
+    }
+
+    /// Forces an appearance the way moving between windows or displays does.
+    func adopt(appearance: NSAppearance?) {
+        self.appearance = appearance
+        applyColors()
+    }
+
+    /// What a keystroke ends up doing: the highlighter repaints every character.
+    /// `applyColors` sets `textColor` last and so papers over a stale
+    /// highlighter — until the next key is pressed. That is the moment worth
+    /// checking, not the moment right after a repaint.
+    func repaintAsTypingWould() {
+        guard let storage = textView.textStorage else { return }
+        highlighter?.highlight(storage)
+    }
+
     var chromeOverlaps: Bool {
         layoutSubtreeIfNeeded()
         return chrome.hasOverlappingControls
@@ -226,6 +252,14 @@ final class NoteCardView: NSView {
         let dark = isDark
         layer?.backgroundColor = Palette.paper(color, dark: dark, tint: jitter.paperTint).cgColor
         let ink = Palette.ink(dark: dark)
+
+        // The highlighter repaints every character on each keystroke, so it has
+        // to follow the appearance too. Left with the ink it was born with, it
+        // wrote dark-mode ink onto light paper — a caret that moved over text
+        // nobody could see.
+        highlighter?.ink = ink
+        highlighter?.accent = Palette.tab(color).blended(withFraction: 0.4, of: ink) ?? ink
+        if let storage = textView.textStorage { highlighter?.highlight(storage) }
         titleField.textColor = ink
         textView.textColor = ink.withAlphaComponent(0.92)
         textView.insertionPointColor = ink

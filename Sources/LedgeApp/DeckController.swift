@@ -1245,6 +1245,15 @@ extension DeckController {
 
     func debugChromeOverlaps() -> Bool? { card?.chromeOverlaps }
 
+    /// Ink and paper as painted, optionally after being forced into the other
+    /// appearance — which is what caught the invisible text.
+    func debugInkOnPaper(forcing appearance: NSAppearance?) -> (text: NSColor, paper: NSColor)? {
+        guard let card else { return nil }
+        if let appearance { card.adopt(appearance: appearance) }
+        card.repaintAsTypingWould()
+        return card.paintedTextAndPaper
+    }
+
     func debugRecolor(_ id: String, to color: NoteColor) { recolor(id, to: color) }
 
     func debugOpenNoteID() -> String? { state.noteID }
