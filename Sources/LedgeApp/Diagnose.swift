@@ -20,6 +20,9 @@ enum Diagnose {
         environment()
         fonts()
         textView()
+        print("")
+        print("code blocks")
+        codeSupport()
         print(String(repeating: "─", count: 62))
         print("Paste this whole output back.")
     }
@@ -94,6 +97,40 @@ enum Diagnose {
         print("  applied colour \(describe(applied))")
         print("  paper          \(describe(card.layer?.backgroundColor.flatMap { NSColor(cgColor: $0) }))")
         print("  ink pixels     \(inkPixels(in: card))  (0 means nothing was drawn)")
+    }
+
+    /// Which code forms the highlighter actually understands.
+    ///
+    /// Measured by running it, so the answer cannot drift from the rules the
+    /// way a list in a README does.
+    static func codeSupport() {
+        let samples: [(String, String, String)] = [
+            ("inline", "call `foo()` now", "foo()"),
+            ("fenced, no language", "```\nlet a = 1\n```", "let a = 1"),
+            ("fenced with a language", "```swift\nlet b = 2\n```", "let b = 2"),
+            ("fence line itself", "```swift\nlet c = 3\n```", "```swift"),
+            ("indented four spaces", "text\n\n    let d = 4\n", "let d = 4"),
+            ("tilde fence", "~~~\nlet e = 5\n~~~", "let e = 5"),
+            ("inline across lines", "`one\ntwo`", "one"),
+        ]
+
+        for (name, source, needle) in samples {
+            let highlighter = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14),
+                                                  ink: .black, accent: .blue)
+            let storage = NSTextStorage(string: source)
+            highlighter.highlight(storage)
+            let range = (source as NSString).range(of: needle)
+            guard range.location != NSNotFound else { continue }
+            let font = storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
+            let background = storage.attribute(.backgroundColor, at: range.location, effectiveRange: nil)
+            let paragraph = storage.attribute(.paragraphStyle, at: range.location,
+                                              effectiveRange: nil) as? NSParagraphStyle
+            print(String(format: "    %-24@ mono=%@  block=%@  indent=%@",
+                         name as NSString,
+                         (font?.isFixedPitch ?? false) ? "yes" : "no ",
+                         background != nil ? "yes" : "no ",
+                         (paragraph?.headIndent ?? 0) > 0 ? "yes" : "no "))
+        }
     }
 
     private static func inkPixels(in card: NoteCardView) -> Int {
