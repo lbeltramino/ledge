@@ -40,8 +40,13 @@ SQLite index beside it is a cache you can delete at any moment.
   small to have two modes.
 - **Everything in one list.** `⌥⌘A` searches titles, bodies and tags across every
   note, archived ones included.
+- **Tags you just type.** `#work` in the body is a tag; `# Heading` is a heading.
+  Searchable, clickable, and gone the moment you delete the hashtag.
 - **Export.** Markdown, plain text, a single file, or a `.ledge` archive that
   imports back with colours, states, tags and dates intact.
+- **Your folder, wherever you want it.** Move it into iCloud Drive and it syncs;
+  every read and write has been coordinated from the first commit for exactly
+  that. When two machines disagree, both notes survive and the loser is labelled.
 
 ## Download
 
@@ -49,7 +54,8 @@ SQLite index beside it is a cache you can delete at any moment.
 
 Unpack the zip and move `Ledge.app` to `/Applications`.
 
-The build is **not signed or notarised**, so Gatekeeper will refuse it the first
+The build is **not signed or notarised** — the signing and notarisation steps
+exist and are waiting on a Developer ID — so Gatekeeper will refuse it the first
 time. Once, to let it through:
 
 ```sh
@@ -89,8 +95,8 @@ LEDGE_FOLDER=/tmp/notes ./build/Ledge.app/Contents/MacOS/Ledge
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 72 unit tests
-./build/Ledge.app/Contents/MacOS/Ledge --selftest   # 360+ geometry checks
+swift run ledge-tests                               # 85 unit tests
+./build/Ledge.app/Contents/MacOS/Ledge --selftest   # 380 geometry checks
 ```
 
 Both run in CI on every push. The self-test writes to a scratch folder of its
@@ -233,8 +239,14 @@ Tag it and the workflow does the rest — builds, tests, packages, and publishes
 release with the zip and its checksum attached:
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
+
+It signs and notarises too, if the repository has the secrets for it
+(`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY`,
+`APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`). Without them it publishes an
+unsigned build and says so in the release notes. `Ledge.entitlements` already
+declares the sandbox the signed build will run in.
 
 ## Licence
 
