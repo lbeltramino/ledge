@@ -717,9 +717,11 @@ final class DeckController {
         }
     }
 
-    func collapse() {
+    func collapse() { collapse(evenIfPinned: false) }
+
+    func collapse(evenIfPinned: Bool) {
         guard state != .rest else { return }
-        if strip.pinned {
+        if strip.pinned && !evenIfPinned {
             // Fold the open note away, but leave the tabs out.
             if state.noteID != nil { closeNote() }
             return

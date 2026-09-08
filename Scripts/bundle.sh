@@ -14,6 +14,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/$CONFIG/LedgeApp" "$APP/Contents/MacOS/Ledge"
 
+# The icon, if it has been generated. Scripts/icon.sh draws it with the app.
+if [ -f Resources/AppIcon.icns ]; then
+  cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+fi
+
 # Bundled note face, if it has been fetched. Typography falls back gracefully.
 if [ -d Resources/Fonts ]; then
   cp Resources/Fonts/*.ttf "$APP/Contents/Resources/" 2>/dev/null || true
@@ -42,6 +47,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <!-- No Dock icon, no menu bar. The deck is the whole interface. -->
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+$(if [ -f Resources/AppIcon.icns ]; then printf '    <key>CFBundleIconFile</key><string>AppIcon</string>\n'; fi)
     <!-- ledge:// — so anything on the machine can make or open a note. -->
     <key>CFBundleURLTypes</key>
     <array>

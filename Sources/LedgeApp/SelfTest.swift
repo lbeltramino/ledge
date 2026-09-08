@@ -589,6 +589,10 @@ enum SelfTest {
         print("\n\u{001B}[1mMoving notes between strips\u{001B}[0m")
         await checkStripHandover(deck: deck)
 
+        // ---- strips that follow an app
+        print("\n\u{001B}[1mStrips that follow an app\u{001B}[0m")
+        checkFollowing()
+
         // ---- the fan has to come from the edge the strip is on, whichever it is
         if let screen = NSScreen.screens.first {
             print("\n\u{001B}[1mFan direction\u{001B}[0m")
@@ -731,6 +735,30 @@ enum SelfTest {
         workspace.rebuildDecks()
         // rebuildDecks brings home anything left on the temporary strips
         try? await Task.sleep(for: .milliseconds(500))
+    }
+
+    /// A strip told to follow an app has to answer for that app and stay out of
+    /// the way otherwise — including keeping its hands off strips that were
+    /// never given a rule.
+    static func checkFollowing() {
+        var plain = StripConfig.primary()
+        check(plain.wantsToShow(whenFrontmost: "com.apple.dt.Xcode") == nil,
+              "a strip with no rule never answers — it stays however you left it")
+        check(plain.wantsToShow(whenFrontmost: nil) == nil,
+              "…not even when nothing is in front")
+
+        plain.showsWith = ["com.apple.dt.Xcode", "com.apple.Terminal"]
+        check(plain.wantsToShow(whenFrontmost: "com.apple.dt.Xcode") == true,
+              "it comes out for an app it was told about")
+        check(plain.wantsToShow(whenFrontmost: "com.apple.Terminal") == true,
+              "…for any of them, not just the first")
+        check(plain.wantsToShow(whenFrontmost: "com.apple.Safari") == false,
+              "and folds away for one it was not")
+        check(plain.wantsToShow(whenFrontmost: nil) == false,
+              "and when nothing is in front at all")
+
+        check(plain.subtitle.contains("follows 2 apps"),
+              "the menu says what a following strip is following: \(plain.subtitle)")
     }
 
     /// The deck must fold away towards its own edge. A bottom strip that slid

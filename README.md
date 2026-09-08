@@ -33,6 +33,10 @@ SQLite index beside it is a cache you can delete at any moment.
   stays exactly where it was.
 - **Several strips.** One on a laptop, or four on a 49-inch display: left edge,
   right edge, and either side of the Dock. Drag a note from one to another.
+- **Strips that follow you.** Tell a strip to show with an app and it comes out
+  when that app does, and folds away when it goes. Xcode in front, the work
+  notes are there. No permission needed — Ledge already watches the frontmost
+  app to give focus back when you close a note.
 - **Pull a note off.** Drag it away and it floats on the desk until you push it
   back to an edge.
 - **Live Markdown.** Headings, lists, bold, links, inline code and fenced blocks
@@ -227,6 +231,15 @@ tools are preserved verbatim.
 
 `SPEC.md` has the full specification: motion tokens, geometry, palette,
 typography, and the build order the project followed.
+
+## Making the icon
+
+```sh
+./Scripts/icon.sh
+```
+
+The icon is drawn by the app, from the same palette as the deck, at every size
+macOS asks for. It cannot drift away from the thing it stands for.
 
 ## Where the notes live
 

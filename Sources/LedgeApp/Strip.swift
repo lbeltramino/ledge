@@ -34,6 +34,14 @@ struct StripConfig: Codable, Equatable, Identifiable {
     /// 0.5 (end). On a bottom strip that is left-to-right — which is how you put
     /// one to either side of the Dock.
     var offset: Double
+    /// Bundle identifiers of apps that bring this strip out.
+    ///
+    /// Empty means the strip behaves normally. Non-empty makes it follow what
+    /// you are doing: it fans when one of these is in front and folds when none
+    /// of them is. Reading the frontmost app needs no permission — Ledge already
+    /// watches it to give focus back when you close a note.
+    var showsWith: [String] = []
+
     /// Keeps the tabs fanned instead of folding back to a stripe. On by default:
     /// the fold-away is lovely on a laptop and a way to lose a strip on a wide
     /// display. Also the decoding default, so strips saved before this existed
@@ -46,7 +54,7 @@ struct StripConfig: Codable, Equatable, Identifiable {
     static func primary() -> StripConfig {
         StripConfig(id: primaryID, name: "Deck", edge: .right,
                     screenID: NSScreen.screens.first?.ledgeDisplayID ?? 0,
-                    offset: 0, pinned: true)
+                    offset: 0, showsWith: [], pinned: true)
     }
 
     /// The screen it is pinned to, or the main one if that display has gone.
@@ -65,11 +73,22 @@ struct StripConfig: Codable, Equatable, Identifiable {
         let screens = NSScreen.screens
         var text = "\(edge.label.lowercased()) edge"
         if abs(offset) > 0.05 { text += " · \(positionName.lowercased())" }
+        if !showsWith.isEmpty { text += " · follows \(showsWith.count) app\(showsWith.count == 1 ? "" : "s")" }
         if screens.count > 1,
            let index = screens.firstIndex(where: { $0.ledgeDisplayID == screenID }) {
             text += " · display \(index + 1)"
         }
         return text
+    }
+
+    /// Whether this strip should be out, given what is in front.
+    ///
+    /// `nil` means "not this strip's business" — leave it however the user left
+    /// it. A strip with no apps configured never answers.
+    func wantsToShow(whenFrontmost bundleID: String?) -> Bool? {
+        guard !showsWith.isEmpty else { return nil }
+        guard let bundleID else { return false }
+        return showsWith.contains(bundleID)
     }
 
     var positionName: String {
@@ -171,7 +190,7 @@ extension Settings {
                                screenID: screen.ledgeDisplayID,
                                // a second strip on the same edge starts further along it
                                offset: offset ?? (taken == 0 ? 0 : min(0.4, Double(taken) * 0.35)),
-                               pinned: true))
+                               showsWith: [], pinned: true))
         strips = all
     }
 

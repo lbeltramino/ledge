@@ -60,6 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let index = CommandLine.arguments.firstIndex(of: "--render-icon") {
+            let target = index + 1 < CommandLine.arguments.count
+                ? URL(fileURLWithPath: CommandLine.arguments[index + 1])
+                : URL(fileURLWithPath: "AppIcon.iconset")
+            Renderer.renderIconSet(into: target)
+            NSApp.terminate(nil)
+            return
+        }
+
         if let index = CommandLine.arguments.firstIndex(of: "--render") {
             let target = index + 1 < CommandLine.arguments.count
                 ? URL(fileURLWithPath: CommandLine.arguments[index + 1])

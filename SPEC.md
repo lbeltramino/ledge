@@ -515,6 +515,11 @@ The gaps §13 used to list, and where they went.
 | **Signing and notarisation** | Plumbed and gated: `Ledge.entitlements` (sandbox, user-selected files, app-scoped bookmarks, network client), a `codesign` step in `bundle.sh` that runs when `LEDGE_SIGN_IDENTITY` is set, and a notarisation step in the release workflow that runs when the secrets exist. Until a Developer ID is added, releases go out unsigned and say so. |
 | **Sparkle** | **Deliberately not adopted.** Sparkle installs updates, and installing over an unsigned app that Gatekeeper had to be talked into replaces a binary the user vouched for with one they did not. Instead: one request a day to GitHub's public API, a menu item when a newer release exists, and a link. Switchable off. |
 
+Since then: an app icon, drawn by the app itself at every size macOS wants, and
+strips that follow an app — tell one to show with Xcode and it comes out when
+Xcode does. Both were on the "what would make this a product" list rather than
+the "what is broken" one.
+
 Still open: the notes folder can be moved and lives happily in iCloud Drive, but
 there is no merge UI for a conflict — you get both notes and decide. And the
 sandbox is declared and inert until something signs the app.

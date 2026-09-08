@@ -27,6 +27,19 @@ enum Renderer {
                body: "- learn about the deck\n- `swift run ledge-tests`"),
     ]
 
+    /// Every size an .iconset wants, named the way iconutil expects.
+    static func renderIconSet(into directory: URL) {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sizes: [(Int, Int)] = [(16, 1), (16, 2), (32, 1), (32, 2),
+                                   (128, 1), (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)]
+        for (point, scale) in sizes {
+            let pixels = CGFloat(point * scale)
+            let name = scale == 1 ? "icon_\(point)x\(point).png" : "icon_\(point)x\(point)@2x.png"
+            write(icon(size: pixels), to: directory.appendingPathComponent(name))
+        }
+        print("rendered \(sizes.count) icon sizes into \(directory.path)")
+    }
+
     static func run(into directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -34,7 +47,8 @@ enum Renderer {
         write(deck(state: .fanned), to: directory.appendingPathComponent("deck-fanned.png"))
         write(deck(state: .open), to: directory.appendingPathComponent("deck-open.png"))
         write(palette(), to: directory.appendingPathComponent("palette.png"))
-        print("rendered 4 images into \(directory.path)")
+        write(icon(size: 512), to: directory.appendingPathComponent("icon.png"))
+        print("rendered 5 images into \(directory.path)")
     }
 
     enum DeckState { case rest, fanned, open }
@@ -143,6 +157,76 @@ enum Renderer {
                             y: tabFrame.midY - cardSize.height / 2,
                             width: cardSize.width, height: cardSize.height)
         drawRotated(card, at: flip(placed, in: size), by: -jitter.cardRotation, shadow: true)
+    }
+
+    // MARK: - the app icon
+
+    /// The mark, drawn at any size.
+    ///
+    /// Three tabs against a warm ground, sized in proportion rather than in
+    /// points so it reads the same at 1024 and at 16 — where the fan, the fold
+    /// lines and the titles would all be mud.
+    static func icon(size side: CGFloat) -> NSImage {
+        image(size: NSSize(width: side, height: side)) { _ in
+            let rect = NSRect(x: 0, y: 0, width: side, height: side)
+            let unit = side / 512
+
+            // Apple's grille: the artwork sits inside the full canvas with a
+            // margin, and the system rounds the corners.
+            let plate = rect.insetBy(dx: 42 * unit, dy: 42 * unit)
+            let plateRadius = 96 * unit
+            NSBezierPath(roundedRect: plate, xRadius: plateRadius, yRadius: plateRadius)
+                .addClip()
+
+            let ground = NSGradient(colors: [.srgb(0xFBF9F5), .srgb(0xEFE9DE)],
+                                    atLocations: [0, 1], colorSpace: .sRGB)
+            ground?.draw(in: plate, angle: -90)
+
+            // Three tabs, flush with the right edge of the plate, each as long
+            // as a title would make it.
+            let colors: [NoteColor] = [.blue, .green, .butter]
+            let lengths: [CGFloat] = [150, 118, 186]
+            let tabWidth = 116 * unit
+            let gap = 22 * unit
+            let total = lengths.reduce(0) { $0 + $1 * unit } + gap * CGFloat(colors.count - 1)
+            var top = plate.midY + total / 2
+
+            // The lean is the product's signature; without it this is three
+            // rectangles rather than three pieces of paper.
+            let leans: [CGFloat] = [-1.1, 0.9, -0.7]
+
+            for (index, color) in colors.enumerated() {
+                let length = lengths[index] * unit
+                top -= length
+                let tab = NSRect(x: plate.maxX - tabWidth, y: top, width: tabWidth + plateRadius,
+                                 height: length)
+                let radius = 30 * unit
+
+                NSGraphicsContext.current?.saveGraphicsState()
+                let lean = NSAffineTransform()
+                lean.translateX(by: tab.midX, yBy: tab.midY)
+                lean.rotate(byDegrees: side >= 64 ? leans[index] : 0)
+                lean.translateX(by: -tab.midX, yBy: -tab.midY)
+                lean.concat()
+
+                Palette.paper(color, dark: false).setFill()
+                NSBezierPath(roundedRect: tab, xRadius: radius, yRadius: radius).fill()
+
+                // the perforation, only where it can still be seen
+                if side >= 128 {
+                    let fold = NSBezierPath()
+                    let x = tab.minX + 34 * unit
+                    fold.move(to: NSPoint(x: x, y: tab.minY + 20 * unit))
+                    fold.line(to: NSPoint(x: x, y: tab.maxY - 20 * unit))
+                    fold.lineWidth = 3 * unit
+                    fold.setLineDash([7 * unit, 9 * unit], count: 2, phase: 0)
+                    Palette.labelInk(color).withAlphaComponent(0.38).setStroke()
+                    fold.stroke()
+                }
+                NSGraphicsContext.current?.restoreGraphicsState()
+                top -= gap
+            }
+        }
     }
 
     // MARK: - the palette

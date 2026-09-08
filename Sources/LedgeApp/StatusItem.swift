@@ -182,6 +182,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             nudgeOn.indentationLevel = 2
             submenu.addItem(nudgeOn)
 
+            if let app = workspace.lastForegroundApp,
+               let bundleID = app.bundleIdentifier,
+               let name = app.localizedName {
+                let follows = strip.showsWith.contains(bundleID)
+                let item = NSMenuItem(title: follows ? "Stop following \(name)" : "Show with \(name)",
+                                      action: #selector(toggleFollow(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = ["strip": strip.id, "bundle": bundleID]
+                item.state = follows ? .on : .off
+                item.indentationLevel = 1
+                item.toolTip = "This strip comes out when \(name) does, and folds away when it goes."
+                submenu.addItem(item)
+            }
+            if !strip.showsWith.isEmpty {
+                let clear = NSMenuItem(title: "Follow nothing", action: #selector(clearFollow(_:)),
+                                       keyEquivalent: "")
+                clear.target = self
+                clear.representedObject = strip.id
+                clear.indentationLevel = 1
+                submenu.addItem(clear)
+            }
+
             if !strip.isPrimary {
                 let remove = NSMenuItem(title: "Remove", action: #selector(removeStrip(_:)), keyEquivalent: "")
                 remove.target = self
@@ -235,6 +257,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let info = sender.representedObject as? [String: Any],
               let id = info["strip"] as? String, let delta = info["delta"] as? Double else { return }
         Settings.update(id) { $0.offset = min(0.5, max(-0.5, $0.offset + delta)) }
+    }
+
+    @objc private func toggleFollow(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: String],
+              let id = info["strip"], let bundle = info["bundle"] else { return }
+        Settings.update(id) { strip in
+            if let index = strip.showsWith.firstIndex(of: bundle) {
+                strip.showsWith.remove(at: index)
+            } else {
+                strip.showsWith.append(bundle)
+            }
+        }
+    }
+
+    @objc private func clearFollow(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        Settings.update(id) { $0.showsWith.removeAll() }
     }
 
     @objc private func removeStrip(_ sender: NSMenuItem) {

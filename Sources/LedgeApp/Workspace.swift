@@ -26,8 +26,19 @@ final class Workspace {
     var editors: [String: NoteEditorWindow] = [:]
     private var library: AllNotesWindow?
 
+    /// The last thing that was in front that was not Ledge. Used both to decide
+    /// which context strips belong out, and to offer "show with this app" in a
+    /// menu that could only ever be opened while Ledge itself is frontmost.
+    private(set) var lastForegroundApp: NSRunningApplication?
+
     init(store: NoteStore) {
         self.store = store
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.frontmostChanged(to: app) }
+        }
         NotificationCenter.default.addObserver(
             forName: Settings.stripsDidChange, object: nil, queue: .main
         ) { [weak self] _ in
@@ -42,6 +53,25 @@ final class Workspace {
 
     func start() {
         rebuildDecks()
+        frontmostChanged(to: NSWorkspace.shared.frontmostApplication)
+    }
+
+    /// A strip that follows an app comes out when that app does, and folds away
+    /// when it goes. Ledge activating never counts — clicking into a note must
+    /// not fold the strip you clicked it in.
+    private func frontmostChanged(to app: NSRunningApplication?) {
+        guard app?.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        if app != nil { lastForegroundApp = app }
+
+        for deck in decks {
+            guard let wanted = deck.strip.wantsToShow(whenFrontmost: app?.bundleIdentifier)
+            else { continue }
+            if wanted {
+                if deck.state == .rest { deck.fanOut(takingFocus: false) }
+            } else if deck.state != .rest {
+                deck.collapse(evenIfPinned: true)
+            }
+        }
     }
 
     /// A strip whose display has been unplugged is not shown — but it is not
