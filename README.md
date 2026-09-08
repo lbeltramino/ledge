@@ -266,8 +266,13 @@ Tag it and the workflow does the rest — builds, tests, packages, and publishes
 release with the zip and its checksum attached:
 
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+./Scripts/release.sh v0.2.5 "what changed"
 ```
+
+It waits for the run belonging to *that tag* and then checks the release
+actually has its assets. Reading `gh run list` straight after a push returns
+whichever run finished last, which is how a release once got reported as
+successful on the strength of the previous one.
 
 It signs and notarises too, if the repository has the secrets for it
 (`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY`,
