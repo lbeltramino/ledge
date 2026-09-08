@@ -33,6 +33,9 @@ jobs:
         # Skips itself with a notice when the runner has no display.
         run: ./build/Ledge.app/Contents/MacOS/Ledge --selftest
 
+      - name: Check the README's numbers
+        run: ./Scripts/check-readme.sh
+
       - name: Render the README images
         # Proves the drawing code still renders; a picture in a README that no
         # longer builds is worse than no picture.
