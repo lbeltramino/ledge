@@ -54,15 +54,22 @@ SQLite index beside it is a cache you can delete at any moment.
 
 Unpack the zip and move `Ledge.app` to `/Applications`.
 
-The build is **not signed or notarised** — the signing and notarisation steps
-exist and are waiting on a Developer ID — so Gatekeeper will refuse it the first
-time. Once, to let it through:
+The build is **not notarised** — the signing and notarisation steps exist and are
+waiting on a Developer ID — so macOS will not open it until you say so. On Apple
+Silicon the message is usually *"Ledge is damaged and can't be opened"*. **It is
+not damaged.** That is what macOS says about an app it cannot check, and the zip
+carries a SHA-256 next to it if you want to confirm the download.
+
+To open it, remove the quarantine flag macOS attaches to anything downloaded:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Ledge.app
 ```
 
-Or right-click the app, choose **Open**, and confirm.
+That flag is the whole of what is stopping it; removing it says you vouch for
+this app. Do that only for software you are willing to vouch for. **System
+Settings → Privacy & Security → Open Anyway** does the same thing through the UI
+on some macOS versions.
 
 Ledge has no Dock icon. It appears as a coloured stripe on the right edge of your
 screen and as a small glyph in the menu bar. Notes land in `~/Documents/Ledge`.

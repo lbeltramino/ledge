@@ -47,16 +47,24 @@ $(if [ -n "$FONTS" ]; then printf '    <key>ATSApplicationFontsPath</key><string
 </plist>
 PLIST
 
-# Signing, when there is an identity to sign with. Without one the app still
-# runs; Gatekeeper just makes the user vouch for it once.
+# The binary arrives already ad-hoc signed by the linker, but that signature
+# covers the executable alone — and this script then builds a bundle around it,
+# adding Info.plist and Resources afterwards. The result is a signature that
+# disagrees with the bundle, which macOS reports as "the file is damaged",
+# because it is. Signing the assembled bundle is not optional.
 if [ -n "${LEDGE_SIGN_IDENTITY:-}" ]; then
   codesign --force --deep --options runtime --timestamp \
     --entitlements Ledge.entitlements \
     --sign "$LEDGE_SIGN_IDENTITY" "$APP"
-  codesign --verify --strict --verbose=2 "$APP"
   echo "signed as $LEDGE_SIGN_IDENTITY"
 else
-  echo "unsigned (set LEDGE_SIGN_IDENTITY to sign)"
+  # Ad-hoc, so the signature at least covers everything in the bundle. Gatekeeper
+  # still asks the user to vouch for it, but it is a valid app rather than a
+  # broken one.
+  codesign --force --deep --sign - "$APP"
+  echo "ad-hoc signed (set LEDGE_SIGN_IDENTITY for a Developer ID)"
 fi
+
+codesign --verify --strict --verbose=2 "$APP"
 
 echo "built $APP"
