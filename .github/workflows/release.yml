@@ -29,7 +29,35 @@ jobs:
       - name: Unit tests
         run: swift run ledge-tests
 
+      - name: Import signing certificate
+        # Everything here is skipped when the secrets are not set, and the
+        # release simply goes out unsigned.
+        id: signing
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          if [ -z "$CERTIFICATE" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing certificate configured — publishing an unsigned build."
+            exit 0
+          fi
+          KEYCHAIN=$RUNNER_TEMP/build.keychain
+          security create-keychain -p actions "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+
       - name: Build Ledge.app
+        env:
+          LEDGE_SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
         run: LEDGE_VERSION="${{ steps.version.outputs.version }}" ./Scripts/bundle.sh release
 
       - name: Geometry self-test
@@ -39,7 +67,23 @@ jobs:
         run: |
           mkdir -p dist
           ditto -c -k --keepParent build/Ledge.app "dist/Ledge-${{ steps.version.outputs.tag }}.zip"
-          cd dist && shasum -a 256 *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Notarise
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool submit "dist/Ledge-${{ steps.version.outputs.tag }}.zip" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple build/Ledge.app
+          rm "dist/Ledge-${{ steps.version.outputs.tag }}.zip"
+          ditto -c -k --keepParent build/Ledge.app "dist/Ledge-${{ steps.version.outputs.tag }}.zip"
+
+      - name: Checksums
+        run: cd dist && shasum -a 256 *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -55,14 +99,13 @@ jobs:
 
             Download the zip, unpack it, and move `Ledge.app` to `/Applications`.
 
-            **This build is not signed or notarised**, so Gatekeeper will refuse
-            it on first launch. Once, to let it through:
+            ${{ steps.signing.outputs.signed == 'true' && 'This build is signed and notarised — it should open normally.' || '**This build is not signed or notarised**, so Gatekeeper will refuse it on first launch. Once, to let it through:
 
             ```sh
             xattr -dr com.apple.quarantine /Applications/Ledge.app
             ```
 
-            Or right-click the app, choose **Open**, and confirm.
+            Or right-click the app, choose **Open**, and confirm.' }}
 
             Ledge has no Dock icon. It appears as a coloured stripe on the right
             edge of your screen, and as a small glyph in the menu bar.

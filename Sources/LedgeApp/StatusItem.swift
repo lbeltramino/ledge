@@ -12,6 +12,7 @@ import LedgeIndex
 final class StatusItemController: NSObject, NSMenuDelegate {
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let updates = UpdateCheck()
     private unowned let workspace: Workspace
 
     init(workspace: Workspace) {
@@ -22,6 +23,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
+        updates.checkIfDue()
     }
 
     /// A template glyph of the deck itself: the stripe on the edge, with its
@@ -74,8 +76,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if workspace.hasFloatingNotes {
             add(menu, "Put floating notes back", #selector(redockAll), key: "")
         }
+        if let version = updates.available {
+            let update = NSMenuItem(title: "Update available — \(version)",
+                                    action: #selector(openReleases), keyEquivalent: "")
+            update.target = self
+            menu.addItem(update)
+            menu.addItem(.separator())
+        }
         add(menu, "Open notes folder", #selector(openFolder), key: "")
         add(menu, "Choose notes folder…", #selector(chooseFolder), key: "")
+        menu.addItem(.separator())
+        let checking = NSMenuItem(title: "Check for updates",
+                                  action: #selector(toggleUpdateChecks), keyEquivalent: "")
+        checking.target = self
+        checking.state = UpdateCheck.isEnabled ? .on : .off
+        checking.toolTip = "One request a day to GitHub's public API. Nothing is sent about you."
+        menu.addItem(checking)
         menu.addItem(.separator())
         add(menu, "Quit Ledge", #selector(quit), key: "q", modifiers: [.command])
     }
@@ -321,5 +337,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
         }
     }
+    @objc private func openReleases() { NSWorkspace.shared.open(updates.releasesURL) }
+
+    @objc private func toggleUpdateChecks() {
+        UpdateCheck.isEnabled.toggle()
+        if UpdateCheck.isEnabled { updates.checkIfDue(force: true) }
+    }
+
     @objc private func quit() { NSApp.terminate(nil) }
 }

@@ -32,7 +32,7 @@ final class ExpandButton: NSView {
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func mouseDown(with event: NSEvent) { flashPress(); onClick?() }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func draw(_ dirtyRect: NSRect) {

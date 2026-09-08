@@ -102,6 +102,8 @@ final class DetailPane: NSView {
     var onRestore: ((String) -> Void)?
     var onDelete: ((String) -> Void)?
     var onOpen: ((String) -> Void)?
+    /// Clicking a tag searches for it.
+    var onTag: ((String) -> Void)?
 
     private let stateLabel = NSTextField(labelWithString: "")
     private let openButton = ChromeButton(title: "Open")
@@ -111,6 +113,7 @@ final class DetailPane: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let bodyLabel = NSTextField(wrappingLabelWithString: "")
     private let datesLabel = NSTextField(labelWithString: "")
+    private var tagChips: [ChromeButton] = []
     private let emptyLabel = NSTextField(labelWithString: "")
 
     private var current: NoteRecord?
@@ -187,6 +190,15 @@ final class DetailPane: NSView {
             + " · Updated \(relative.localizedString(for: record.updated, relativeTo: Date()))"
         datesLabel.textColor = ink.withAlphaComponent(0.45)
 
+        // Tags are written in the note; here they are something to click.
+        tagChips.forEach { $0.removeFromSuperview() }
+        tagChips = record.tags.map { tag in
+            let chip = ChromeButton(title: "#\(tag)")
+            chip.onClick = { [weak self] in self?.onTag?(tag) }
+            paper.addSubview(chip)
+            return chip
+        }
+
         needsLayout = true
     }
 
@@ -214,9 +226,20 @@ final class DetailPane: NSView {
         titleLabel.frame = NSRect(x: inner, y: paper.bounds.height - inner - 20,
                                   width: paper.bounds.width - inner * 2, height: 20)
         datesLabel.frame = NSRect(x: inner, y: inner - 4, width: paper.bounds.width - inner * 2, height: 16)
-        bodyLabel.frame = NSRect(x: inner, y: inner + 26,
+
+        var chipX = inner
+        let chipY = inner + 20
+        for chip in tagChips {
+            let width = chip.intrinsicContentSize.width
+            if chipX + width > paper.bounds.width - inner { break }
+            chip.frame = NSRect(x: chipX, y: chipY, width: width, height: 22)
+            chipX += width + 5
+        }
+        let chipsHeight: CGFloat = tagChips.isEmpty ? 0 : 30
+
+        bodyLabel.frame = NSRect(x: inner, y: inner + 26 + chipsHeight,
                                  width: paper.bounds.width - inner * 2,
-                                 height: max(0, paper.bounds.height - inner * 2 - 52))
+                                 height: max(0, paper.bounds.height - inner * 2 - 52 - chipsHeight))
     }
 }
 

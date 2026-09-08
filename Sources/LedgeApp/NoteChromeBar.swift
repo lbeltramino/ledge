@@ -150,6 +150,7 @@ final class NoteChromeBar: NSView {
         guard let picked = swatchRects.first(where: { $0.1.insetBy(dx: -3, dy: -3).contains(point) })?.0
         else { return }
         color = picked
+        flashPress()
         onColor?(picked)
     }
 
@@ -230,7 +231,7 @@ final class ChromeButton: NSView {
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func mouseDown(with event: NSEvent) { flashPress(); onClick?() }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func draw(_ dirtyRect: NSRect) {

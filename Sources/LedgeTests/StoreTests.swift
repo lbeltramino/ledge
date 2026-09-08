@@ -129,6 +129,28 @@ enum StoreTests {
             c.equal(try await store.deck().map(\.title), before, "a rebuild reshuffled the deck")
         }
 
+        await Runner.test("typing a tag into a note makes it searchable by tag") { c in
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            var note = try await store.create(title: "Office", body: "- call the plumber")
+            c.equal(note.tags, [])
+
+            note.body = "- call the #plumber about #kitchen"
+            _ = try await store.save(note)
+
+            let saved = try await store.load(id: note.id)
+            c.equal(saved.tags, ["plumber", "kitchen"], "the tags did not reach the file")
+            c.expect(try box.read("Office.md").contains("tags: [plumber, kitchen]"),
+                     "the frontmatter does not mirror the tags")
+            c.equal(try await store.search("plumber").count, 1, "the tag is not searchable")
+
+            note = saved
+            note.body = "- call the #plumber"
+            _ = try await store.save(note)
+            c.equal(try await store.load(id: note.id).tags, ["plumber"],
+                    "removing a tag from the body did not remove it")
+        }
+
         Runner.suite("Store — reordering")
 
         await Runner.test("moving one note rewrites exactly one file") { c in
@@ -213,6 +235,68 @@ enum StoreTests {
             let store = try NoteStore(folder: box.url)
             for t in ["One", "Two", "Three"] { _ = try await store.create(title: t) }
             c.equal(try await store.scan(), 0, "a no-op scan reparsed files")
+        }
+
+        Runner.suite("Sync conflicts")
+
+        await Runner.test("two files with the same id are both kept") { c in
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            let original = try await store.create(title: "Office", body: "- written here")
+
+            // What iCloud does: a second file, same note, different name.
+            var text = try box.read("Office.md")
+            text = text.replacingOccurrences(of: "- written here", with: "- written on the laptop")
+            text = text.replacingOccurrences(of: "updated: ", with: "updated: ")
+            try box.write("Office (conflicted copy from laptop).md", text)
+
+            _ = try await store.scan()
+
+            c.equal(try await store.records().count, 2, "one side of the conflict was lost")
+            let conflicts = try await store.conflicts()
+            c.equal(conflicts.count, 1, "the conflicted copy is not flagged")
+            c.expect(conflicts.first?.title.contains("conflicted copy") == true,
+                     "the copy is not titled so you can see what happened")
+            c.expect(conflicts.first?.tags.contains(NoteStore.conflictTag) == true,
+                     "the copy is not tagged, so you cannot find them all at once")
+            c.expect(conflicts.first?.id != original.id,
+                     "both files still claim the same identity")
+            c.equal(box.filenames().filter { $0.hasSuffix(".md") }.count, 2,
+                    "a file was deleted — conflicts must never lose data")
+        }
+
+        await Runner.test("the copy edited later keeps the identity") { c in
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            let original = try await store.create(title: "Office", body: "- older")
+
+            var text = try box.read("Office.md")
+            text = text.replacingOccurrences(of: "- older", with: "- newer, from the laptop")
+            text = text.replacingOccurrences(of: "updated: 20", with: "updated: 29")
+            try box.write("Office (conflicted copy).md", text)
+
+            _ = try await store.scan()
+
+            // The newer text is the one that kept the original id.
+            let kept = try? await store.load(id: original.id)
+            c.expect(kept?.body.contains("newer, from the laptop") == true,
+                     "the older copy won: \(kept?.body ?? "gone")")
+            c.equal(try await store.conflicts().count, 1)
+        }
+
+        await Runner.test("resolving a conflict is stable — rescanning does not re-flag") { c in
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            _ = try await store.create(title: "Office", body: "- one")
+            try box.write("Office copy.md", try box.read("Office.md"))
+
+            _ = try await store.scan()
+            let after = try await store.conflicts().count
+            _ = try await store.scan()
+            _ = try await store.scan()
+            c.equal(try await store.conflicts().count, after,
+                    "each scan produced another conflicted copy")
+            c.equal(try await store.records().count, 2, "the notes multiplied")
         }
 
         Runner.suite("Moving the notes folder")

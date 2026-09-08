@@ -78,9 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             Task {
                 _ = try? await store.scan()
-                await firstRunIfNeeded(store)
+                let isFirstRun = await firstRunIfNeeded(store)
                 workspace.start()
                 startWatching(store, workspace: workspace)
+                if isFirstRun, let deck = workspace.primaryDeck {
+                    await deck.demonstrate()
+                }
             }
 
             statusItem = StatusItemController(workspace: workspace)
@@ -122,8 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// No modal, no tour. One note that explains the deck, and then the deck
     /// fans itself open once so you see it happen.
-    private func firstRunIfNeeded(_ store: NoteStore) async {
-        guard (try? await store.count()) == 0 else { return }
+    @discardableResult
+    private func firstRunIfNeeded(_ store: NoteStore) async -> Bool {
+        guard (try? await store.count()) == 0 else { return false }
         _ = try? await store.create(
             title: "Welcome",
             color: .butter,
@@ -136,8 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             - ⌥⌘N makes a new note from anywhere
 
             Every note is a plain .md file in ~/Documents/Ledge.
+            Type a # in front of a word to tag it, like #welcome.
             """
         )
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {

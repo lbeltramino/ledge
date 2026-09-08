@@ -94,6 +94,16 @@ public actor NoteStore {
         let existing = try index.record(id: note.id)
         let filename = try filename(for: note, existing: existing)
 
+        // Tags live in the body. Reconcile against what the body said last time,
+        // so a hand-written frontmatter tag is never quietly deleted.
+        if let existing {
+            let previous = (try? FileIO.read(folder.appendingPathComponent(existing.filename)))
+                .map { Frontmatter.parse($0.text, fallbackTitle: "", fallbackID: note.id).body } ?? ""
+            note.tags = Tags.merged(existing: note.tags, oldBody: previous, newBody: note.body)
+        } else {
+            note.tags = Tags.merged(existing: note.tags, oldBody: "", newBody: note.body)
+        }
+
         if let existing, existing.filename != filename {
             let from = folder.appendingPathComponent(existing.filename)
             if FileManager.default.fileExists(atPath: from.path) {
@@ -273,14 +283,30 @@ public actor NoteStore {
         return touched
     }
 
+    /// The tag a conflicted copy carries, so it can always be found again.
+    public static let conflictTag = "conflict"
+
     /// Reads a file into the index, giving a file with no frontmatter an
     /// identity rather than refusing it.
     private func adopt(_ name: String, at url: URL, preloaded: FileIO.Loaded? = nil) throws {
-        let loaded = try preloaded ?? FileIO.read(url)
+        var loaded = try preloaded ?? FileIO.read(url)
         let known = try index.record(filename: name)
-        let parsed = Frontmatter.parseDetailed(loaded.text,
+        var parsed = Frontmatter.parseDetailed(loaded.text,
                                                fallbackTitle: titleFromFilename(name),
                                                fallbackID: known?.id)
+
+        // Two files carrying the same id is what a sync conflict actually is —
+        // whatever iCloud decided to name them. Detecting it by id rather than
+        // by filename is the only way that holds.
+        if parsed.declares("id"),
+           let twin = try index.record(id: parsed.note.id),
+           twin.filename != name,
+           FileManager.default.fileExists(atPath: folder.appendingPathComponent(twin.filename).path) {
+            try resolveConflict(losing: name, at: url, parsed: parsed, against: twin)
+            loaded = try FileIO.read(url)
+            parsed = Frontmatter.parseDetailed(loaded.text, fallbackTitle: titleFromFilename(name))
+        }
+
         var note = parsed.note
 
         // Only a file that never declared a rank gets one assigned. Testing the
@@ -294,6 +320,62 @@ public actor NoteStore {
                        size: loaded.stamp.size, hash: loaded.stamp.hash),
             body: note.searchableBody
         )
+    }
+
+    /// Keeps both sides of a conflict. Nothing is ever deleted.
+    ///
+    /// The copy that was edited later keeps the identity; the other becomes an
+    /// ordinary separate note, titled so you can see what happened and tagged so
+    /// you can find every one of them at once.
+    private func resolveConflict(losing name: String, at url: URL,
+                                 parsed: Frontmatter.Parsed, against twin: NoteRecord) throws {
+        var incoming = parsed.note
+        var loser = incoming
+
+        // Whichever is older gives up the identity.
+        if incoming.updated > twin.updated {
+            // The file on disk is the newer one: the *indexed* twin loses.
+            guard let twinNote = try? load(id: twin.id) else { return }
+            loser = twinNote
+            let renamed = try demote(twinNote, filename: twin.filename)
+            try index.upsert(renamed.record, body: renamed.note.searchableBody)
+            return
+        }
+
+        _ = loser
+        incoming.id = ULID.generate()
+        incoming.title = conflictTitle(for: incoming.title)
+        if !incoming.tags.contains(NoteStore.conflictTag) {
+            incoming.tags.append(NoteStore.conflictTag)
+        }
+        let text = Frontmatter.serialize(incoming)
+        let stamp = try FileIO.write(text, to: url)
+        remember(name, hash: stamp.hash)
+    }
+
+    private func demote(_ note: Note, filename: String)
+        throws -> (note: Note, record: NoteRecord) {
+        var demoted = note
+        demoted.id = ULID.generate()
+        demoted.title = conflictTitle(for: demoted.title)
+        if !demoted.tags.contains(NoteStore.conflictTag) {
+            demoted.tags.append(NoteStore.conflictTag)
+        }
+        let url = folder.appendingPathComponent(filename)
+        let stamp = try FileIO.write(Frontmatter.serialize(demoted), to: url)
+        remember(filename, hash: stamp.hash)
+        return (demoted, NoteRecord(note: demoted, filename: filename,
+                                    mtime: stamp.mtime, size: stamp.size, hash: stamp.hash))
+    }
+
+    private func conflictTitle(for title: String) -> String {
+        let base = title.isEmpty ? Note.untitled : title
+        return base.hasSuffix("(conflicted copy)") ? base : "\(base) (conflicted copy)"
+    }
+
+    /// Every note that arrived as the losing side of a conflict.
+    public func conflicts() throws -> [NoteRecord] {
+        try index.all(.all).filter { $0.tags.contains(NoteStore.conflictTag) }
     }
 
     /// Throws away the index and rebuilds it from the folder. Safe at any time:

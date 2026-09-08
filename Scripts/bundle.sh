@@ -47,4 +47,16 @@ $(if [ -n "$FONTS" ]; then printf '    <key>ATSApplicationFontsPath</key><string
 </plist>
 PLIST
 
+# Signing, when there is an identity to sign with. Without one the app still
+# runs; Gatekeeper just makes the user vouch for it once.
+if [ -n "${LEDGE_SIGN_IDENTITY:-}" ]; then
+  codesign --force --deep --options runtime --timestamp \
+    --entitlements Ledge.entitlements \
+    --sign "$LEDGE_SIGN_IDENTITY" "$APP"
+  codesign --verify --strict --verbose=2 "$APP"
+  echo "signed as $LEDGE_SIGN_IDENTITY"
+else
+  echo "unsigned (set LEDGE_SIGN_IDENTITY to sign)"
+fi
+
 echo "built $APP"

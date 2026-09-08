@@ -198,13 +198,34 @@ offers to bring the notes with it. Put it in iCloud Drive and it syncs — every
 read and write is coordinated through `NSFileCoordinator`, so nothing has to
 change for that to work.
 
+## Tags
+
+Written in the note, like everything else about it. `#work` is a tag; `# Heading`
+is a heading — the space is what tells them apart. Take the hashtag out and the
+tag goes with it. A tag you write by hand into the frontmatter is never removed,
+because Ledge did not put it there.
+
+## Sync conflicts
+
+Put the folder in iCloud Drive and two machines will eventually disagree. Ledge
+notices by **frontmatter id**, not by filename, so it holds whatever iCloud
+decides to call the copy. Both files are always kept: the one edited later keeps
+the note's identity, and the other becomes an ordinary note titled
+`(conflicted copy)` and tagged `conflict`. Nothing is merged for you and nothing
+is thrown away.
+
+## Updates
+
+Ledge asks GitHub's public API once a day whether there is a newer release, and
+if there is, says so in the menu. It does not install anything — a self-updater
+that replaced an unsigned binary the user had to talk Gatekeeper into would be
+worse than no updater. Switch it off under **Check for updates**.
+
 ## Not in v1
 
-No rich text, attachments or images. No reminders. No plugin API. Tags round-trip
-through the file and are searchable, but nothing in the app adds one yet. And
-while the notes folder can live in iCloud Drive, sync conflicts are not handled:
-both copies are kept and neither is flagged. `SPEC.md` §13 lists everything that
-is written down and not yet built.
+No rich text, attachments or images. No reminders. No plugin API. No merge UI for
+a sync conflict — you get both notes and decide. `SPEC.md` §13 tracks what is
+written down against what is built.
 
 ## Releasing
 

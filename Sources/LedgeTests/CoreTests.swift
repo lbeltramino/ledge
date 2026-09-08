@@ -138,6 +138,45 @@ enum CoreTests {
             c.equal(n.state, .active)
         }
 
+        Runner.suite("Tags")
+
+        await Runner.test("a hashtag in the body is a tag, a heading is not") { c in
+            c.equal(Tags.found(in: "call the #plumber about #kitchen-sink"), ["plumber", "kitchen-sink"])
+            c.equal(Tags.found(in: "# Heading\n## Another"), [])
+            c.equal(Tags.found(in: "#work and # not a tag"), ["work"])
+        }
+
+        await Runner.test("things that look like tags but are not") { c in
+            c.equal(Tags.found(in: "written in C# today"), [], "C# is not a tag")
+            c.equal(Tags.found(in: "issue foo#42"), [], "a suffix is not a tag")
+            c.equal(Tags.found(in: "#1234"), [], "a tag starts with a letter")
+            c.equal(Tags.found(in: "##double"), [], "two hashes is not a tag")
+        }
+
+        await Runner.test("tags are lowercased and de-duplicated, in the order written") { c in
+            c.equal(Tags.found(in: "#Work then #home then #work again"), ["work", "home"])
+        }
+
+        await Runner.test("adding a tag to the body adds it; removing it removes it") { c in
+            c.equal(Tags.merged(existing: [], oldBody: "nothing", newBody: "now #work"), ["work"])
+            c.equal(Tags.merged(existing: ["work"], oldBody: "now #work", newBody: "now nothing"), [])
+        }
+
+        await Runner.test("a tag written by hand in the frontmatter is never taken away") { c in
+            // Ledge did not put it there, so it does not get to remove it.
+            c.equal(Tags.merged(existing: ["archive"], oldBody: "plain", newBody: "still plain"),
+                    ["archive"])
+            c.equal(Tags.merged(existing: ["archive"], oldBody: "plain", newBody: "and #work"),
+                    ["archive", "work"])
+        }
+
+        await Runner.test("editing around a tag leaves it alone") { c in
+            c.equal(Tags.merged(existing: ["work"],
+                                oldBody: "- call #work",
+                                newBody: "- call #work\n- and again"),
+                    ["work"])
+        }
+
         Runner.suite("Filenames")
 
         await Runner.test("strips characters the filesystem will not take") { c in
@@ -211,6 +250,19 @@ enum CoreTests {
             let j = Jitter(id: ULID.generate())
             c.equal(j.cardRotation(focused: true), 0)
             c.equal(j.cardRotation(focused: false), j.cardRotation)
+        }
+
+        Runner.suite("Version comparison")
+
+        await Runner.test("a newer release is recognised, an older one is not") { c in
+            c.expect(UpdateCheckVersions.isNewer("0.2.0", than: "0.1.0"), "0.2.0 > 0.1.0")
+            c.expect(UpdateCheckVersions.isNewer("0.10.0", than: "0.9.0"),
+                     "0.10.0 > 0.9.0 — string comparison gets this wrong")
+            c.expect(UpdateCheckVersions.isNewer("1.0.0", than: "0.99.99"), "1.0.0 > 0.99.99")
+            c.expect(!UpdateCheckVersions.isNewer("0.1.0", than: "0.1.0"), "equal is not newer")
+            c.expect(!UpdateCheckVersions.isNewer("0.1.0", than: "0.2.0"), "older is not newer")
+            c.expect(UpdateCheckVersions.isNewer("0.1.1", than: "0.1"), "0.1.1 > 0.1")
+            c.expect(!UpdateCheckVersions.isNewer("0.1", than: "0.1.0"), "0.1 == 0.1.0")
         }
 
         Runner.suite("ULID")

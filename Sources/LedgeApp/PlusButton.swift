@@ -32,7 +32,7 @@ final class PlusButton: NSView {
 
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) { guard isInteractive else { return }; onClick?() }
+    override func mouseDown(with event: NSEvent) { guard isInteractive else { return }; flashPress(); onClick?() }
 
     override func draw(_ dirtyRect: NSRect) {
         let circle = NSBezierPath(ovalIn: bounds)

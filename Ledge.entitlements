@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The sandbox only takes effect once the app is signed. -->
+    <key>com.apple.security.app-sandbox</key><true/>
+
+    <!-- Notes live in a folder the user picks; the bookmark keeps the access. -->
+    <key>com.apple.security.files.user-selected.read-write</key><true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key><true/>
+
+    <!-- The default location. -->
+    <key>com.apple.security.assets.documents.read-write</key><true/>
+
+    <!-- One request a day to GitHub, to notice a new release. -->
+    <key>com.apple.security.network.client</key><true/>
+</dict>
+</plist>

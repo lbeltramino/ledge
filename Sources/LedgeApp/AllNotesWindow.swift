@@ -95,6 +95,10 @@ final class AllNotesWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, N
         detail.onRestore = { [weak self] id in self?.setState(id, .active) }
         detail.onDelete = { [weak self] id in self?.delete(id) }
         detail.onOpen = { [weak self] id in self?.onOpenInEditor?(id) }
+        detail.onTag = { [weak self] tag in
+            self?.search.stringValue = tag
+            Task { await self?.reload() }
+        }
         content.addSubview(detail)
 
         layout()

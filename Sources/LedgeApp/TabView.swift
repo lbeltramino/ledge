@@ -69,6 +69,7 @@ final class NoteTabView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard isInteractive else { return }
+        flashPress()
         onClick?(self)
     }
 

@@ -108,6 +108,24 @@ final class DeckController {
         panel.orderFrontRegardless()
     }
 
+    /// Shows you the movement once, rather than explaining it.
+    ///
+    /// A pinned strip is already fanned, so the thing worth demonstrating is a
+    /// note coming out of its tab; an unpinned one fans and settles back.
+    func demonstrate() async {
+        guard !records.isEmpty else { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        if state == .rest { fanOut(takingFocus: false) }
+        try? await Task.sleep(for: .milliseconds(900))
+        preview(records[0].id)
+        try? await Task.sleep(for: .milliseconds(2200))
+        closeNote()
+        if !strip.pinned {
+            try? await Task.sleep(for: .milliseconds(500))
+            collapse()
+        }
+    }
+
     /// Gives a newly created strip something to hold.
     private func seedIfNeeded() async {
         guard !Settings.hasBeenSeeded(strip.id) else { return }

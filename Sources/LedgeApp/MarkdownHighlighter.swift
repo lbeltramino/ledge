@@ -1,4 +1,5 @@
 import AppKit
+import LedgeCore
 
 /// Live Markdown highlighting, applied as you type.
 ///
@@ -118,6 +119,14 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
                 storage.addAttribute(.link, value: link, range: match.range(at: 1))
             }
             this.fade(storage, match.range, 0.55, only: [match.range(at: 2)])
+        }
+
+        // #tags — written in the note, like everything else about it
+        rule(Tags.pattern) { storage, match, this in
+            storage.addAttribute(.foregroundColor, value: this.accent, range: match.range)
+            storage.addAttribute(.font,
+                                 value: this.resized(this.baseFont, by: 1, bold: true),
+                                 range: match.range)
         }
 
         // a bare URL stays exactly readable

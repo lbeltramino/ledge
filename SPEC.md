@@ -502,17 +502,22 @@ Ledge/
 5. **Export and import.**
 6. **First run, accessibility, reduced motion, the polish pass.**
 
-## 13. Written down but not built
+## 13. Built since, and what is still open
 
-Kept honest rather than quietly dropped. Nothing below is implemented.
+The gaps §13 used to list, and where they went.
 
-| Planned | Where it is promised | State |
-|---|---|---|
-| **Sync conflict handling** — keep both copies, show the newer, flag the pair in All Notes | §3.3 | Not built. iCloud will produce conflict copies and Ledge treats them as two ordinary notes, which is survivable but silent. |
-| **Sandbox, Developer ID, notarisation, Sparkle** | §2 | Not built. Builds are unsigned; Gatekeeper blocks them on first launch. This is the gap between "runs" and "an app someone else can install". |
-| **`pressFeedback`** — 0.985 scale on press | §4.2 | Token defined, never applied. |
-| **First run fans the deck once on its own** | §9 | The welcome note is written, but the deck does not demonstrate itself. Less needed now that strips are pinned by default and therefore already open. |
-| **Tags** | §3.1, §7 | Round-trip through the file and are searchable, but there is no way to add or edit one. Today a tag only exists if you type it into the `.md` by hand. |
+| Was missing | Now |
+|---|---|
+| **Tags** — round-tripped and searchable, but no way to set one | Written in the note itself: `#work` is a tag, `# Heading` is not. Removing the hashtag removes the tag; a tag written by hand into the frontmatter is never taken away, because Ledge did not put it there. Clickable in All Notes. |
+| **Sync conflicts** | Detected by **frontmatter id**, not by filename, so it holds whatever iCloud names the copy. Both files are always kept: the one edited later keeps the identity, the other becomes an ordinary note titled `(conflicted copy)` and tagged `conflict`, so every one of them is one search away. |
+| **`pressFeedback`** | Applied — tabs, buttons, swatches. Suppressed under Reduce Motion. |
+| **First-run demonstration** | The deck fans, opens the welcome note, holds, and puts it away. Shown once, on a genuinely empty folder. |
+| **Signing and notarisation** | Plumbed and gated: `Ledge.entitlements` (sandbox, user-selected files, app-scoped bookmarks, network client), a `codesign` step in `bundle.sh` that runs when `LEDGE_SIGN_IDENTITY` is set, and a notarisation step in the release workflow that runs when the secrets exist. Until a Developer ID is added, releases go out unsigned and say so. |
+| **Sparkle** | **Deliberately not adopted.** Sparkle installs updates, and installing over an unsigned app that Gatekeeper had to be talked into replaces a binary the user vouched for with one they did not. Instead: one request a day to GitHub's public API, a menu item when a newer release exists, and a link. Switchable off. |
+
+Still open: the notes folder can be moved and lives happily in iCloud Drive, but
+there is no merge UI for a conflict — you get both notes and decide. And the
+sandbox is declared and inert until something signs the app.
 
 ## 14. Verifying the deck without eyes
 
