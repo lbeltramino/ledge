@@ -9,21 +9,16 @@ cd "$(dirname "$0")/.."
 APP="${1:-build/Ledge.app}"
 strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
 
+# Only the unit tests. Their count is a property of the code and is the same
+# everywhere. The geometry total is not: several of its checks only run when the
+# display has room for the case they cover, so it came to 443 on the machine
+# this was written on and 441 on a CI runner. Asserting it would fail for a
+# reason that says nothing about the code, so the README no longer claims it.
 TESTS=$(swift run ledge-tests 2>&1 | strip_ansi | grep -oE '[0-9]+ tests' | grep -oE '[0-9]+' | head -1)
-CHECKS=$("$APP/Contents/MacOS/Ledge" --selftest 2>&1 | grep -c '✓')
+CLAIMED=$(grep -oE '[0-9]+ unit tests' README.md | grep -oE '[0-9]+' | head -1)
 
-CLAIMED_TESTS=$(grep -oE '[0-9]+ unit tests' README.md | grep -oE '[0-9]+' | head -1)
-CLAIMED_CHECKS=$(grep -oE '[0-9]+ geometry checks' README.md | grep -oE '[0-9]+' | head -1)
-
-fail=0
-if [ "$TESTS" != "$CLAIMED_TESTS" ]; then
-  echo "README says $CLAIMED_TESTS unit tests; there are $TESTS"
-  fail=1
+if [ "$TESTS" != "$CLAIMED" ]; then
+  echo "README says $CLAIMED unit tests; there are $TESTS"
+  exit 1
 fi
-if [ "$CHECKS" != "$CLAIMED_CHECKS" ]; then
-  echo "README says $CLAIMED_CHECKS geometry checks; there are $CHECKS"
-  fail=1
-fi
-
-[ "$fail" = 0 ] && echo "README counts match: $TESTS tests, $CHECKS checks"
-exit "$fail"
+echo "README count matches: $TESTS unit tests"

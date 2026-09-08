@@ -155,7 +155,7 @@ different Mac were both wrong.
 
 ```sh
 swift run ledge-tests                               # 110 unit tests
-./build/Ledge.app/Contents/MacOS/Ledge --selftest   # 443 geometry checks
+./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
 Both run in CI on every push. The self-test writes to a scratch folder of its
