@@ -1,0 +1,14 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Built app bundle
+build/
+
+# Stray SQLite files from a bad path (see NoteIndex.ephemeral)
+:memory:*
+
+# macOS
+.DS_Store
+*.xcuserstate
