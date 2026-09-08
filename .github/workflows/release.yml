@@ -85,6 +85,36 @@ jobs:
       - name: Checksums
         run: cd dist && shasum -a 256 *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
 
+      - name: Update the Homebrew cask
+        # The cask has to name the exact build it installs, so it is written
+        # after the zip exists rather than guessed beforehand.
+        run: |
+          SHA=$(shasum -a 256 "dist/Ledge-${{ steps.version.outputs.tag }}.zip" | cut -d' ' -f1)
+          V="${{ steps.version.outputs.version }}"
+          sed -i '' -E "s/^  version \".*\"$/  version \"$V\"/" Casks/ledge.rb
+          sed -i '' -E "s/^  sha256 \".*\"$/  sha256 \"$SHA\"/" Casks/ledge.rb
+          cat Casks/ledge.rb | head -4
+
+      - name: Commit the cask
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          # The tag was cut from this commit, so the cask is the only change.
+          git checkout "${{ github.sha }}" -- . 2>/dev/null || true
+          SHA=$(shasum -a 256 "dist/Ledge-${{ steps.version.outputs.tag }}.zip" | cut -d' ' -f1)
+          V="${{ steps.version.outputs.version }}"
+          sed -i '' -E "s/^  version \".*\"$/  version \"$V\"/" Casks/ledge.rb
+          sed -i '' -E "s/^  sha256 \".*\"$/  sha256 \"$SHA\"/" Casks/ledge.rb
+          if git diff --quiet Casks/ledge.rb; then
+            echo "cask already current"
+          else
+            git add Casks/ledge.rb
+            git commit -m "Point the Homebrew cask at ${{ steps.version.outputs.tag }}"
+            git push origin main
+          fi
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:

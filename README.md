@@ -59,37 +59,48 @@ SQLite index beside it is a cache you can delete at any moment.
   every read and write has been coordinated from the first commit for exactly
   that. When two machines disagree, both notes survive and the loser is labelled.
 
-## Download
+## Install
 
-**[Latest release →](https://github.com/lbeltramino/ledge/releases/latest)**
+Three ways, in order of how much they ask of you.
 
-Unpack the zip and move `Ledge.app` to `/Applications`.
+**Build it yourself** — no security prompt at all, because nothing was
+downloaded. Needs the Swift Command Line Tools, not Xcode:
 
-The build is **not notarised** — the signing and notarisation steps exist and are
-waiting on a Developer ID — so macOS blocks it the first time and asks you to
-vouch for it. Either way works:
+```sh
+git clone https://github.com/lbeltramino/ledge && cd ledge
+./Scripts/bundle.sh && cp -r build/Ledge.app /Applications/
+```
 
-**From System Settings.** Double-click Ledge, let it be refused, then open
-**System Settings → Privacy & Security**, scroll to *Security*, and click
-**Open Anyway** next to "Ledge was blocked". It stays allowed after that.
-(Right-click → Open no longer works as a bypass; Apple removed it in Sequoia.)
+**Homebrew** — one command, and `brew upgrade --cask ledge` after that:
 
-**From the terminal**, if you prefer one line:
+```sh
+brew tap lbeltramino/ledge https://github.com/lbeltramino/ledge
+brew install --cask --no-quarantine ledge
+```
+
+`--no-quarantine` is not a formality: it is you vouching for an app Apple has
+not checked. Leave it off and the app will not open.
+
+**[Download the zip](https://github.com/lbeltramino/ledge/releases/latest)** —
+unpack, move `Ledge.app` to `/Applications`, then let macOS refuse it once and
+allow it in **System Settings → Privacy & Security → Open Anyway**. (Right-click
+→ Open is not a bypass any more; Apple removed it in Sequoia.) Or:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Ledge.app
 ```
 
-Either one says the same thing: you vouch for this app. Do that only for
-software you are willing to vouch for — the zip has a SHA-256 beside it if you
-want to confirm the download first.
+> **Why any of this?** The build is signed, but only ad-hoc — there is no Apple
+> Developer ID behind it, so macOS cannot check who made it. Every path above
+> ends with you saying you trust it anyway. The zip ships with a SHA-256 if you
+> want to confirm what you got, and the whole thing builds from source in a few
+> seconds if you would rather not take anyone's word for it.
+>
+> Builds before **v0.2.1** were reported as *"damaged and can't be opened"* and
+> no amount of allowing helped — that one was a real defect in the bundle's
+> signature, fixed since. If you saw that, download again.
 
-> Builds before **v0.2.1** were reported as *"damaged and can't be opened"*, and
-> nothing in the interface could get past that — the app bundle's signature did
-> not cover its own resources, so it really was invalid. Fixed in v0.2.1; if you
-> saw that message, download again.
-
-Ledge has no Dock icon. It appears as a coloured stripe on the right edge of your
+Ledge has no Dock icon. It appears as a coloured stripe on the edge of your
 screen and as a small glyph in the menu bar. Notes land in `~/Documents/Ledge`.
 
 Every push to `main` also uploads a build as a workflow artifact, if you would
