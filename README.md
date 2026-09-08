@@ -53,6 +53,9 @@ SQLite index beside it is a cache you can delete at any moment.
 - **A highlighter.** `==like this==`, drawn as a marker swipe rather than a
   coloured rectangle — it overshoots, wobbles and presses harder where it
   started. Yellow, or pink on a yellow note.
+- **Find in a note.** `⌘F`, then `⌘G` to step through. Matches are struck in the
+  same marker, in a pen that is neither the highlighter nor the paper, with the
+  one you are on pressed harder.
 - **Links between notes.** `[[Another note]]` — ⌘-click follows it, and if no
   such note exists yet, following it makes one.
 - **Capture what you copied.** `⌥⌘V` turns the clipboard into a note.
@@ -314,6 +317,8 @@ change for that to work.
 | `⌘B` `⌘I` `⌘E` `⌘K` | Bold, italic, code, link |
 | `⌘⇧T` | Turn lines into tasks, or back |
 | `⌘⇧H` | Highlight the selection |
+| `⌘F` | Find in this note |
+| `⌘G` `⇧⌘G` | Next match, previous match |
 | `⇥` `⇧⇥` | Nest a list item, or take it back out |
 | `⌘⇧L` `⌘⇧1…3` | List, headings |
 

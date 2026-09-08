@@ -16,6 +16,8 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
     let textView = NoteTextView()
     private let scroll = NSScrollView()
     private let toolbar = NSStackView()
+    private let findBar = FindBar()
+    private var isFinding = false
     private let highlighter: MarkdownHighlighter
 
     private let record: NoteRecord
@@ -116,6 +118,21 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         buildToolbar()
         content.addSubview(toolbar)
 
+        findBar.isHidden = true
+        findBar.onQuery = { [weak self] query in self?.runFind(query) }
+        findBar.onStep = { [weak self] delta in self?.stepFind(delta) }
+        findBar.onClose = { [weak self] in self?.endFind() }
+        content.addSubview(findBar)
+
+        textView.strokeSeed = record.id
+        textView.findColour = { [weak self] current in
+            MarkerStroke.findColour(for: record.color,
+                                    dark: self?.window.effectiveAppearance.isDark ?? false,
+                                    current: current)
+        }
+        textView.onFind = { [weak self] in self?.beginFind() }
+        textView.onStepFind = { [weak self] delta in self?.stepFind(delta) }
+
         layout()
     }
 
@@ -156,10 +173,16 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
                                   width: width + 2, height: titleHeight)
         let toolbarHeight: CGFloat = 24
         toolbar.frame = NSRect(x: x - 9, y: inset - 4, width: width, height: toolbarHeight)
+
+        var textTop = content.bounds.height - top - titleHeight - 18
+        if isFinding {
+            findBar.frame = NSRect(x: x, y: textTop - FindBar.height, width: width,
+                                   height: FindBar.height)
+            textTop -= FindBar.height + 8
+        }
         scroll.frame = NSRect(x: x, y: inset + toolbarHeight + 10,
                               width: width,
-                              height: content.bounds.height - top - titleHeight - 18
-                                      - inset - toolbarHeight - 10)
+                              height: max(60, textTop - inset - toolbarHeight - 10))
         let visible = scroll.contentSize
         textView.frame = NSRect(x: 0, y: 0, width: visible.width,
                                 height: max(visible.height, textView.frame.height))
@@ -175,6 +198,35 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
     }
 
     func close() { window.performClose(nil) }
+
+    func beginFind() {
+        isFinding = true
+        findBar.isHidden = false
+        let dark = window.effectiveAppearance.isDark
+        findBar.tint(paper: Palette.paper(record.color, dark: dark), ink: Palette.ink(dark: dark))
+        layout()
+        findBar.focus()
+        runFind(findBar.query)
+    }
+
+    func endFind() {
+        isFinding = false
+        findBar.isHidden = true
+        textView.clearFind()
+        layout()
+        window.makeFirstResponder(textView)
+    }
+
+    private func runFind(_ query: String) {
+        let count = textView.find(query)
+        findBar.show(matches: count, current: textView.currentMatch)
+        if count > 0 { textView.scrollRangeToVisible(textView.findMatches[textView.currentMatch]) }
+    }
+
+    private func stepFind(_ delta: Int) {
+        let current = textView.stepMatch(delta)
+        findBar.show(matches: textView.findMatches.count, current: current)
+    }
 
     func syncBody(_ text: String) { textView.syncBody(text) }
 

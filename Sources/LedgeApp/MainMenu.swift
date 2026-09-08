@@ -36,11 +36,13 @@ enum MainMenu {
         add(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
         edit.addItem(.separator())
 
+        // Find is handled by the note itself — see NoteTextView.performKeyEquivalent
+        // — so this entry exists to show the shortcut, not to route it.
         let findItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let find = NSMenu(title: "Find")
-        let findAction = NSMenuItem(title: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
-        findAction.tag = Int(NSTextFinder.Action.showFindInterface.rawValue)
-        find.addItem(findAction)
+        find.addItem(NSMenuItem(title: "Find in note   ⌘F", action: nil, keyEquivalent: ""))
+        find.addItem(NSMenuItem(title: "Next   ⌘G", action: nil, keyEquivalent: ""))
+        find.addItem(NSMenuItem(title: "Previous   ⇧⌘G", action: nil, keyEquivalent: ""))
         findItem.submenu = find
         edit.addItem(findItem)
 

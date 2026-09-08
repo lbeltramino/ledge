@@ -50,6 +50,8 @@ final class NoteCardView: NSView {
     private let expandButton = ExpandButton()
     let resizeHandle = ResizeHandle()
     private lazy var chrome = NoteChromeBar(color: color)
+    private lazy var findBar = FindBar()
+    private var isFinding = false
 
     var onColor: ((NoteColor) -> Void)?
     var onDelete: (() -> Void)?
@@ -140,6 +142,8 @@ final class NoteCardView: NSView {
         if let storage = textView.textStorage { markdown.highlight(storage) }
         highlighter = markdown
         textView.onChange = { [weak self] in self?.onEdit?(self?.textView.string ?? "") }
+        textView.onFind = { [weak self] in self?.beginFind() }
+        textView.onStepFind = { [weak self] delta in self?.stepFind(delta) }
         textView.onBeginEditing = { [weak self] in
             self?.setEditing(true)
             self?.onBeginEditing?()
@@ -176,6 +180,17 @@ final class NoteCardView: NSView {
         addSubview(chrome)
         addSubview(resizeHandle)
         resizeHandle.alphaValue = 0
+
+        findBar.isHidden = true
+        findBar.onQuery = { [weak self] query in self?.runFind(query) }
+        findBar.onStep = { [weak self] delta in self?.stepFind(delta) }
+        findBar.onClose = { [weak self] in self?.endFind() }
+        addSubview(findBar)
+
+        textView.findColour = { [weak self] current in
+            guard let self else { return .systemBlue.withAlphaComponent(0.3) }
+            return MarkerStroke.findColour(for: color, dark: isDark, current: current)
+        }
 
         // Nothing but paper until you commit to the note. Reading it should not
         // put five buttons in front of you.
@@ -288,6 +303,40 @@ final class NoteCardView: NSView {
         applyColors()
     }
 
+    // MARK: - find inside the note
+
+    /// ⌘F inside a note. The matches are drawn with the same marker stroke as a
+    /// highlight, in a different pen, so searching looks like the rest of the
+    /// app rather than like a system find bar on a sticky note.
+    func beginFind() {
+        isFinding = true
+        findBar.isHidden = false
+        findBar.tint(paper: Palette.paper(color, dark: isDark), ink: Palette.ink(dark: isDark))
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        findBar.focus()
+        runFind(findBar.query)
+    }
+
+    func endFind() {
+        isFinding = false
+        findBar.isHidden = true
+        textView.clearFind()
+        needsLayout = true
+        window?.makeFirstResponder(textView)
+    }
+
+    private func runFind(_ query: String) {
+        let count = textView.find(query)
+        findBar.show(matches: count, current: textView.currentMatch)
+        if count > 0 { textView.scrollRangeToVisible(textView.findMatches[textView.currentMatch]) }
+    }
+
+    private func stepFind(_ delta: Int) {
+        let current = textView.stepMatch(delta)
+        findBar.show(matches: textView.findMatches.count, current: current)
+    }
+
     func applyLean() {
         guard !isDetached else { layer?.transform = CATransform3DIdentity; return }
         let degrees = jitter.cardRotation(focused: isEditing)
@@ -398,7 +447,11 @@ final class NoteCardView: NSView {
             ? bounds.width - grip - 2 : 2
         let gripY = horizontalStrip ? above + 2 : bounds.height - grip - 2
         resizeHandle.frame = NSRect(x: gripX, y: gripY, width: grip, height: grip)
-        let top = above + pad + titleHeight + Metrics.Card.titleGap
+        var top = above + pad + titleHeight + Metrics.Card.titleGap
+        if isFinding {
+            findBar.frame = NSRect(x: left, y: top, width: contentWidth, height: FindBar.height)
+            top += FindBar.height + 6
+        }
         scroll.frame = NSRect(x: left, y: top,
                               width: contentWidth,
                               height: max(0, bounds.height - top - pad - NoteChromeBar.height - 6))
@@ -519,6 +572,14 @@ final class NoteTextView: NSTextView {
     }
 
     private func drawMarkerStrokes(in rect: NSRect) {
+        // Search results first, so a real highlight sits on top of one.
+        for (index, match) in findMatches.enumerated() {
+            let colour = findColour(index == currentMatch)
+            for box in rects(for: match) where box.intersects(rect) && box.width > 1 {
+                MarkerStroke.draw(in: box, colour: colour, seed: strokeSeed, index: 900 + index)
+            }
+        }
+
         guard let storage = textStorage else { return }
         var run = 0
         storage.enumerateAttribute(MarkerStroke.attribute,
@@ -537,8 +598,56 @@ final class NoteTextView: NSTextView {
     var onEscape: (() -> Void)?
     /// A `[[link]]` was followed.
     var onOpenLink: ((String) -> Void)?
+    /// ⌘F, and ⌘G / ⇧⌘G once it is open.
+    var onFind: (() -> Void)?
+    var onStepFind: ((Int) -> Void)?
     /// Keeps a highlight's wobble the same on every redraw.
     var strokeSeed: String = ""
+
+    /// Search results, kept beside the text rather than in it.
+    ///
+    /// Marking matches as attributes would edit the text storage, which would
+    /// make every search look like a change and start the save timer. Nothing
+    /// about finding should be able to touch the file.
+    private(set) var findMatches: [NSRange] = []
+    private(set) var currentMatch = 0
+    var findColour: (Bool) -> NSColor = { _ in .systemBlue.withAlphaComponent(0.3) }
+
+    @discardableResult
+    func find(_ query: String) -> Int {
+        let text = string as NSString
+        findMatches = []
+        currentMatch = 0
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { needsDisplay = true; return 0 }
+
+        var from = 0
+        while from < text.length {
+            let found = text.range(of: needle, options: [.caseInsensitive],
+                                   range: NSRange(location: from, length: text.length - from))
+            guard found.location != NSNotFound else { break }
+            findMatches.append(found)
+            from = found.location + max(1, found.length)
+        }
+        needsDisplay = true
+        return findMatches.count
+    }
+
+    /// Steps to the next or previous match, wrapping around.
+    @discardableResult
+    func stepMatch(_ delta: Int) -> Int {
+        guard !findMatches.isEmpty else { return 0 }
+        currentMatch = (currentMatch + delta + findMatches.count) % findMatches.count
+        scrollRangeToVisible(findMatches[currentMatch])
+        needsDisplay = true
+        return currentMatch
+    }
+
+    func clearFind() {
+        findMatches = []
+        currentMatch = 0
+        needsDisplay = true
+    }
 
 
     /// Enter inside a list continues it, the way every editor worth using does.
@@ -606,6 +715,8 @@ final class NoteTextView: NSTextView {
         case "l" where shift: MarkdownEditing.togglePrefix(self, "- "); return true
         case "t" where shift: MarkdownEditing.toggleTask(self); return true
         case "h" where shift: MarkdownEditing.wrap(self, with: "=="); return true
+        case "f" where !shift: onFind?(); return true
+        case "g": onStepFind?(shift ? -1 : 1); return true
         case "." where shift: MarkdownEditing.togglePrefix(self, "> "); return true
         case "1" where shift: MarkdownEditing.togglePrefix(self, "# "); return true
         case "2" where shift: MarkdownEditing.togglePrefix(self, "## "); return true

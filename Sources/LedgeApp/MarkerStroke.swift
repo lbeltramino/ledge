@@ -29,6 +29,24 @@ enum MarkerStroke {
         note == .butter ? .coral : .butter
     }
 
+    /// A second pen, for search results, that is neither the paper nor the
+    /// highlighter — so a `==highlight==` and a match you are stepping through
+    /// never look like the same thing.
+    static func findPen(for note: NoteColor) -> NoteColor {
+        let highlight = pen(for: note)
+        for candidate in [NoteColor.blue, .lavender, .green] where candidate != note && candidate != highlight {
+            return candidate
+        }
+        return .lavender
+    }
+
+    static func findColour(for note: NoteColor, dark: Bool, current: Bool) -> NSColor {
+        let base = Palette.tab(findPen(for: note))
+        let alpha: CGFloat = current ? (dark ? 0.52 : 0.62) : (dark ? 0.24 : 0.30)
+        return base.blended(withFraction: 0.10, of: .white)?.withAlphaComponent(alpha)
+            ?? base.withAlphaComponent(alpha)
+    }
+
     static func colour(for note: NoteColor, dark: Bool) -> NSColor {
         let base = Palette.tab(pen(for: note))
         return dark

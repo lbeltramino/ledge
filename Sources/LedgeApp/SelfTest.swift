@@ -231,6 +231,49 @@ enum SelfTest {
         }
     }
 
+    /// Find inside a note.
+    static func checkFind() {
+        var note = Note(title: "Groceries", color: .green)
+        note.body = "apple and Apple and pineapple\nbread"
+        let record = NoteRecord(note: note, filename: "Groceries.md", mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note.body)
+        card.frame = NSRect(x: 0, y: 0, width: 340, height: 260)
+        card.layoutSubtreeIfNeeded()
+
+        var edits = 0
+        card.onEdit = { _ in edits += 1 }
+        let before = card.textView.string
+
+        check(card.textView.find("apple") == 3,
+              "finds every occurrence, whatever the case: \(card.textView.find("apple"))")
+        check(card.textView.find("BREAD") == 1, "and is not fussy about case going the other way")
+        check(card.textView.find("zebra") == 0, "and finds nothing that is not there")
+
+        // The one that matters: searching a note is not editing it.
+        check(card.textView.string == before, "searching does not change a single character")
+        check(edits == 0,
+              "searching does not report an edit — otherwise every search would "
+              + "start the save timer and rewrite the file")
+
+        _ = card.textView.find("apple")
+        check(card.textView.stepMatch(1) == 1, "next goes to the second match")
+        check(card.textView.stepMatch(1) == 2, "and the third")
+        check(card.textView.stepMatch(1) == 0, "and wraps round to the first")
+        check(card.textView.stepMatch(-1) == 2, "previous wraps the other way")
+
+        card.textView.clearFind()
+        check(card.textView.findMatches.isEmpty, "closing find forgets the matches")
+
+        // The result pen has to be told apart from a real highlight.
+        for paper in NoteColor.allCases {
+            let find = MarkerStroke.findPen(for: paper)
+            let highlight = MarkerStroke.pen(for: paper)
+            check(find != highlight && find != paper,
+                  "on \(paper.rawValue) paper, a result (\(find.rawValue)) is neither the "
+                  + "highlighter (\(highlight.rawValue)) nor the page")
+        }
+    }
+
     static func checkMarkdown() {
         let source = """
         # Heading
@@ -683,6 +726,7 @@ enum SelfTest {
         checkFormattingStaysOnItsLine()
         checkHighlightReadsOnPaper()
         checkScopedHighlighting()
+        checkFind()
         checkMarkdownEditing()
         checkCodeFormatting()
         checkChromeDegradation()
