@@ -235,14 +235,28 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
     // MARK: - applying
 
     func highlight(_ storage: NSTextStorage) {
-        let full = NSRange(location: 0, length: storage.length)
-        guard full.length > 0 else { return }
+        highlight(storage, in: NSRange(location: 0, length: storage.length))
+    }
+
+    /// Re-applies the rules over `range`, which must start and end on line
+    /// boundaries — `^` and `$` are matched against the range's edges.
+    func highlight(_ storage: NSTextStorage, in range: NSRange) {
+        guard range.length > 0 else { return }
 
         storage.beginEditing()
-        storage.setAttributes([.font: baseFont, .foregroundColor: ink], range: full)
+        storage.setAttributes([.font: baseFont, .foregroundColor: ink], range: range)
         let text = storage.string
         for rule in rules {
-            rule.regex.enumerateMatches(in: text, options: [], range: full) { match, _, _ in
+            // Two separate permissions, and both are needed. `transparentBounds`
+            // lets a lookbehind read the text before the range — without it the
+            // indented-code rule cannot see the blank line that qualifies its
+            // block, and the block silently stops being code. `withoutAnchoring
+            // Bounds` stops `^` and `$` matching at the range's edges just
+            // because they are edges; the range is always aligned to line
+            // boundaries, so they still land where they should.
+            rule.regex.enumerateMatches(in: text,
+                                        options: [.withTransparentBounds, .withoutAnchoringBounds],
+                                        range: range) { match, _, _ in
                 guard let match else { return }
                 rule.apply(storage, match, self)
             }
@@ -250,14 +264,52 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         storage.endEditing()
     }
 
+    /// The smallest range that can be re-highlighted correctly after an edit.
+    ///
+    /// Paragraph bounds are not enough on their own: a fenced code block spans
+    /// lines, and re-running the rules over half of one would style it as
+    /// ordinary text. So the range grows to swallow any fence it lands inside —
+    /// which is rare, and cheap to detect.
+    static func dirtyRange(for edited: NSRange, in text: NSString) -> NSRange {
+        var range = text.lineRange(for: NSRange(location: min(edited.location, text.length),
+                                                length: min(edited.length, text.length - min(edited.location, text.length))))
+
+        let fences = fenceLines(in: text)
+        guard !fences.isEmpty else { return range }
+
+        // An odd number of fences before the start means the edit began inside a
+        // block; the same at the end means it finished inside one.
+        if let opening = fences.last(where: { $0.location < range.location }),
+           fences.filter({ $0.location < range.location }).count % 2 == 1 {
+            range = NSRange(location: opening.location, length: range.upperBound - opening.location)
+        }
+        if let closing = fences.first(where: { $0.location >= range.upperBound }),
+           fences.filter({ $0.location < range.upperBound }).count % 2 == 1 {
+            range.length = closing.upperBound - range.location
+        }
+        return NSRange(location: range.location,
+                       length: min(range.length, text.length - range.location))
+    }
+
+    private static let fenceRegex = try? NSRegularExpression(
+        pattern: "^(?:```|~~~)[^\n]*$", options: [.anchorsMatchLines])
+
+    private static func fenceLines(in text: NSString) -> [NSRange] {
+        fenceRegex?.matches(in: text as String,
+                            range: NSRange(location: 0, length: text.length)).map(\.range) ?? []
+    }
+
     func textStorage(_ textStorage: NSTextStorage,
                      didProcessEditing editedMask: NSTextStorageEditActions,
                      range editedRange: NSRange, changeInLength delta: Int) {
         guard editedMask.contains(.editedCharacters) else { return }
-        // Re-running on the whole note is fine: a sticky note is short, and
-        // paragraph-scoped highlighting gets multi-line spans wrong.
+        // Only the lines that changed, grown to cover any fenced block they sit
+        // inside. Re-running over the whole note cost 26 ms a keystroke at a
+        // thousand lines, which is a stutter you can feel.
+        let dirty = MarkdownHighlighter.dirtyRange(for: editedRange,
+                                                   in: textStorage.string as NSString)
         DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated { self?.highlight(textStorage) }
+            MainActor.assumeIsolated { self?.highlight(textStorage, in: dirty) }
         }
     }
 }

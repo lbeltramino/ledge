@@ -138,6 +138,30 @@ while you are trying it out:
 LEDGE_FOLDER=/tmp/notes ./build/Ledge.app/Contents/MacOS/Ledge
 ```
 
+## What it costs
+
+Measured on an idle Mac with five notes, by `--diagnose` and by macOS itself:
+
+| | |
+|---|---|
+| Memory | **12 MB** — the `phys_footprint` Activity Monitor shows |
+| CPU, idle | **0.0%** across ten one-second samples |
+| Threads | 3 |
+| Highlighting | **0.1 ms** per keystroke, at 20 lines or at 1000 |
+
+Resident size reads around 68 MB, and almost all of that is shared AppKit pages
+every Mac app maps. The number that costs you something is the footprint.
+
+Nothing polls. The deck sleeps until the pointer reaches the edge, the folder is
+watched by FSEvents rather than scanned, notes are written 250 ms after you stop
+typing, and the update check is one request a day that you can switch off.
+
+The highlighting figure took a fix to earn: the highlighter re-styled the whole
+note on every keystroke, which was 26 ms a key at a thousand lines — a stutter
+you can feel. It now restyles only the lines that changed, grown to swallow any
+fenced block they sit inside, and the cost stopped depending on how long the
+note is.
+
 ## When something looks wrong
 
 ```sh

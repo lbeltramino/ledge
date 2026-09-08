@@ -173,6 +173,64 @@ enum SelfTest {
         }
     }
 
+    /// Highlighting only the changed lines has to give the same answer as
+    /// highlighting everything — including when the edit lands inside a fenced
+    /// block, which spans lines and is the reason this was not done sooner.
+    static func checkScopedHighlighting() {
+        let documents = [
+            "plain text\nmore text",
+            "# Heading\n- a\n- b",
+            "before\n```swift\nlet a = 1\nlet b = 2\n```\nafter",
+            "~~~\nfenced\n~~~\n\n    indented\n",
+            "a ==mark== and `code`\n- [ ] task\n[[link]] #tag",
+        ]
+
+        for (index, document) in documents.enumerated() {
+            let text = document as NSString
+
+            let full = NSTextStorage(string: document)
+            MarkdownHighlighter(baseFont: .systemFont(ofSize: 14), ink: .black, accent: .blue)
+                .highlight(full)
+
+            // Now the same document, brought up to date one line at a time, the
+            // way typing does it.
+            let scoped = NSTextStorage(string: document)
+            let piecemeal = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14),
+                                                ink: .black, accent: .blue)
+            // Walk it a line at a time, the way typing does. Stepping character
+            // by character and skipping newlines leaves a blank line in no range
+            // at all, which is a flaw in the simulation and not in the code.
+            var cursor = 0
+            while cursor < text.length {
+                let line = text.lineRange(for: NSRange(location: cursor, length: 0))
+                let dirty = MarkdownHighlighter.dirtyRange(for: line, in: text)
+                piecemeal.highlight(scoped, in: dirty)
+                cursor = max(line.upperBound, cursor + 1)
+            }
+
+            var differences = 0
+            var where_ = ""
+            full.enumerateAttributes(in: NSRange(location: 0, length: full.length)) { attrs, range, _ in
+                let other = scoped.attributes(at: range.location, effectiveRange: nil)
+                let fontDiffers = (attrs[.font] as? NSFont) != (other[.font] as? NSFont)
+                let backDiffers = (attrs[.backgroundColor] as? NSColor) != (other[.backgroundColor] as? NSColor)
+                if fontDiffers || backDiffers {
+                    differences += 1
+                    if where_.isEmpty {
+                        where_ = " — at \(text.substring(with: range).debugDescription): "
+                            + (fontDiffers ? "font \((attrs[.font] as? NSFont)?.fontName ?? "-") vs "
+                               + "\((other[.font] as? NSFont)?.fontName ?? "-") " : "")
+                            + (backDiffers ? "background \(attrs[.backgroundColor] == nil ? "none" : "set") vs "
+                               + "\(other[.backgroundColor] == nil ? "none" : "set")" : "")
+                    }
+                }
+            }
+            check(differences == 0,
+                  "document \(index + 1) highlights the same line by line as all at once"
+                  + (differences == 0 ? "" : where_))
+        }
+    }
+
     static func checkMarkdown() {
         let source = """
         # Heading
@@ -624,6 +682,7 @@ enum SelfTest {
         checkMarkdown()
         checkFormattingStaysOnItsLine()
         checkHighlightReadsOnPaper()
+        checkScopedHighlighting()
         checkMarkdownEditing()
         checkCodeFormatting()
         checkChromeDegradation()

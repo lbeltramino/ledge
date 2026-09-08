@@ -26,6 +26,15 @@ enum Diagnose {
         print("")
         print("highlight")
         highlightSupport()
+        print("")
+        print("footprint")
+        Footprint.report("at rest")
+        for lines in [20, 200, 1000] {
+            print(String(format: "    highlight %4d lines  %.1f ms per keystroke",
+                         lines, Footprint.highlightCost(lines: lines)))
+        }
+        Footprint.report("after highlighting")
+
         print(String(repeating: "─", count: 62))
         print("Paste this whole output back.")
     }
