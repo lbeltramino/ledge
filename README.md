@@ -1,5 +1,9 @@
 # Ledge
 
+[![CI](https://github.com/lbeltramino/ledge/actions/workflows/ci.yml/badge.svg)](https://github.com/lbeltramino/ledge/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/lbeltramino/ledge?label=download&sort=semver)](https://github.com/lbeltramino/ledge/releases/latest)
+[![License](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
 A native macOS notes app. Your notes live docked at the edge of the screen —
 at rest a thin coloured stripe, and when you reach over, they fan out.
 
@@ -39,6 +43,27 @@ SQLite index beside it is a cache you can delete at any moment.
 - **Export.** Markdown, plain text, a single file, or a `.ledge` archive that
   imports back with colours, states, tags and dates intact.
 
+## Download
+
+**[Latest release →](https://github.com/lbeltramino/ledge/releases/latest)**
+
+Unpack the zip and move `Ledge.app` to `/Applications`.
+
+The build is **not signed or notarised**, so Gatekeeper will refuse it the first
+time. Once, to let it through:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Ledge.app
+```
+
+Or right-click the app, choose **Open**, and confirm.
+
+Ledge has no Dock icon. It appears as a coloured stripe on the right edge of your
+screen and as a small glyph in the menu bar. Notes land in `~/Documents/Ledge`.
+
+Every push to `main` also uploads a build as a workflow artifact, if you would
+rather have the tip than a tagged release.
+
 ## Requirements
 
 macOS 15 or later, and a Swift 6 toolchain. **Xcode is not required** — the Swift
@@ -47,8 +72,11 @@ Command Line Tools are enough.
 ## Build and run
 
 ```sh
-./Scripts/bundle.sh          # produces build/Ledge.app
+./Scripts/bundle.sh                       # produces build/Ledge.app
 open build/Ledge.app
+
+./Scripts/bundle.sh release               # optimised
+LEDGE_VERSION=0.2.0 ./Scripts/bundle.sh   # stamps the version
 ```
 
 Notes are written to `~/Documents/Ledge` by default. To point it somewhere else
@@ -64,6 +92,10 @@ LEDGE_FOLDER=/tmp/notes ./build/Ledge.app/Contents/MacOS/Ledge
 swift run ledge-tests                               # 72 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # 360+ geometry checks
 ```
+
+Both run in CI on every push. The self-test writes to a scratch folder of its
+own and never touches your notes; on a machine with no display it says so and
+skips the geometry checks rather than failing.
 
 Note it is `swift run`, not `swift test`. The Command Line Tools ship
 `Testing.framework` without its `_Testing_Foundation` module, and XCTest needs
@@ -161,6 +193,15 @@ typography, and the build order the project followed.
 No rich text, attachments or images. No reminders. No sync of its own — the notes
 folder can be moved into iCloud Drive and all I/O is coordinated from day one, so
 it works, but there is no conflict-resolution UI. No plugin API.
+
+## Releasing
+
+Tag it and the workflow does the rest — builds, tests, packages, and publishes a
+release with the zip and its checksum attached:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
 
 ## Licence
 

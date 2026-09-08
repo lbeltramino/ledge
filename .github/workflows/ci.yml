@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Unit tests
+        # Not `swift test`: the suite is a plain executable target, because the
+        # Command Line Tools ship Testing.framework without _Testing_Foundation.
+        run: swift run ledge-tests
+
+      - name: Build Ledge.app
+        run: ./Scripts/bundle.sh release
+
+      - name: Geometry self-test
+        # Skips itself with a notice when the runner has no display.
+        run: ./build/Ledge.app/Contents/MacOS/Ledge --selftest
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent build/Ledge.app dist/Ledge.zip
+          shasum -a 256 dist/Ledge.zip | tee dist/Ledge.zip.sha256
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ledge-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

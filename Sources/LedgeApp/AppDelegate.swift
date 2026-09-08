@@ -12,18 +12,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController?
     private var keyMonitor: Any?
 
+    /// A scratch folder the self test owns, so it never writes into anyone's
+    /// real notes and always starts from the same fixtures.
+    private static let selfTestFolder = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ledge-selftest")
+
     static var notesFolder: URL {
         if let override = ProcessInfo.processInfo.environment["LEDGE_FOLDER"] {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
         }
+        if CommandLine.arguments.contains("--selftest") { return selfTestFolder }
         return FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ledge")
     }
 
+    /// Titles of deliberately different lengths: several checks are about a tab
+    /// being as long as its own title needs.
+    private static func writeSelfTestFixtures() {
+        let folder = notesFolder
+        try? FileManager.default.removeItem(at: folder)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let fixtures: [(String, NoteColor, String, String)] = [
+            ("Office", .blue, "a0", "- understand all the apis listed"),
+            ("Groceries", .green, "a1", "- apple\n- 4x banana\n- peanuts"),
+            ("Hold", .lavender, "a2", "- work on the clamshell"),
+            ("Side-projects", .butter, "a3", "- learn about the deck"),
+            ("Reading list", .coral, "a4", "```swift\nlet answer = 42\n```"),
+        ]
+        for (title, color, rank, body) in fixtures {
+            var note = Note(title: title, color: color, rank: rank)
+            note.body = body
+            try? Data(Frontmatter.serialize(note).utf8)
+                .write(to: folder.appendingPathComponent("\(title).md"))
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // no Dock icon, no menu bar
         MainMenu.install()                      // …but ⌘C still has to mean copy
+
+        if CommandLine.arguments.contains("--selftest") {
+            AppDelegate.writeSelfTestFixtures()
+            // and never inherit whatever layout this machine happens to have
+            UserDefaults.standard.removePersistentDomain(forName: "com.lisandro.Ledge.selftest")
+        }
 
         do {
             let store = try NoteStore(folder: AppDelegate.notesFolder)

@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-debug}"
+VERSION="${LEDGE_VERSION:-0.1.0}"
 APP="build/Ledge.app"
 
 swift build -c "$CONFIG" --product LedgeApp
@@ -35,8 +36,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>com.lisandro.Ledge</string>
     <key>CFBundleExecutable</key><string>Ledge</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <!-- No Dock icon, no menu bar. The deck is the whole interface. -->
     <key>LSUIElement</key><true/>

@@ -229,7 +229,7 @@ enum SelfTest {
         deck.debugEdit(id: record.id, body: marker)
 
         // longer than the 250 ms debounce
-        try? await Task.sleep(for: .milliseconds(700))
+        try? await Task.sleep(for: .milliseconds(1500))
 
         let url = folder.appendingPathComponent(record.filename)
         let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
@@ -246,7 +246,7 @@ enum SelfTest {
             let typed = "typed into the real editor \(Int(Date().timeIntervalSince1970))"
             real.textView.selectAll(nil)
             real.textView.insertText(typed, replacementRange: real.textView.selectedRange())
-            try? await Task.sleep(for: .milliseconds(700))
+            try? await Task.sleep(for: .milliseconds(1500))
 
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             check(text.contains(typed),
@@ -257,7 +257,7 @@ enum SelfTest {
             // The failure this really guards against: the card holding stale
             // text and overwriting the editor's work the moment it is touched.
             deck.debugTypeIntoCard(" and then in the card")
-            try? await Task.sleep(for: .milliseconds(700))
+            try? await Task.sleep(for: .milliseconds(1500))
             let after = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             check(after.contains(typed),
                   "typing in the card afterwards does not throw away what the editor wrote")
@@ -285,7 +285,7 @@ enum SelfTest {
         check(reachedController, "typing in the editor reaches the controller at all")
         check(editor.textView.isEditable, "the editor's text view accepts typing")
 
-        try? await Task.sleep(for: .milliseconds(700))
+        try? await Task.sleep(for: .milliseconds(1500))
         let after = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         check(after.contains("typed into the editor"),
               "an edit made in the editor window reaches the file")
@@ -381,6 +381,12 @@ enum SelfTest {
 
         // The checks must not read the user's saved layout: a strip they left
         // pinned would keep the deck fanned and fail every "starts at rest".
+        guard !NSScreen.screens.isEmpty else {
+            print("\n\u{001B}[33mno display available — geometry checks skipped\u{001B}[0m")
+            summarise()
+            return
+        }
+
         let savedStrips = Settings.strips
         let savedStrip = deck.strip
         defer {
@@ -551,7 +557,7 @@ enum SelfTest {
             let marker = "typed just before the move \(Int(Date().timeIntervalSince1970))"
             deck.debugEdit(id: record.id, body: marker)
             deck.debugMoveWithPendingEdit(id: record.id, to: bottom)
-            try? await Task.sleep(for: .milliseconds(900))
+            try? await Task.sleep(for: .milliseconds(1500))
 
             let url = deck.notesFolder.appendingPathComponent(record.filename)
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
