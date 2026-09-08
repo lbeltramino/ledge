@@ -60,8 +60,11 @@ final class NoteChromeBar: NSView {
         let swatch = max(10, Metrics.Card.titleSize * 0.95)
         let gap = max(5, Metrics.Card.titleSize * 0.5)
         let swatches = CGFloat(NoteColor.allCases.count) * (swatch + gap)
+        // Measured at scale 1 on purpose: `fitScale` is derived from this, and
+        // deriving it from the already-scaled buttons makes the two chase each
+        // other and the row twitch on every layout.
         let buttons = [deleteButton, archiveButton, closeButton]
-            .reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width + 4 }
+            .reduce(CGFloat(0)) { $0 + $1.unscaledWidth + 4 }
         return ceil(swatches + buttons + 6)
     }
 
@@ -95,6 +98,12 @@ final class NoteChromeBar: NSView {
                                   owner: self)
         addTrackingArea(area)
         tracking = area
+    }
+
+    /// Every control's position, for checking that nothing moves when it should
+    /// not.
+    var controlFrames: [NSRect] {
+        [deleteButton.frame, archiveButton.frame, closeButton.frame] + swatchRects.map { $0.1 }
     }
 
     /// True when any two controls have been squeezed into each other — the one
@@ -149,8 +158,9 @@ final class NoteChromeBar: NSView {
         let point = convert(event.locationInWindow, from: nil)
         guard let picked = swatchRects.first(where: { $0.1.insetBy(dx: -3, dy: -3).contains(point) })?.0
         else { return }
+        // Not flashPress() on the whole row: the feedback for picking a colour
+        // is the ring moving to it.
         color = picked
-        flashPress()
         onColor?(picked)
     }
 
@@ -209,6 +219,12 @@ final class ChromeButton: NSView {
     override var intrinsicContentSize: NSSize {
         NSSize(width: ceil((title as NSString).size(withAttributes: [.font: font]).width) + 13,
                height: 22)
+    }
+
+    /// What this button would measure before any squeezing.
+    var unscaledWidth: CGFloat {
+        let plain = NSFont.systemFont(ofSize: max(9, Metrics.Card.titleSize * 0.78), weight: .medium)
+        return ceil((title as NSString).size(withAttributes: [.font: plain]).width) + 13
     }
 
     override func updateTrackingAreas() {

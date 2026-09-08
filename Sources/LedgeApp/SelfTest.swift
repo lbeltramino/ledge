@@ -151,6 +151,39 @@ enum SelfTest {
     /// Squeezes the controls row at every width down to absurd, without needing
     /// a small display to do it. CI found this on a runner whose screen is a
     /// fraction of the size of the machine it was written on.
+    /// Pressing a control must not move anything, and laying the row out twice
+    /// must give the same answer both times.
+    static func checkPressAndSettle() {
+        let bar = NoteChromeBar(color: .blue)
+        bar.frame = NSRect(x: 0, y: 0, width: bar.minimumWidth + 30, height: NoteChromeBar.height)
+        bar.isInert = false
+        bar.layoutSubtreeIfNeeded()
+        bar.layout()
+
+        let before = bar.controlFrames
+        bar.flashPress()
+        bar.layout()
+        let after = bar.controlFrames
+
+        check(before == after,
+              "pressing a control leaves every control exactly where it was")
+        if let layer = bar.layer {
+            check(layer.anchorPoint == CGPoint(x: 0, y: 0),
+                  String(format: "the press does not move the layer's anchor (%.2f, %.2f) — "
+                         + "changing it shifts the view by half its size and leaves it there",
+                         layer.anchorPoint.x, layer.anchorPoint.y))
+        }
+
+        // laying out repeatedly must converge, not drift
+        var frames = [bar.controlFrames]
+        for _ in 0..<4 {
+            bar.layout()
+            frames.append(bar.controlFrames)
+        }
+        check(Set(frames.map { "\($0)" }).count == 1,
+              "laying the row out repeatedly settles instead of drifting")
+    }
+
     static func checkChromeDegradation() {
         let bar = NoteChromeBar(color: .blue)
         let natural = bar.minimumWidth
@@ -442,6 +475,7 @@ enum SelfTest {
         checkMarkdownEditing()
         checkCodeFormatting()
         checkChromeDegradation()
+        checkPressAndSettle()
 
         print("\n\u{001B}[1mLabel rendering\u{001B}[0m")
         checkLabelDirection()
