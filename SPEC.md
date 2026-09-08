@@ -470,7 +470,7 @@ A fence, so the scope stays honest:
 - ~~No per-display decks~~ → **strips**. A strip is one edge of one screen; a
   note carries its `strip:` in frontmatter, and moves between them by being
   dragged. On a laptop there is one and you never think about it.
-- No sync conflict merge UI — both copies are kept and flagged.
+- No sync conflict merge UI. Both copies are kept, and — see §13 — not yet flagged.
 - No plugin API.
 
 ---
@@ -502,7 +502,19 @@ Ledge/
 5. **Export and import.**
 6. **First run, accessibility, reduced motion, the polish pass.**
 
-## 13. Verifying the deck without eyes
+## 13. Written down but not built
+
+Kept honest rather than quietly dropped. Nothing below is implemented.
+
+| Planned | Where it is promised | State |
+|---|---|---|
+| **Sync conflict handling** — keep both copies, show the newer, flag the pair in All Notes | §3.3 | Not built. iCloud will produce conflict copies and Ledge treats them as two ordinary notes, which is survivable but silent. |
+| **Sandbox, Developer ID, notarisation, Sparkle** | §2 | Not built. Builds are unsigned; Gatekeeper blocks them on first launch. This is the gap between "runs" and "an app someone else can install". |
+| **`pressFeedback`** — 0.985 scale on press | §4.2 | Token defined, never applied. |
+| **First run fans the deck once on its own** | §9 | The welcome note is written, but the deck does not demonstrate itself. Less needed now that strips are pinned by default and therefore already open. |
+| **Tags** | §3.1, §7 | Round-trip through the file and are searchable, but there is no way to add or edit one. Today a tag only exists if you type it into the `.md` by hand. |
+
+## 14. Verifying the deck without eyes
 
 The deck is hand-computed frames, rotations and overlaps — the kind of thing
 that reads correctly in the source and is wrong on screen. `Ledge --selftest`

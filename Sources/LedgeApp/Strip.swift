@@ -93,6 +93,39 @@ extension NSScreen {
 
 extension Settings {
 
+    private static let folderBookmarkKey = "ledge.notesFolderBookmark"
+
+    /// Where the notes live, if it has been moved from the default.
+    ///
+    /// Stored as a security-scoped bookmark rather than a path, so it survives
+    /// the folder being renamed and will keep working if the app is ever
+    /// sandboxed. Falls back to nothing if the folder has gone.
+    static var notesFolderOverride: URL? {
+        guard let data = UserDefaults.standard.data(forKey: folderBookmarkKey) else { return nil }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data,
+                                 options: [.withSecurityScope],
+                                 relativeTo: nil,
+                                 bookmarkDataIsStale: &stale)
+            ?? URL(resolvingBookmarkData: data, options: [], relativeTo: nil,
+                   bookmarkDataIsStale: &stale)
+        else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        return url
+    }
+
+    static func setNotesFolder(_ url: URL) {
+        let data = (try? url.bookmarkData(options: [.withSecurityScope],
+                                          includingResourceValuesForKeys: nil, relativeTo: nil))
+            ?? (try? url.bookmarkData())
+        guard let data else { return }
+        UserDefaults.standard.set(data, forKey: folderBookmarkKey)
+    }
+
+    static func clearNotesFolder() {
+        UserDefaults.standard.removeObject(forKey: folderBookmarkKey)
+    }
+
     private static let stripsKey = "ledge.strips"
 
     static var strips: [StripConfig] {

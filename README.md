@@ -188,11 +188,23 @@ tools are preserved verbatim.
 `SPEC.md` has the full specification: motion tokens, geometry, palette,
 typography, and the build order the project followed.
 
+## Where the notes live
+
+`~/Documents/Ledge` by default, one Markdown file per note, with a hidden
+`.index.sqlite3` beside them that you can delete at any time.
+
+**Choose notes folder…** in the menu bar item points Ledge somewhere else, and
+offers to bring the notes with it. Put it in iCloud Drive and it syncs — every
+read and write is coordinated through `NSFileCoordinator`, so nothing has to
+change for that to work.
+
 ## Not in v1
 
-No rich text, attachments or images. No reminders. No sync of its own — the notes
-folder can be moved into iCloud Drive and all I/O is coordinated from day one, so
-it works, but there is no conflict-resolution UI. No plugin API.
+No rich text, attachments or images. No reminders. No plugin API. Tags round-trip
+through the file and are searchable, but nothing in the app adds one yet. And
+while the notes folder can live in iCloud Drive, sync conflicts are not handled:
+both copies are kept and neither is flagged. `SPEC.md` §13 lists everything that
+is written down and not yet built.
 
 ## Releasing
 

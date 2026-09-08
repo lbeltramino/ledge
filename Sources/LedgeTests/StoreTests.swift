@@ -215,6 +215,46 @@ enum StoreTests {
             c.equal(try await store.scan(), 0, "a no-op scan reparsed files")
         }
 
+        Runner.suite("Moving the notes folder")
+
+        await Runner.test("relocating takes the notes and leaves the index behind") { c in
+            let source = Sandbox()
+            let store = try NoteStore(folder: source.url)
+            _ = try await store.create(title: "Office", color: .coral, body: "- tickets")
+            let archived = try await store.create(title: "supercmd", body: "extension")
+            _ = try await store.archive(id: archived.id)
+
+            let destination = Sandbox()
+            c.equal(try NoteStore.relocateNotes(from: source.url, to: destination.url), 2)
+            c.equal(source.filenames().filter { $0.hasSuffix(".md") }.count, 0,
+                    "the old folder still holds notes")
+
+            let moved = try NoteStore(folder: destination.url)
+            _ = try await moved.scan()
+            c.equal(try await moved.records().count, 2, "the notes did not arrive")
+            c.equal(try await moved.deck().first?.color, .coral, "colour was lost in the move")
+            c.equal(try await moved.count(.archived), 1, "archived state was lost in the move")
+            c.equal(try await moved.search("tickets").count, 1, "search did not survive the move")
+        }
+
+        await Runner.test("moving into a folder that already has notes keeps both") { c in
+            let source = Sandbox()
+            let store = try NoteStore(folder: source.url)
+            _ = try await store.create(title: "Office", body: "mine")
+
+            let destination = Sandbox()
+            let other = try NoteStore(folder: destination.url)
+            _ = try await other.create(title: "Office", body: "theirs")
+
+            c.equal(try NoteStore.relocateNotes(from: source.url, to: destination.url), 1)
+            let both = try NoteStore(folder: destination.url)
+            _ = try await both.scan()
+            c.equal(try await both.records().count, 2,
+                    "a name clash on the way in cost a note")
+            let bodies = try await both.allNotes().map(\.body).sorted()
+            c.equal(bodies, ["mine", "theirs"], "the wrong note survived the clash")
+        }
+
         Runner.suite("Strips")
 
         await Runner.test("a note remembers its strip in the file, not the index") { c in

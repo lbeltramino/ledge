@@ -77,6 +77,8 @@ final class FloatingNote: NSObject {
     var body: String { card.textView.string }
     var cardView: NoteCardView { card }
 
+    func setColor(_ color: NoteColor) { card.color = color }
+
     func show(at origin: NSPoint) {
         let room = FloatingNote.shadowRoom
         panel.setFrameOrigin(NSPoint(x: origin.x - room, y: origin.y - room))

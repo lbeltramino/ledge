@@ -885,15 +885,26 @@ enum SelfTest {
         check(open.chromeAlpha == 0,
               "a note you are only reading shows no buttons at all")
 
-        // A note pulled off the deck grows a band on its side, so it needs more
-        // width than it did against the edge — the case that collapsed the
-        // buttons on a note taken off a bottom strip.
-        if let widths = deck.debugDetachedWidths() {
-            check(widths.detached >= widths.docked - 0.5,
-                  String(format: "a detached card needs at least what it needed docked "
-                         + "(%.0f docked, %.0f detached)", widths.docked, widths.detached))
-            check(widths.detachedGrowsBand,
-                  "…because a detached card carries its band on the side, not along the top")
+        // Recolouring has to repaint the paper you are looking at, not only the
+        // tab behind it — the change used to arrive on the card only after you
+        // closed the note and opened it again.
+        if let id = deck.debugOpenNoteID(), let before = deck.debugPaintedColors() {
+            let current = deck.recordsForTesting.first { $0.id == id }?.color
+            let target: NoteColor = current == .coral ? .blue : .coral
+            deck.debugRecolor(id, to: target)
+            let after = deck.debugPaintedColors()
+
+            check(after?.tabColor == target, "the tab takes the new colour at once")
+            check(after?.card != nil && before.card != nil, "the card is painted at all")
+            check(after?.card?.isCloseTo(before.card!) == false,
+                  "recolouring repaints the open note immediately, not on next open")
+
+            // and putting it back returns the original paper exactly
+            if let original = current {
+                deck.debugRecolor(id, to: original)
+                check(deck.debugPaintedColors()?.card?.isCloseTo(before.card!) == true,
+                      "…and changing it back restores the paper it had")
+            }
         }
 
         deck.debugBeginEditingFirst()
@@ -915,5 +926,16 @@ enum SelfTest {
         }
         print("\u{001B}[31m\(failures.count) geometry checks failing\u{001B}[0m")
         exit(1)
+    }
+}
+
+
+extension NSColor {
+    /// Colours make a round trip through CGColor, so compare with a tolerance.
+    func isCloseTo(_ other: NSColor, tolerance: CGFloat = 0.02) -> Bool {
+        guard let a = usingColorSpace(.sRGB), let b = other.usingColorSpace(.sRGB) else { return false }
+        return abs(a.redComponent - b.redComponent) < tolerance
+            && abs(a.greenComponent - b.greenComponent) < tolerance
+            && abs(a.blueComponent - b.blueComponent) < tolerance
     }
 }

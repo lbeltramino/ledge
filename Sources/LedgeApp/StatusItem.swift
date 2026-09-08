@@ -75,6 +75,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             add(menu, "Put floating notes back", #selector(redockAll), key: "")
         }
         add(menu, "Open notes folder", #selector(openFolder), key: "")
+        add(menu, "Choose notes folder…", #selector(chooseFolder), key: "")
         menu.addItem(.separator())
         add(menu, "Quit Ledge", #selector(quit), key: "q", modifiers: [.command])
     }
@@ -268,6 +269,57 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func openFolder() {
         NSWorkspace.shared.open(AppDelegate.notesFolder)
+    }
+
+    /// Points Ledge at a different folder — the one thing needed to keep notes
+    /// in iCloud Drive, since all file access is already coordinated.
+    @objc private func chooseFolder() {
+        NSApp.activate()
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = AppDelegate.notesFolder.deletingLastPathComponent()
+        panel.prompt = "Use this folder"
+        panel.message = "Where should Ledge keep your notes?"
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        guard chosen != AppDelegate.notesFolder else { return }
+
+        let existing = (try? FileManager.default.contentsOfDirectory(atPath: AppDelegate.notesFolder.path))?
+            .filter { $0.hasSuffix(".md") && !$0.hasPrefix(".") }.count ?? 0
+
+        var moveNotes = false
+        if existing > 0 {
+            let alert = NSAlert()
+            alert.messageText = existing == 1
+                ? "Move your note to the new folder?"
+                : "Move your \(existing) notes to the new folder?"
+            alert.informativeText = """
+                Move them and the files go with you. Leave them and Ledge shows \
+                whatever is already in the folder you picked; the old notes stay \
+                where they are, untouched.
+                """
+            alert.addButton(withTitle: "Move")
+            alert.addButton(withTitle: "Leave them")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: moveNotes = true
+            case .alertSecondButtonReturn: moveNotes = false
+            default: return
+            }
+        }
+
+        Task {
+            do {
+                try await workspace.relocate(to: chosen, movingNotes: moveNotes)
+            } catch {
+                let failed = NSAlert()
+                failed.messageText = "Ledge could not use that folder"
+                failed.informativeText = error.localizedDescription
+                failed.runModal()
+            }
+        }
     }
     @objc private func quit() { NSApp.terminate(nil) }
 }

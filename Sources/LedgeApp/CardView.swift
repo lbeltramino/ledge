@@ -49,7 +49,7 @@ final class NoteCardView: NSView {
     private var stripDragOrigin: NSPoint?
     private let expandButton = ExpandButton()
     let resizeHandle = ResizeHandle()
-    private lazy var chrome = NoteChromeBar(color: record.color)
+    private lazy var chrome = NoteChromeBar(color: color)
 
     var onColor: ((NoteColor) -> Void)?
     var onDelete: (() -> Void)?
@@ -59,6 +59,11 @@ final class NoteCardView: NSView {
     /// Kept separately from `record` so a rename shows immediately, without
     /// tearing the card down and losing the caret.
     var title: String { didSet { titleField.stringValue = title; needsDisplay = true } }
+
+    /// Kept separately from `record` for the same reason as `title`: a recolour
+    /// should repaint the paper you are looking at, not rebuild the card and
+    /// take your caret with it.
+    var color: NoteColor { didSet { applyColors(); needsDisplay = true } }
 
     private let titleField = NSTextField()
     private let scroll = NSScrollView()
@@ -70,6 +75,7 @@ final class NoteCardView: NSView {
     init(record: NoteRecord, body: String) {
         self.record = record
         self.title = record.displayTitle
+        self.color = record.color
         self.jitter = Jitter(id: record.id)
         super.init(frame: .zero)
         wantsLayer = true
@@ -125,7 +131,7 @@ final class NoteCardView: NSView {
         let markdown = MarkdownHighlighter(
             baseFont: Typography.noteBody(size: Metrics.Card.bodySize),
             ink: Palette.ink(dark: dark),
-            accent: Palette.tab(record.color).blended(withFraction: 0.4, of: Palette.ink(dark: dark))
+            accent: Palette.tab(color).blended(withFraction: 0.4, of: Palette.ink(dark: dark))
                 ?? Palette.ink(dark: dark)
         )
         textView.textStorage?.delegate = markdown
@@ -218,7 +224,7 @@ final class NoteCardView: NSView {
 
     func applyColors() {
         let dark = isDark
-        layer?.backgroundColor = Palette.paper(record.color, dark: dark, tint: jitter.paperTint).cgColor
+        layer?.backgroundColor = Palette.paper(color, dark: dark, tint: jitter.paperTint).cgColor
         let ink = Palette.ink(dark: dark)
         titleField.textColor = ink
         textView.textColor = ink.withAlphaComponent(0.92)
@@ -292,7 +298,7 @@ final class NoteCardView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         // The strip that was the tab — the same paper, a shade deeper.
-        Palette.stripe(record.color, dark: isDark).setFill()
+        Palette.stripe(color, dark: isDark).setFill()
         let strip = NSBezierPath(roundedRect: stripRect, xRadius: Metrics.Card.cornerRadius,
                                  yRadius: Metrics.Card.cornerRadius)
         strip.fill()
@@ -306,7 +312,7 @@ final class NoteCardView: NSView {
             NSRect(x: seam, y: 0, width: Metrics.Card.cornerRadius, height: bounds.height).fill()
         }
 
-        let stripInk = Palette.labelInk(record.color).withAlphaComponent(isDark ? 0.95 : 0.88)
+        let stripInk = Palette.labelInk(color).withAlphaComponent(isDark ? 0.95 : 0.88)
         if horizontal && !isDetached {
             VerticalLabel.drawHorizontal(title, in: stripRect, inset: Metrics.Tab.labelInset,
                                          size: Metrics.Tab.labelSize, color: stripInk)

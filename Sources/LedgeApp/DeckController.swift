@@ -169,6 +169,14 @@ final class DeckController {
 
     var notesFolder: URL { AppDelegate.notesFolder }
 
+    /// The workspace swapped its store; nothing cached here still applies.
+    func storeChanged() {
+        bodies.removeAll()
+        archivedCache.removeAll()
+        tearDownCard()
+        state = .rest
+    }
+
     /// The strip's own rectangle on screen — the tabs and the pill, not the
     /// transparent panel around them. Dropping a floating note here docks it,
     /// which is what lets a note cross a wide display from one strip to another.
@@ -1032,15 +1040,21 @@ final class DeckController {
         }
     }
 
+    /// Repaints everything showing this note straight away, then writes it.
+    /// Rebuilding the card instead made the new colour arrive only after you
+    /// closed the note and opened it again.
     private func recolor(_ id: String, to color: NoteColor) {
+        if let card, card.record.id == id { card.color = color }
+        floating[id]?.setColor(color)
+        editors[id]?.setColor(color)
+        tabs.first { $0.record.id == id }?.overrideColor = color
+        pill.colors = records.map { $0.id == id ? color : $0.color }
+
         Task {
             guard var note = try? await store.load(id: id) else { return }
             note.color = color
             _ = try? await store.save(note, touch: false)
-            await refresh()
-            if let open = state.noteID, open == id, floating[id] == nil {
-                tearDownCard(); buildCard(for: id); applyLayout(animated: false)
-            }
+            await workspace.refreshAll()
         }
     }
 
@@ -1212,6 +1226,20 @@ extension DeckController {
     func debugCardMinimumWidth() -> CGFloat? { card?.minimumWidth }
 
     func debugChromeOverlaps() -> Bool? { card?.chromeOverlaps }
+
+    func debugRecolor(_ id: String, to color: NoteColor) { recolor(id, to: color) }
+
+    func debugOpenNoteID() -> String? { state.noteID }
+
+    /// What the open card is *actually* painted, straight off its layer, and
+    /// which colour its tab believes it is. Deliberately not recomputed from the
+    /// palette: a check that derives the expected value the same way the drawing
+    /// does proves nothing.
+    func debugPaintedColors() -> (card: NSColor?, tabColor: NoteColor?)? {
+        guard let card, let id = state.noteID else { return nil }
+        let painted = card.layer?.backgroundColor.flatMap { NSColor(cgColor: $0) }
+        return (painted, tabs.first { $0.record.id == id }?.displayColor)
+    }
 
     /// What the open card needs docked, and what the same card would need once
     /// pulled off onto the desk.

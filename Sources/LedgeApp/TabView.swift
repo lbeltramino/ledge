@@ -22,6 +22,9 @@ final class NoteTabView: NSView {
     /// This note has been pulled off the deck and is sitting on the desk. Its
     /// tab stays, dimmed, so nothing reshuffles and you can see where it belongs.
     var isFloating = false { didSet { needsDisplay = true; updateAccessibility() } }
+    /// Set after a recolour, so the tab repaints without being rebuilt.
+    var overrideColor: NoteColor? { didSet { needsDisplay = true } }
+    var displayColor: NoteColor { overrideColor ?? record.color }
     /// True on a left-edge strip: the fold and the rounding swap sides.
     var mirrored = false { didSet { needsDisplay = true } }
     /// A bottom strip's tabs run across, wide and short, titles reading normally.
@@ -112,7 +115,7 @@ final class NoteTabView: NSView {
                            xRadius: radius, yRadius: radius)
 
         // The tab is the paper, not a coloured plastic marker for it.
-        let paper = Palette.paper(record.color, dark: false, tint: jitter.paperTint)
+        let paper = Palette.paper(displayColor, dark: false, tint: jitter.paperTint)
         paper.withAlphaComponent(isFloating ? 0.34 : 1).setFill()
         body.fill()
 
@@ -121,7 +124,7 @@ final class NoteTabView: NSView {
             body.fill()
         }
 
-        let ink = Palette.labelInk(record.color)
+        let ink = Palette.labelInk(displayColor)
 
         // The perforation, as on a pad: a dashed fold between the title and the
         // screen edge.

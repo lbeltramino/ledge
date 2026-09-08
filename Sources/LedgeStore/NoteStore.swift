@@ -150,6 +150,31 @@ public actor NoteStore {
         try index.setGeometry(id: id, width: width, height: height)
     }
 
+    /// Moves the note files from one folder to another, leaving the index
+    /// behind — it is derived, and rebuilds itself from whatever it finds.
+    ///
+    /// Static because it is a move *between* stores, not an operation on one.
+    @discardableResult
+    public static func relocateNotes(from source: URL, to destination: URL) throws -> Int {
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        var moved = 0
+        var taken = Set(try FileIO.noteFilenames(in: destination).map { $0.lowercased() })
+        for name in try FileIO.noteFilenames(in: source) {
+            var target = name
+            var n = 2
+            while taken.contains(target.lowercased()) {
+                let base = (name as NSString).deletingPathExtension
+                target = "\(base) \(n).md"
+                n += 1
+            }
+            taken.insert(target.lowercased())
+            try FileIO.move(from: source.appendingPathComponent(name),
+                            to: destination.appendingPathComponent(target))
+            moved += 1
+        }
+        return moved
+    }
+
     // MARK: - import
 
     /// Brings notes in from a `.ledge` archive.

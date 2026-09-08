@@ -157,6 +157,15 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
 
     func syncBody(_ text: String) { textView.syncBody(text) }
 
+    /// The editor is the same note on a bigger page, so it repaints too.
+    func setColor(_ color: NoteColor) {
+        let dark = NSApp.effectiveAppearance.isDark
+        window.backgroundColor = Palette.paper(color, dark: dark, tint: Jitter(id: record.id).paperTint)
+        highlighter.accent = Palette.tab(color)
+            .blended(withFraction: 0.35, of: Palette.ink(dark: dark)) ?? Palette.ink(dark: dark)
+        if let storage = textView.textStorage { highlighter.highlight(storage) }
+    }
+
     var isVisible: Bool { window.isVisible }
 
     func windowDidResize(_ notification: Notification) { layout() }

@@ -19,7 +19,7 @@ extension NSRect {
 @MainActor
 final class Workspace {
 
-    let store: NoteStore
+    private(set) var store: NoteStore
     private(set) var decks: [DeckController] = []
 
     var floating: [String: FloatingNote] = [:]
@@ -130,6 +130,34 @@ final class Workspace {
             guard let deck = primaryDeck else { return }
             await deck.expandFromAnywhere(id)
         }
+    }
+
+    // MARK: - moving the notes folder
+
+    /// Points Ledge at a different folder, optionally taking the notes along.
+    ///
+    /// The index is not moved: it is derived, and rebuilds from whatever is in
+    /// the new folder. Everything on screen is closed first, because a floating
+    /// note whose store has been swapped underneath it belongs to nothing.
+    func relocate(to folder: URL, movingNotes: Bool) async throws {
+        for editor in editors.values { editor.close() }
+        editors.removeAll()
+        for float in floating.values { float.close() }
+        floating.removeAll()
+        for deck in decks { deck.collapse() }
+
+        if movingNotes {
+            let source = await store.folder
+            if source != folder {
+                try NoteStore.relocateNotes(from: source, to: folder)
+            }
+        }
+
+        Settings.setNotesFolder(folder)
+        store = try NoteStore(folder: folder)
+        _ = try? await store.scan()
+        for deck in decks { deck.storeChanged() }
+        rebuildDecks()
     }
 
     var hasFloatingNotes: Bool { !floating.isEmpty }

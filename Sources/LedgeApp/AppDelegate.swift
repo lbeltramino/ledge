@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
         }
         if CommandLine.arguments.contains("--selftest") { return selfTestFolder }
+        if let chosen = Settings.notesFolderOverride { return chosen }
         return FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ledge")
