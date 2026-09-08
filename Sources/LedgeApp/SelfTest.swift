@@ -88,6 +88,91 @@ enum SelfTest {
     /// Scaling is where hand-computed layout goes wrong.
     /// The highlighter runs on every keystroke over the user's actual note. The
     /// one thing it must never do is change the text.
+    /// Formatting must stop at the end of its own line.
+    ///
+    /// Reported from a real note: a `# Notas` heading followed by a list left
+    /// the whole rest of the note set as a heading. Every line rule was compiled
+    /// with `dotMatchesLineSeparators`, so `(.+)$` ran to the end of the string.
+    static func checkFormattingStaysOnItsLine() {
+        let base = NSFont.systemFont(ofSize: 14)
+        let source = """
+        # Notas
+        - primero
+        - segundo
+
+        > una cita
+        texto normal
+        """
+        let highlighter = MarkdownHighlighter(baseFont: base, ink: .black, accent: .blue)
+        let storage = NSTextStorage(string: source)
+        highlighter.highlight(storage)
+        let text = source as NSString
+
+        func font(at needle: String) -> NSFont? {
+            let range = text.range(of: needle)
+            guard range.location != NSNotFound else { return nil }
+            return storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
+        }
+        func colour(at needle: String) -> NSColor? {
+            let range = text.range(of: needle)
+            guard range.location != NSNotFound else { return nil }
+            return storage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor
+        }
+
+        check((font(at: "Notas")?.pointSize ?? 0) > base.pointSize, "the heading is a heading")
+        check(font(at: "primero")?.pointSize == base.pointSize,
+              String(format: "the line after a heading is not a heading (%.0fpt vs %.0fpt)",
+                     font(at: "primero")?.pointSize ?? 0, base.pointSize))
+        check(font(at: "segundo")?.pointSize == base.pointSize,
+              "…nor is the one after that")
+        check(font(at: "texto normal")?.pointSize == base.pointSize,
+              "…nor anything further down the note")
+
+        // and the same for a quote, which had the identical pattern
+        let quoted = colour(at: "una cita")?.alphaComponent ?? 1
+        let after = colour(at: "texto normal")?.alphaComponent ?? 1
+        check(quoted < 1, "a quote is dimmed")
+        check(after == 1, "the line after a quote is not, "
+              + String(format: "(%.2f vs %.2f)", after, quoted))
+    }
+
+    /// How far apart two colours look, ignoring how bright they are.
+    ///
+    /// Contrast ratio is a luminance measure, and it is the wrong tool here: a
+    /// yellow marker on light blue paper is obvious to anyone looking at it and
+    /// scores 1.24:1, because both are light. Highlighters are told apart by
+    /// hue. This is a plain distance in sRGB, which is crude but measures the
+    /// thing that matters.
+    static func colourDistance(_ a: NSColor, _ b: NSColor) -> Double {
+        guard let x = a.usingColorSpace(.sRGB), let y = b.usingColorSpace(.sRGB) else { return 0 }
+        return max(abs(x.redComponent - y.redComponent),
+                   max(abs(x.greenComponent - y.greenComponent),
+                       abs(x.blueComponent - y.blueComponent)))
+    }
+
+    /// A highlighter that vanishes into the page is not a highlighter.
+    static func checkHighlightReadsOnPaper() {
+        for note in NoteColor.allCases {
+            for dark in [false, true] {
+                let paper = Palette.paper(note, dark: dark)
+                let stroke = MarkerStroke.colour(for: note, dark: dark)
+                // what the eye actually sees: the pen composited onto the paper
+                let over = paper.blended(withFraction: stroke.alphaComponent,
+                                         of: stroke.withAlphaComponent(1)) ?? paper
+
+                let apart = colourDistance(over, paper)
+                check(apart >= 0.10,
+                      String(format: "a %@ note's %@ highlight is visibly not its paper (%.2f apart)",
+                             note.rawValue, MarkerStroke.pen(for: note).rawValue, apart))
+
+                let ink = Palette.ink(dark: dark)
+                check(contrastRatio(ink, over) >= 4.5,
+                      String(format: "…and the words stay readable through it (%.1f:1)",
+                             contrastRatio(ink, over)))
+            }
+        }
+    }
+
     static func checkMarkdown() {
         let source = """
         # Heading
@@ -255,6 +340,31 @@ enum SelfTest {
         MarkdownEditing.code(block)
         check(block.string == "first line\nsecond line",
               "pressing it again unfences: \(block.string.debugDescription)")
+
+        // Markdown's other two ways of writing code, and the thing that looks
+        // like one of them and is not.
+        func attributesOf(_ source: String, at needle: String) -> (NSFont?, Any?) {
+            let h = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14), ink: .black, accent: .blue)
+            let storage = NSTextStorage(string: source)
+            h.highlight(storage)
+            let range = (source as NSString).range(of: needle)
+            guard range.location != NSNotFound else { return (nil, nil) }
+            return (storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont,
+                    storage.attribute(.backgroundColor, at: range.location, effectiveRange: nil))
+        }
+
+        let tilde = attributesOf("~~~\nlet a = 1\n~~~", at: "let a = 1")
+        check(tilde.0?.isFixedPitch == true && tilde.1 != nil,
+              "a ~~~ fence is a code block too — Markdown's other fence")
+
+        let indented = attributesOf("text\n\n    let b = 2\n", at: "let b = 2")
+        check(indented.0?.isFixedPitch == true && indented.1 != nil,
+              "four spaces after a blank line is a code block, which is what pasting "
+              + "from a terminal gives you")
+
+        let nested = attributesOf("- a\n\n    - nested\n", at: "- nested")
+        check(nested.0?.isFixedPitch != true && nested.1 == nil,
+              "a nested list item also starts with four spaces and must not become code")
     }
 
     static func checkMarkdownEditing() {
@@ -512,6 +622,8 @@ enum SelfTest {
 
         print("\n\u{001B}[1mMarkdown\u{001B}[0m")
         checkMarkdown()
+        checkFormattingStaysOnItsLine()
+        checkHighlightReadsOnPaper()
         checkMarkdownEditing()
         checkCodeFormatting()
         checkChromeDegradation()

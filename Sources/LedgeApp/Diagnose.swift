@@ -23,6 +23,9 @@ enum Diagnose {
         print("")
         print("code blocks")
         codeSupport()
+        print("")
+        print("highlight")
+        highlightSupport()
         print(String(repeating: "─", count: 62))
         print("Paste this whole output back.")
     }
@@ -112,6 +115,7 @@ enum Diagnose {
             ("indented four spaces", "text\n\n    let d = 4\n", "let d = 4"),
             ("tilde fence", "~~~\nlet e = 5\n~~~", "let e = 5"),
             ("inline across lines", "`one\ntwo`", "one"),
+            ("nested list, not code", "- a\n\n    - nested\n", "- nested"),
         ]
 
         for (name, source, needle) in samples {
@@ -131,6 +135,36 @@ enum Diagnose {
                          background != nil ? "yes" : "no ",
                          (paragraph?.headIndent ?? 0) > 0 ? "yes" : "no "))
         }
+    }
+
+    static func highlightSupport() {
+        let source = "plain ==marked== plain\n```\nlet a = 1\n```"
+        let h = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14), ink: .black, accent: .blue)
+        h.highlight = .systemYellow
+        let storage = NSTextStorage(string: source)
+        h.highlight(storage)
+        let text = source as NSString
+
+        func at(_ needle: String, _ key: NSAttributedString.Key) -> Any? {
+            let r = text.range(of: needle)
+            guard r.location != NSNotFound else { return nil }
+            return storage.attribute(key, at: r.location, effectiveRange: nil)
+        }
+        print("    ==marked== attribute   \(at("marked", MarkerStroke.attribute) != nil ? "applied" : "MISSING")")
+        print("    fence line background  \(at("```", .backgroundColor) != nil ? "yes" : "no")")
+        print("    code body background   \(at("let a = 1", .backgroundColor) != nil ? "yes" : "no")")
+
+        // and whether a laid-out card can find anything to draw a stroke on
+        var note = Note(title: "Marked", color: .green)
+        note.body = "plain ==marked== plain"
+        let record = NoteRecord(note: note, filename: "Marked.md", mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note.body)
+        card.frame = NSRect(x: 0, y: 0, width: 320, height: 200)
+        card.layoutSubtreeIfNeeded()
+        card.applyColors()
+        card.layoutSubtreeIfNeeded()
+        print("    TextKit in the card    \(card.textView.textLayoutManager == nil ? "1" : "2")")
+        print("    stroke segments        \(card.textView.markerSegmentCount())")
     }
 
     private static func inkPixels(in card: NoteCardView) -> Int {

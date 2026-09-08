@@ -40,6 +40,34 @@ enum Renderer {
         print("rendered \(sizes.count) icon sizes into \(directory.path)")
     }
 
+    /// A card showing the syntax, for looking at what the marker stroke does.
+    static func syntax() -> NSImage {
+        let size = NSSize(width: 430, height: 400)
+        return image(size: size) { _ in
+            var note = Note(title: "Groceries", color: .green)
+            note.body = """
+            # Shopping
+            Bring the ==reusable bags== this time.
+
+            - [x] bread and butter
+            - [ ] call the #plumber
+            - [ ] see [[Office]]
+
+            ```swift
+            let answer = 42
+            ```
+            """
+            let record = NoteRecord(note: note, filename: "Groceries.md",
+                                    mtime: 0, size: 0, hash: "")
+            let card = NoteCardView(record: record, body: note.body)
+            card.appearance = NSAppearance(named: .aqua)
+            card.frame = NSRect(origin: .zero, size: size)
+            card.textView.string = note.body
+            card.applyColors()
+            draw(card, at: .zero)
+        }
+    }
+
     static func run(into directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -48,7 +76,8 @@ enum Renderer {
         write(deck(state: .open), to: directory.appendingPathComponent("deck-open.png"))
         write(palette(), to: directory.appendingPathComponent("palette.png"))
         write(icon(size: 512), to: directory.appendingPathComponent("icon.png"))
-        print("rendered 5 images into \(directory.path)")
+        write(syntax(), to: directory.appendingPathComponent("syntax.png"))
+        print("rendered 6 images into \(directory.path)")
     }
 
     enum DeckState { case rest, fanned, open }

@@ -297,6 +297,91 @@ enum CoreTests {
             c.expect(Checkbox.progress(in: "no tasks here") == nil)
         }
 
+        Runner.suite("Editing keys")
+
+        await Runner.test("Tab indents the list item it is on") { c in
+            let text = "- one\n- two"
+            let lines = NSRange(location: 6, length: 5)   // the second line
+            c.equal(MarkdownText.shiftIndent(text, lines: lines, by: 1), "- one\n  - two")
+        }
+
+        await Runner.test("Shift-Tab takes a level back, and stops at the margin") { c in
+            c.equal(MarkdownText.shiftIndent("    - deep", lines: NSRange(location: 0, length: 10), by: -1),
+                    "  - deep")
+            c.equal(MarkdownText.shiftIndent("- flat", lines: NSRange(location: 0, length: 6), by: -1),
+                    "- flat", "outdenting past the margin should do nothing")
+        }
+
+        await Runner.test("a range past the end is refused, not fatal") { c in
+            c.expect(MarkdownText.shiftIndent("- a", lines: NSRange(location: 0, length: 999), by: 1) != nil,
+                     "a too-long range should be clamped")
+            c.expect(MarkdownText.shiftIndent("", lines: NSRange(location: 5, length: 5), by: 1) == nil,
+                     "an empty string has no list to indent")
+        }
+
+        await Runner.test("Tab on something that is not a list says so") { c in
+            c.expect(MarkdownText.shiftIndent("plain text", lines: NSRange(location: 0, length: 10), by: 1) == nil,
+                     "Tab should fall through to inserting a tab")
+        }
+
+        await Runner.test("Tab indents a whole selection, tasks and all") { c in
+            let text = "- [ ] a\n- [x] b"
+            c.equal(MarkdownText.shiftIndent(text, lines: NSRange(location: 0, length: 15), by: 1),
+                    "  - [ ] a\n  - [x] b")
+        }
+
+        await Runner.test("numbered lists renumber themselves") { c in
+            c.equal(MarkdownText.renumber("1. a\n1. b\n1. c"), "1. a\n2. b\n3. c",
+                    "typing 1. three times should still count")
+            c.equal(MarkdownText.renumber("1. a\n5. b"), "1. a\n2. b", "a wrong number is corrected")
+        }
+
+        await Runner.test("a nested numbered list starts again at one") { c in
+            c.equal(MarkdownText.renumber("1. a\n2. b\n  1. inner\n  1. inner\n3. c"),
+                    "1. a\n2. b\n  1. inner\n  2. inner\n3. c")
+        }
+
+        await Runner.test("indenting the third item makes it the first of its level") { c in
+            let text = "1. a\n2. b\n3. c"
+            c.equal(MarkdownText.shiftIndent(text, lines: NSRange(location: 10, length: 4), by: 1),
+                    "1. a\n2. b\n  1. c", "a nested item carrying on from three reads as a mistake")
+        }
+
+        await Runner.test("bullets are left alone by renumbering") { c in
+            c.equal(MarkdownText.renumber("- a\n- b"), "- a\n- b")
+        }
+
+        await Runner.test("backspace at the start of an item outdents before it deletes") { c in
+            let text = "  - nested"
+            guard let edit = MarkdownText.outdentOrUnmark(text, at: 4) else {
+                c.expect(false, "backspace did nothing on an indented item"); return
+            }
+            c.equal((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement),
+                    "- nested")
+        }
+
+        await Runner.test("…and then takes the marker off") { c in
+            let text = "- flat"
+            guard let edit = MarkdownText.outdentOrUnmark(text, at: 2) else {
+                c.expect(false, "backspace did nothing on a flat item"); return
+            }
+            c.equal((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement),
+                    "flat")
+        }
+
+        await Runner.test("backspace anywhere else is ordinary backspace") { c in
+            c.expect(MarkdownText.outdentOrUnmark("- flat", at: 4) == nil,
+                     "mid-word backspace was intercepted")
+            c.expect(MarkdownText.outdentOrUnmark("plain", at: 0) == nil,
+                     "backspace on a plain line was intercepted")
+        }
+
+        await Runner.test("quotes are list-shaped too") { c in
+            c.equal(MarkdownText.marker(of: "> quoted")?.kind, .quote)
+            c.equal(MarkdownText.shiftIndent("> quoted", lines: NSRange(location: 0, length: 8), by: 1),
+                    "  > quoted")
+        }
+
         Runner.suite("Links between notes")
 
         await Runner.test("a wikilink is found, with its name") { c in

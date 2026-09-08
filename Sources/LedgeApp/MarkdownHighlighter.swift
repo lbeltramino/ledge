@@ -14,6 +14,8 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
     var baseFont: NSFont
     var ink: NSColor
     var accent: NSColor
+    /// The colour a `==highlight==` is swiped in — the note's own hue, deepened.
+    var highlight: NSColor = .systemYellow.withAlphaComponent(0.45)
 
     private struct Rule {
         let regex: NSRegularExpression
@@ -29,8 +31,15 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         buildRules()
     }
 
+    /// Deliberately *without* `.dotMatchesLineSeparators`.
+    ///
+    /// It was added once so a fenced block could span lines, and it made every
+    /// line-oriented rule wrong: `^(#{1,6})\\s+(.+)$` stopped at the end of the
+    /// heading only by luck, and in practice swallowed the whole note below it.
+    /// The fenced rule matches across lines with `[\\s\\S]` instead, which needs
+    /// no option and cannot leak into anything else.
     private static func regex(_ pattern: String) -> NSRegularExpression? {
-        try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines, .dotMatchesLineSeparators])
+        try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
     }
 
     private func buildRules() {
@@ -42,7 +51,7 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         }
 
         // # Heading — the hashes recede, the words grow
-        rule("^(#{1,6})\\s+(.+)$") { storage, match, this in
+        rule("^(#{1,6})[ \\t]+([^\\n]+)$") { storage, match, this in
             let level = match.range(at: 1).length
             let scale = [1.55, 1.38, 1.24, 1.14, 1.07, 1.0][min(level - 1, 5)]
             let font = this.resized(this.baseFont, by: scale, bold: true)
@@ -71,6 +80,18 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             }
         }
 
+        // ==highlighted== — the syntax Obsidian and the CommonMark extensions
+        // use, so the file stays readable anywhere. The colour is not in the
+        // text: it comes from the note, which is what keeps one highlight
+        // portable and still not the same yellow in every note.
+        rule("(==)([^=\n]+)(==)") { storage, match, this in
+            storage.addAttribute(MarkerStroke.attribute, value: this.highlight,
+                                 range: match.range(at: 2))
+            storage.addAttribute(.foregroundColor, value: this.ink, range: match.range(at: 2))
+            this.fade(storage, match.range(at: 1), 0.22)
+            this.fade(storage, match.range(at: 3), 0.22)
+        }
+
         // [[links between notes]]
         rule(Wikilink.pattern) { storage, match, this in
             storage.addAttribute(.foregroundColor, value: this.accent, range: match.range(at: 1))
@@ -83,12 +104,12 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         }
 
         // - list item — the marker hangs and dims
-        rule("^\\s*([-*+]|\\d+\\.)\\s+") { storage, match, this in
+        rule("^[ \\t]*([-*+]|\\d+\\.)[ \\t]+") { storage, match, this in
             this.fade(storage, match.range(at: 1), 0.40)
         }
 
         // > quote
-        rule("^\\s*(>)\\s?(.*)$") { storage, match, this in
+        rule("^[ \\t]*(>)[ \\t]?([^\\n]*)$") { storage, match, this in
             this.fade(storage, match.range(at: 1), 0.35)
             storage.addAttribute(.foregroundColor,
                                  value: this.ink.withAlphaComponent(0.72),
@@ -114,7 +135,7 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         // ```fenced blocks``` — the whole run becomes one panel, fences
         // included, rather than three separately coloured lines. Declared before
         // the inline rules so it claims its range first.
-        rule("^```[^\n]*\n([\\s\\S]*?)^```[ \t]*$") { storage, match, this in
+        rule("^(```|~~~)[^\n]*\n([\\s\\S]*?)^\\1[ \t]*$") { storage, match, this in
             let whole = match.range
             storage.addAttribute(.font, value: this.mono(), range: whole)
             storage.addAttribute(.backgroundColor,
@@ -125,14 +146,35 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             paragraph.tailIndent = -10
             storage.addAttribute(.paragraphStyle, value: paragraph, range: whole)
             storage.addAttribute(.foregroundColor, value: this.ink.withAlphaComponent(0.88),
-                                 range: match.range(at: 1))
+                                 range: match.range(at: 2))
 
-            let body = match.range(at: 1)
+            let body = match.range(at: 2)
             this.fade(storage, NSRange(location: whole.location,
                                        length: max(0, body.location - whole.location)), 0.30)
             this.fade(storage, NSRange(location: body.upperBound,
                                        length: max(0, whole.upperBound - body.upperBound)), 0.30)
         }
+
+        // An indented code block: four spaces or a tab after a blank line.
+        // Markdown's other way of writing one, and what you get by pasting from
+        // a terminal.
+        rule("(?:(?<=\n\n)|\\A)((?:(?:[ ]{4}|\t)[^\n]*(?:\n|$))+)") { storage, match, this in
+            let block = match.range(at: 1)
+            let text = (storage.string as NSString).substring(with: block)
+            // A nested list item also begins with four spaces. It is not code.
+            let firstLine = text.components(separatedBy: "\n").first ?? ""
+            let stripped = String(firstLine.drop { $0 == " " || $0 == "\t" })
+            guard MarkdownText.marker(of: stripped) == nil else { return }
+
+            storage.addAttribute(.font, value: this.mono(), range: block)
+            storage.addAttribute(.backgroundColor,
+                                 value: this.ink.withAlphaComponent(0.07), range: block)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.firstLineHeadIndent = 10
+            paragraph.headIndent = 10
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: block)
+        }
+
         // `code`
         rule("(`)([^`\\n]+)(`)") { storage, match, this in
             storage.addAttribute(.font, value: this.mono(), range: match.range(at: 2))

@@ -47,7 +47,12 @@ SQLite index beside it is a cache you can delete at any moment.
 - **Tags you just type.** `#work` in the body is a tag; `# Heading` is a heading.
   Searchable, clickable, and gone the moment you delete the hashtag.
 - **Checklists.** `- [ ]` is a task. Click the box to tick it, and a finished one
-  steps back so what is left to do is what stands out. Enter continues the list.
+  steps back so what is left to do is what stands out. Enter continues the list,
+  Tab nests it, Shift-Tab takes it back out, and numbered lists renumber
+  themselves.
+- **A highlighter.** `==like this==`, drawn as a marker swipe rather than a
+  coloured rectangle — it overshoots, wobbles and presses harder where it
+  started. Yellow, or pink on a yellow note.
 - **Links between notes.** `[[Another note]]` — ⌘-click follows it, and if no
   such note exists yet, following it makes one.
 - **Capture what you copied.** `⌥⌘V` turns the clipboard into a note.
@@ -267,6 +272,10 @@ offers to bring the notes with it. Put it in iCloud Drive and it syncs — every
 read and write is coordinated through `NSFileCoordinator`, so nothing has to
 change for that to work.
 
+<p align="center">
+  <img src="docs/syntax.png" width="430" alt="A note showing a heading, a highlight, tasks, a tag, a link and a code block">
+</p>
+
 ## Shortcuts
 
 | | |
@@ -280,7 +289,20 @@ change for that to work.
 | `⌘↩` | Open the note in the full editor |
 | `⌘B` `⌘I` `⌘E` `⌘K` | Bold, italic, code, link |
 | `⌘⇧T` | Turn lines into tasks, or back |
+| `⌘⇧H` | Highlight the selection |
+| `⇥` `⇧⇥` | Nest a list item, or take it back out |
 | `⌘⇧L` `⌘⇧1…3` | List, headings |
+
+## Markdown it understands
+
+Headings, bold, italic, quotes, bullets, numbered lists, tasks, tags, links
+between notes, and links out. For code, all three of Markdown's forms: inline
+`` ` ``, fenced ``` ``` ``` and `~~~`, and four-space indented blocks — which is
+what you get from pasting a terminal. A nested list item also starts with four
+spaces and is deliberately not treated as code.
+
+`ledge --diagnose` prints which forms are recognised by running them, rather
+than by consulting a list that can go stale.
 
 ## Tags
 

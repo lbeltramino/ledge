@@ -162,6 +162,41 @@ enum MarkdownEditing {
         textView.setSelectedRange(NSRange(location: selection.location + urlOffset, length: 3))
     }
 
+    /// Tab and Shift-Tab, when the caret is in a list.
+    @discardableResult
+    static func shiftIndent(_ textView: NSTextView, by levels: Int) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let text = storage.string as NSString
+        let lines = text.lineRange(for: textView.selectedRange())
+        guard let updated = MarkdownText.shiftIndent(storage.string, lines: lines, by: levels)
+        else { return false }
+
+        let selection = textView.selectedRange()
+        let before = text.length
+        replace(textView, range: NSRange(location: 0, length: text.length), with: updated)
+        // Keep the caret where the words are, not where the characters were.
+        let shift = (updated as NSString).length - before
+        textView.setSelectedRange(NSRange(location: max(0, selection.location + shift),
+                                          length: selection.length))
+        return true
+    }
+
+    /// Backspace at the start of a list item.
+    @discardableResult
+    static func outdentOrUnmark(_ textView: NSTextView) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let caret = textView.selectedRange()
+        guard caret.length == 0,
+              let edit = MarkdownText.outdentOrUnmark(storage.string, at: caret.location)
+        else { return false }
+
+        let before = (storage.string as NSString).length
+        replace(textView, range: edit.range, with: edit.replacement)
+        let shift = (storage.string as NSString).length - before
+        textView.setSelectedRange(NSRange(location: max(0, caret.location + shift), length: 0))
+        return true
+    }
+
     /// Enter inside a list continues the list; Enter on an empty item ends it.
     /// Returns true when it handled the key.
     static func continueList(_ textView: NSTextView) -> Bool {
@@ -172,6 +207,20 @@ enum MarkdownEditing {
         let lineRange = text.lineRange(for: NSRange(location: caret.location, length: 0))
         let line = text.substring(with: lineRange)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
+
+        // A quote carries on as a quote.
+        if let found = MarkdownText.marker(of: line), found.kind == .quote {
+            if found.contentIsEmpty {
+                replace(textView, range: lineRange, with: "")
+                textView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+            } else {
+                let insertion = "\n" + String(repeating: " ", count: found.indent) + "> "
+                replace(textView, range: caret, with: insertion)
+                textView.setSelectedRange(NSRange(location: caret.location + (insertion as NSString).length,
+                                                  length: 0))
+            }
+            return true
+        }
 
         // A task list continues as a task list, not as a plain bullet.
         if let next = Checkbox.continuation(after: line) {

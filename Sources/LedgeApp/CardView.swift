@@ -134,6 +134,8 @@ final class NoteCardView: NSView {
             accent: Palette.tab(color).blended(withFraction: 0.4, of: Palette.ink(dark: dark))
                 ?? Palette.ink(dark: dark)
         )
+        markdown.highlight = MarkerStroke.colour(for: color, dark: dark)
+        textView.strokeSeed = record.id
         textView.textStorage?.delegate = markdown
         if let storage = textView.textStorage { markdown.highlight(storage) }
         highlighter = markdown
@@ -274,6 +276,7 @@ final class NoteCardView: NSView {
         // nobody could see.
         highlighter?.ink = ink
         highlighter?.accent = Palette.tab(color).blended(withFraction: 0.4, of: ink) ?? ink
+        highlighter?.highlight = MarkerStroke.colour(for: color, dark: dark)
         if let storage = textView.textStorage { highlighter?.highlight(storage) }
         titleField.textColor = ink
         textView.textColor = ink.withAlphaComponent(0.92)
@@ -474,16 +477,93 @@ extension NoteCardView: NSTextFieldDelegate {
 /// Reports the two moments the deck cares about: the caret arriving, and the
 /// text changing.
 final class NoteTextView: NSTextView {
+    /// The rectangles a run of characters occupies, in view coordinates.
+    ///
+    /// TextKit 1, because that is what these views are: the highlighter needs
+    /// `textStorage`, and touching it downgrades an NSTextView from TextKit 2.
+    /// The first version of this handled only TextKit 2 and so drew nothing at
+    /// all — the guard failed silently on every note.
+    private func rects(for range: NSRange) -> [NSRect] {
+        guard let manager = layoutManager, let container = textContainer else { return [] }
+        let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var boxes: [NSRect] = []
+        manager.enumerateEnclosingRects(forGlyphRange: glyphs,
+                                        withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                        in: container) { box, _ in
+            boxes.append(box.offsetBy(dx: self.textContainerOrigin.x, dy: self.textContainerOrigin.y))
+        }
+        return boxes
+    }
+
+    /// How many stroke segments would be drawn. Diagnostic only.
+    func markerSegmentCount() -> Int {
+        guard let storage = textStorage else { return -1 }
+        var count = 0
+        storage.enumerateAttribute(MarkerStroke.attribute,
+                                   in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard value is NSColor else { return }
+            count += rects(for: range).count
+        }
+        return count
+    }
+
+    /// Marker strokes go behind the glyphs, so they are drawn before the text
+    /// rather than as a background colour attribute — which would be a
+    /// rectangle, and would look like a selection rather than a pen.
+    ///
+    /// Not `drawBackground(in:)`: these views have `drawsBackground = false` so
+    /// the note's paper shows through, and AppKit never calls it.
+    override func draw(_ dirtyRect: NSRect) {
+        drawMarkerStrokes(in: dirtyRect)
+        super.draw(dirtyRect)
+    }
+
+    private func drawMarkerStrokes(in rect: NSRect) {
+        guard let storage = textStorage else { return }
+        var run = 0
+        storage.enumerateAttribute(MarkerStroke.attribute,
+                                   in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let colour = value as? NSColor else { return }
+            let index = run
+            run += 1
+            for box in rects(for: range) where box.intersects(rect) && box.width > 1 {
+                MarkerStroke.draw(in: box, colour: colour, seed: strokeSeed, index: index)
+            }
+        }
+    }
+
     var onChange: (() -> Void)?
     var onBeginEditing: (() -> Void)?
     var onEscape: (() -> Void)?
     /// A `[[link]]` was followed.
     var onOpenLink: ((String) -> Void)?
+    /// Keeps a highlight's wobble the same on every redraw.
+    var strokeSeed: String = ""
+
 
     /// Enter inside a list continues it, the way every editor worth using does.
     override func insertNewline(_ sender: Any?) {
         if MarkdownEditing.continueList(self) { return }
         super.insertNewline(sender)
+    }
+
+    /// Tab moves a list item in, Shift-Tab moves it back out, and anywhere else
+    /// Tab is still Tab.
+    override func insertTab(_ sender: Any?) {
+        if MarkdownEditing.shiftIndent(self, by: 1) { return }
+        super.insertTab(sender)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        if MarkdownEditing.shiftIndent(self, by: -1) { return }
+        super.insertBacktab(sender)
+    }
+
+    /// Backspace at the start of an item gives up a level of indent, then the
+    /// marker, before it starts eating the line above.
+    override func deleteBackward(_ sender: Any?) {
+        if MarkdownEditing.outdentOrUnmark(self) { return }
+        super.deleteBackward(sender)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -525,6 +605,7 @@ final class NoteTextView: NSTextView {
         case "e": MarkdownEditing.code(self); return true
         case "l" where shift: MarkdownEditing.togglePrefix(self, "- "); return true
         case "t" where shift: MarkdownEditing.toggleTask(self); return true
+        case "h" where shift: MarkdownEditing.wrap(self, with: "=="); return true
         case "." where shift: MarkdownEditing.togglePrefix(self, "> "); return true
         case "1" where shift: MarkdownEditing.togglePrefix(self, "# "); return true
         case "2" where shift: MarkdownEditing.togglePrefix(self, "## "); return true

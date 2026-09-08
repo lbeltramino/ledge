@@ -84,6 +84,8 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.isContinuousSpellCheckingEnabled = true
         textView.font = Typography.noteBody(size: 20)
         textView.string = body
+        highlighter.highlight = MarkerStroke.colour(for: record.color, dark: dark)
+        textView.strokeSeed = record.id
         textView.textStorage?.delegate = highlighter
         if let storage = textView.textStorage { highlighter.highlight(storage) }
         textView.onChange = { [weak self] in self?.onEdit?(self?.textView.string ?? "") }
@@ -132,6 +134,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
             ("Quote", { [weak self] in self.map { MarkdownEditing.togglePrefix($0.textView, "> ") } }),
             ("Code", { [weak self] in self.map { MarkdownEditing.code($0.textView) } }),
             ("Link", { [weak self] in self.map { MarkdownEditing.link($0.textView) } }),
+            ("Highlight", { [weak self] in self.map { MarkdownEditing.wrap($0.textView, with: "==") } }),
         ]
         for (title, action) in actions {
             let button = ChromeButton(title: title)
@@ -203,6 +206,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         highlighter.ink = ink
         highlighter.accent = Palette.tab(record.color)
             .blended(withFraction: 0.35, of: ink) ?? ink
+        highlighter.highlight = MarkerStroke.colour(for: record.color, dark: dark)
         if let storage = textView.textStorage { highlighter.highlight(storage) }
     }
 
