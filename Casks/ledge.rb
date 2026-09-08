@@ -7,10 +7,13 @@ cask "ledge" do
   desc "Notes docked to the edge of your screen, as plain Markdown files"
   homepage "https://github.com/lbeltramino/ledge"
 
-  # This build is not notarised. Homebrew quarantines downloads by default, and
-  # a quarantined build that Apple cannot check will not open — so installing it
-  # means passing --no-quarantine, which is you vouching for it. Nothing here
-  # does that on your behalf.
+  # This build is not notarised. Homebrew quarantines what it downloads and
+  # current versions offer no supported way around it, so after installing:
+  #
+  #   xattr -dr com.apple.quarantine /Applications/Ledge.app
+  #
+  # That is you vouching for an app Apple has not checked. Nothing in this cask
+  # does it on your behalf, and nothing should.
   app "Ledge.app"
 
   zap trash: [

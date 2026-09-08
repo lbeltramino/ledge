@@ -71,15 +71,20 @@ git clone https://github.com/lbeltramino/ledge && cd ledge
 ./Scripts/bundle.sh && cp -r build/Ledge.app /Applications/
 ```
 
-**Homebrew** — one command, and `brew upgrade --cask ledge` after that:
+**Homebrew** — more steps than it looks like it should be, but `brew upgrade
+--cask ledge` afterwards, which matters when every manual update would otherwise
+mean vouching for the app again:
 
 ```sh
 brew tap lbeltramino/ledge https://github.com/lbeltramino/ledge
-brew install --cask --no-quarantine ledge
+brew trust lbeltramino/ledge
+brew install --cask ledge
+xattr -dr com.apple.quarantine /Applications/Ledge.app
 ```
 
-`--no-quarantine` is not a formality: it is you vouching for an app Apple has
-not checked. Leave it off and the app will not open.
+Homebrew quarantines what it downloads and offers no supported way around it, so
+the last line is unavoidable and is the one that matters: it is you vouching for
+an app Apple has not checked. Nothing here does it for you.
 
 **[Download the zip](https://github.com/lbeltramino/ledge/releases/latest)** —
 unpack, move `Ledge.app` to `/Applications`, then let macOS refuse it once and
