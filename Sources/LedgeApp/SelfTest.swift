@@ -147,6 +147,31 @@ enum SelfTest {
         check((blockParagraph?.headIndent ?? 0) > 0, "a ``` block is indented")
     }
 
+    /// Squeezes the controls row at every width down to absurd, without needing
+    /// a small display to do it. CI found this on a runner whose screen is a
+    /// fraction of the size of the machine it was written on.
+    static func checkChromeDegradation() {
+        let bar = NoteChromeBar(color: .blue)
+        let natural = bar.minimumWidth
+        var narrowest = natural
+
+        // 150 pt is below anything the deck can actually produce: the card is
+        // floored well above it. Going lower only proves that three buttons and
+        // five swatches cannot fit in a matchbox.
+        for width in stride(from: natural + 40, through: 150, by: -5) {
+            bar.frame = NSRect(x: 0, y: 0, width: width, height: NoteChromeBar.height)
+            bar.layoutSubtreeIfNeeded()
+            bar.layout()
+            if bar.hasOverlappingControls {
+                check(false, String(format: "controls overlap once the row is %.0f pt wide", width))
+                return
+            }
+            narrowest = width
+        }
+        check(true, String(format: "the controls row survives being squeezed from %.0f pt to %.0f",
+                           natural + 40, narrowest))
+    }
+
     static func checkCodeFormatting() {
         func editor(_ text: String, selection: NSRange) -> NSTextView {
             let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
@@ -356,6 +381,7 @@ enum SelfTest {
         checkMarkdown()
         checkMarkdownEditing()
         checkCodeFormatting()
+        checkChromeDegradation()
 
         print("\n\u{001B}[1mLabel rendering\u{001B}[0m")
         checkLabelDirection()
@@ -787,8 +813,14 @@ enum SelfTest {
         // opening the *last* tab is the case that used to yank the card upward
         deck.debugPreviewLast()
         if let lastCard = deck.debugGeometry().card, let lastTab = deck.debugGeometry().tabs.last {
-            check(abs(lastCard.midY - lastTab.midY) < 6,
-                  "a note opened off the bottom tab grows from where you are pointing")
+            let panel = deck.debugGeometry().panel
+            // On a display with no room to spare the card is clamped, and being
+            // clamped is the right answer — it must simply stay on screen.
+            let clamped = lastCard.height > panel.height - Metrics.panelPadding * 2 - 1
+            check(clamped || abs(lastCard.midY - lastTab.midY) < 6,
+                  clamped
+                    ? "on a short screen the note is clamped into view rather than centred"
+                    : "a note opened off the bottom tab grows from where you are pointing")
         }
 
         // ---- a note open
@@ -817,12 +849,12 @@ enum SelfTest {
               + "or the floor its controls set")
         check(card.width >= Metrics.Card.minWidth && card.height >= Metrics.Card.minHeight,
               "the card never shrinks below a readable note")
-        if let needed = deck.debugCardMinimumWidth() {
-            check(card.width >= needed - 0.5,
-                  String(format: "the card is wide enough for its own controls (%.0f, needs %.0f) "
-                         + "— narrower and Delete lands on the colour swatches",
-                         card.width, needed))
-        }
+        // The requirement is not "wide enough" but "nothing overlaps" — on a
+        // small screen the row gives way instead, and that is still correct.
+        check(deck.debugChromeOverlaps() == false,
+              String(format: "no two controls overlap at %.0f pt wide "
+                     + "(the row wants %.0f and shrinks to fit)",
+                     card.width, deck.debugCardMinimumWidth() ?? 0))
         check(open.liveRegion.contains(card.insetBy(dx: 1, dy: 1)),
               "the card counts as inside, so reading it does not collapse the deck")
         check(card.height <= open.panel.height && card.maxY <= open.panel.height + 0.5,

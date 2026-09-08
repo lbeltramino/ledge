@@ -25,18 +25,50 @@ final class NoteChromeBar: NSView {
     var isInert = true
 
     static var height: CGFloat { max(26, Metrics.Card.titleSize * 2.1) }
-    private var swatchSize: CGFloat { max(10, Metrics.Card.titleSize * 0.95) }
-    private var swatchGap: CGFloat { max(5, Metrics.Card.titleSize * 0.5) }
+    private var swatchSize: CGFloat { max(8, Metrics.Card.titleSize * 0.95 * fitScale) }
+    private var swatchGap: CGFloat { max(4, Metrics.Card.titleSize * 0.5 * fitScale) }
 
-    /// The narrowest this row can be drawn without its controls colliding.
-    /// The card refuses to be narrower than this, which is why Delete no longer
-    /// lands on top of the colour swatches.
-    var minimumWidth: CGFloat {
-        let swatches = CGFloat(NoteColor.allCases.count) * (swatchSize + swatchGap)
+    /// On a screen too small to give the card its natural width, the controls
+    /// give way rather than overlapping. There is always *some* width at which
+    /// they must, so the row shrinks to fit and drops the swatches last.
+    private var fitScale: CGFloat {
+        guard bounds.width > 0 else { return 1 }
+        let natural = naturalWidth
+        guard natural > bounds.width else { return 1 }
+        return max(0.72, bounds.width / natural)
+    }
+
+    /// Measured, not guessed: the swatches stay only while they and the buttons
+    /// both actually fit. A ratio was close enough to look right and still let
+    /// them collide.
+    private var showsSwatches: Bool {
+        guard bounds.width > 0 else { return true }
+        return swatchRowWidth + buttonRowWidth <= bounds.width
+    }
+
+    private var swatchRowWidth: CGFloat {
+        CGFloat(NoteColor.allCases.count) * (swatchSize + swatchGap)
+    }
+
+    private var buttonRowWidth: CGFloat {
+        [deleteButton, archiveButton, closeButton]
+            .reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width + 4 }
+    }
+
+    /// What the row wants, before any squeezing.
+    private var naturalWidth: CGFloat {
+        let swatch = max(10, Metrics.Card.titleSize * 0.95)
+        let gap = max(5, Metrics.Card.titleSize * 0.5)
+        let swatches = CGFloat(NoteColor.allCases.count) * (swatch + gap)
         let buttons = [deleteButton, archiveButton, closeButton]
             .reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width + 4 }
         return ceil(swatches + buttons + 6)
     }
+
+    /// The narrowest this row can be drawn without its controls colliding.
+    /// The card refuses to be narrower than this, which is why Delete no longer
+    /// lands on top of the colour swatches.
+    var minimumWidth: CGFloat { naturalWidth }
 
     init(color: NoteColor) {
         self.color = color
@@ -65,8 +97,24 @@ final class NoteChromeBar: NSView {
         tracking = area
     }
 
+    /// True when any two controls have been squeezed into each other — the one
+    /// thing this row must never do.
+    var hasOverlappingControls: Bool {
+        let boxes = [deleteButton.frame, archiveButton.frame, closeButton.frame]
+            + swatchRects.map { $0.1 }
+        for (i, a) in boxes.enumerated() {
+            for b in boxes[(i + 1)...] where a.intersects(b.insetBy(dx: 0.5, dy: 0.5)) {
+                return true
+            }
+        }
+        guard let leftmostButton = [deleteButton, archiveButton, closeButton]
+            .map(\.frame.minX).min(), let lastSwatch = swatchRects.last?.1 else { return false }
+        return lastSwatch.maxX > leftmostButton
+    }
+
     override func layout() {
         super.layout()
+        for button in [deleteButton, archiveButton, closeButton] { button.scale = fitScale }
         var x = bounds.width
         for button in [closeButton, archiveButton, deleteButton] {
             let width = button.intrinsicContentSize.width
@@ -76,6 +124,7 @@ final class NoteChromeBar: NSView {
         }
 
         swatchRects = []
+        guard showsSwatches else { return }
         var swatchX: CGFloat = 0
         for candidate in NoteColor.allCases {
             swatchRects.append((candidate, NSRect(x: swatchX,
@@ -151,7 +200,10 @@ final class ChromeButton: NSView {
 
     override var isFlipped: Bool { true }
 
-    private var font: NSFont { .systemFont(ofSize: max(9, Metrics.Card.titleSize * 0.78), weight: .medium) }
+    var scale: CGFloat = 1 { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    private var font: NSFont {
+        .systemFont(ofSize: max(8, Metrics.Card.titleSize * 0.78 * scale), weight: .medium)
+    }
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: ceil((title as NSString).size(withAttributes: [.font: font]).width) + 13,

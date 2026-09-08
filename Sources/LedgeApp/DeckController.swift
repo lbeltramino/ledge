@@ -290,7 +290,11 @@ final class DeckController {
         // broken.
         let floor = card?.minimumWidth ?? Metrics.Card.minWidth
         let wanted = _pendingCardSize?.width ?? storedSize?.width ?? Metrics.Card.width
-        return max(floor, min(wanted, (screen?.visibleFrame.width ?? 1440) * 0.42))
+        // The screen has the last word. On a display too small to give the card
+        // its natural width, the controls shrink to fit — a card wider than the
+        // screen is not a bigger note, it is one you cannot read.
+        let ceiling = (screen?.visibleFrame.width ?? 1440) * 0.42
+        return min(max(floor, min(wanted, ceiling)), ceiling)
     }
 
     /// A size the note was dragged to, if it has one. Kept in the index, which
@@ -1206,6 +1210,8 @@ extension DeckController {
     func debugCardBody() -> String? { card?.textView.string }
 
     func debugCardMinimumWidth() -> CGFloat? { card?.minimumWidth }
+
+    func debugChromeOverlaps() -> Bool? { card?.chromeOverlaps }
 
     /// What the open card needs docked, and what the same card would need once
     /// pulled off onto the desk.

@@ -204,6 +204,11 @@ final class NoteCardView: NSView {
             + NoteChromeBar.height + 60 + (bandRunsAlongTheTop ? Metrics.Card.labelStrip : 0)
     }
 
+    var chromeOverlaps: Bool {
+        layoutSubtreeIfNeeded()
+        return chrome.hasOverlappingControls
+    }
+
     /// For the self test: how visible the controls currently are.
     var chromeAlpha: Double { Double(chrome.alphaValue) }
 
