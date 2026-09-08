@@ -7,18 +7,18 @@
 A native macOS notes app. Your notes live docked at the edge of the screen —
 at rest a thin coloured stripe, and when you reach over, they fan out.
 
-```
-        ┌──────────────────────────────┐   ┌──────────────────────────────┐
-        │                              │   │                        ▐OFFICE
-        │                              │   │                        ▐GROCERI
-        │                            ▐  │   │                        ▐HOLD
-        │                            ▐  │   │      ┌───────────────┐▐SIDE-PRO
-        │                            ▐  │   │      │ Groceries     │▐
-        │                            ▐  │   │      │ - apple       │▐  ⊕  ⊙
-        │                              │   │      └───────────────┘▐
-        └──────────────────────────────┘   └──────────────────────────────┘
-              at rest: a 12 pt pill             reach over: the deck fans
-```
+<p align="center">
+  <img src="docs/deck-open.png" width="620" alt="A note open on the right edge of the screen, its tab beside it">
+</p>
+
+| | | |
+|:--:|:--:|:--:|
+| <img src="docs/deck-rest.png" width="240" alt="A thin stripe at the edge of the screen"> | <img src="docs/deck-fanned.png" width="240" alt="Four coloured tabs fanned down the edge"> | <img src="docs/palette.png" width="240" alt="The five papers"> |
+| **At rest** — a stripe, one dash per note | **Reach over** — the deck fans, each tab as long as its title | **Five papers**, and the ink is a deep version of each |
+
+<sub>Not mockups: these are the app's own views, laid out and drawn to a bitmap
+by <code>Ledge --render docs</code>. Change the drawing and the pictures change
+with it, which is the only way an image in a README stays true.</sub>
 
 **Every note is a plain Markdown file.** The folder is the source of truth; the
 SQLite index beside it is a cache you can delete at any moment.

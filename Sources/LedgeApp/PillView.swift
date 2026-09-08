@@ -39,8 +39,20 @@ final class PillView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        PillView.render(colors: colors, in: bounds, mirrored: mirrored,
+                        horizontal: horizontal, topDown: isFlipped)
+    }
+
+    /// The drawing itself, so the offscreen renderer can call it directly rather
+    /// than going through a bitmap cache — which loses the smoked backing's
+    /// transparency — and so the two can never drift apart.
+    /// `topDown` says which way y runs in the current context: true inside the
+    /// flipped view, false in an image being rendered offscreen. Without it the
+    /// dashes come out in the opposite order to the notes they stand for.
+    static func render(colors: [NoteColor], in bounds: NSRect,
+                       mirrored: Bool = false, horizontal: Bool = false,
+                       topDown: Bool = true) {
         let radius = Metrics.Pill.cornerRadius
-        // Rounded on the left only; the right edge is flush with the screen.
         let body: NSBezierPath = horizontal
             ? NSBezierPath(roundedRect: bounds.offsetBy(dx: 0, dy: radius).insetBy(dx: 0, dy: -radius),
                            xRadius: radius, yRadius: radius)
@@ -50,25 +62,25 @@ final class PillView: NSView {
         Palette.pillBacking.setFill()
         body.fill()
 
+        let size = Metrics.Pill.dashSize
         guard !colors.isEmpty else {
-            let d = Metrics.Pill.dashSize
             let dash = horizontal
-                ? NSRect(x: bounds.midX - d.height / 2, y: (bounds.height - d.width) / 2,
-                         width: d.height, height: d.width)
-                : NSRect(x: (bounds.width - d.width) / 2, y: bounds.midY - d.height / 2,
-                         width: d.width, height: d.height)
+                ? NSRect(x: bounds.midX - size.height / 2, y: bounds.minY + (bounds.height - size.width) / 2,
+                         width: size.height, height: size.width)
+                : NSRect(x: bounds.minX + (bounds.width - size.width) / 2,
+                         y: bounds.midY - size.height / 2,
+                         width: size.width, height: size.height)
             NSColor(white: 1, alpha: 0.35).setFill()
             NSBezierPath(roundedRect: dash, xRadius: 1.5, yRadius: 1.5).fill()
             return
         }
 
-        let size = Metrics.Pill.dashSize
         var along = Metrics.Pill.verticalPadding
-        for color in colors {
+        for color in (topDown ? colors : colors.reversed()) {
             let dash = horizontal
-                ? NSRect(x: along, y: (bounds.height - size.width) / 2,
+                ? NSRect(x: bounds.minX + along, y: bounds.minY + (bounds.height - size.width) / 2,
                          width: size.height, height: size.width)
-                : NSRect(x: (bounds.width - size.width) / 2, y: along,
+                : NSRect(x: bounds.minX + (bounds.width - size.width) / 2, y: bounds.minY + along,
                          width: size.width, height: size.height)
             Palette.tab(color).setFill()
             NSBezierPath(roundedRect: dash, xRadius: 1.5, yRadius: 1.5).fill()

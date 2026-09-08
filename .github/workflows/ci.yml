@@ -33,6 +33,13 @@ jobs:
         # Skips itself with a notice when the runner has no display.
         run: ./build/Ledge.app/Contents/MacOS/Ledge --selftest
 
+      - name: Render the README images
+        # Proves the drawing code still renders; a picture in a README that no
+        # longer builds is worse than no picture.
+        run: |
+          ./build/Ledge.app/Contents/MacOS/Ledge --render "$RUNNER_TEMP/docs"
+          ls -la "$RUNNER_TEMP/docs"
+
       - name: Package
         run: |
           mkdir -p dist
