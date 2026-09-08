@@ -1,5 +1,6 @@
 import AppKit
 import LedgeCore
+import LedgeIndex
 
 /// Drives the deck through its states and checks the geometry it actually
 /// produces. It exists because the layout is all hand-computed frames, rotations
@@ -388,9 +389,53 @@ enum SelfTest {
               "a mirrored title sits inside its band too")
     }
 
+    /// Renders a card and counts the ink.
+    ///
+    /// Every earlier check on this asked whether the *colours* were right, and
+    /// the report from a real Mac was that the caret moved over nothing at all.
+    /// Colours being right is not the requirement. The requirement is that
+    /// characters appear, so this looks at pixels.
+    static func checkTextRenders() {
+        for (name, appearance) in [("light", NSAppearance(named: .aqua)),
+                                   ("dark", NSAppearance(named: .darkAqua))] {
+            var note = Note(title: "Groceries", color: .green)
+            note.body = "- apple\n- 4x banana\n- dry fruits\n- peanuts"
+            let record = NoteRecord(note: note, filename: "Groceries.md",
+                                    mtime: 0, size: 0, hash: "")
+
+            let card = NoteCardView(record: record, body: note.body)
+            card.appearance = appearance
+            card.frame = NSRect(x: 0, y: 0, width: 340, height: 260)
+            card.layoutSubtreeIfNeeded()
+            card.applyColors()
+            card.layoutSubtreeIfNeeded()
+            card.displayIfNeeded()
+
+            guard let rep = card.bitmapImageRepForCachingDisplay(in: card.bounds) else {
+                check(false, "the card could not be rendered"); continue
+            }
+            card.cacheDisplay(in: card.bounds, to: rep)
+
+            let paper = Palette.paper(.green, dark: appearance == NSAppearance(named: .darkAqua),
+                                      tint: Jitter(id: record.id).paperTint)
+            // the body area: past the coloured strip, below the title, above the chrome
+            var ink = 0
+            for x in stride(from: 60, to: 320, by: 2) {
+                for y in stride(from: 55, to: 200, by: 2) {
+                    guard let pixel = rep.colorAt(x: x, y: y) else { continue }
+                    if !pixel.isCloseTo(paper, tolerance: 0.10) { ink += 1 }
+                }
+            }
+            check(ink > 200,
+                  "a note's text is actually drawn in \(name) — \(ink) ink pixels "
+                  + "(the caret moving over nothing is what this exists to catch)")
+        }
+    }
+
     static func run(deck: DeckController) async {
         print("\n\u{001B}[1mContrast\u{001B}[0m")
         checkContrast()
+        checkTextRenders()
 
         print("\n\u{001B}[1mMarkdown\u{001B}[0m")
         checkMarkdown()

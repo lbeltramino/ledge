@@ -106,6 +106,19 @@ while you are trying it out:
 LEDGE_FOLDER=/tmp/notes ./build/Ledge.app/Contents/MacOS/Ledge
 ```
 
+## When something looks wrong
+
+```sh
+/Applications/Ledge.app/Contents/MacOS/Ledge --diagnose
+```
+
+Prints what the app can actually see on that machine — the appearance in force,
+which font resolved and whether it has glyphs, the text view's frame and text
+container, which TextKit it is on, the colour applied to the text against the
+colour of the paper, and how many pixels of ink a rendered note contains. It
+exists because two plausible diagnoses of an invisible-text report made from a
+different Mac were both wrong.
+
 ## Tests
 
 ```sh

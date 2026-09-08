@@ -143,8 +143,23 @@ final class NoteCardView: NSView {
             self?.onBeginEditing?()
         }
 
+        // An NSTextView made the document view of a hand-built scroll view has to
+        // be told how to size itself. Without this its frame is undefined: on
+        // some macOS versions it happens to come out right, and on others it
+        // lays out no glyphs at all while the insertion point still tracks —
+        // a caret moving over text that was never drawn.
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+
         scroll.documentView = textView
         scroll.drawsBackground = false
+        scroll.borderType = .noBorder
         scroll.hasVerticalScroller = false
         scroll.autohidesScrollers = true
         addSubview(scroll)
@@ -384,10 +399,13 @@ final class NoteCardView: NSView {
         scroll.frame = NSRect(x: left, y: top,
                               width: contentWidth,
                               height: max(0, bounds.height - top - pad - NoteChromeBar.height - 6))
-        textView.textContainer?.containerSize = NSSize(width: scroll.contentSize.width,
+        // Give the text view a real frame inside the clip view, and a container
+        // as wide as it is.
+        let content = scroll.contentSize
+        textView.frame = NSRect(x: 0, y: 0, width: content.width,
+                                height: max(content.height, textView.frame.height))
+        textView.textContainer?.containerSize = NSSize(width: content.width,
                                                        height: .greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-        textView.minSize = NSSize(width: 0, height: scroll.contentSize.height)
     }
 
     /// Clicking anywhere on the paper puts the caret in the note, the way a

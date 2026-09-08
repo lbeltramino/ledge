@@ -54,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)   // no Dock icon, no menu bar
         MainMenu.install()                      // …but ⌘C still has to mean copy
 
+        if CommandLine.arguments.contains("--diagnose") {
+            Diagnose.run()
+            NSApp.terminate(nil)
+            return
+        }
+
         if let index = CommandLine.arguments.firstIndex(of: "--render") {
             let target = index + 1 < CommandLine.arguments.count
                 ? URL(fileURLWithPath: CommandLine.arguments[index + 1])
