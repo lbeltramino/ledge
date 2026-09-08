@@ -252,6 +252,104 @@ enum CoreTests {
             c.equal(j.cardRotation(focused: false), j.cardRotation)
         }
 
+        Runner.suite("Checkboxes")
+
+        await Runner.test("a task line is recognised, an ordinary bullet is not") { c in
+            let text = "- [ ] milk\n- [x] bread\n- butter"
+            let items = Checkbox.items(in: text)
+            c.equal(items.count, 2, "found \(items.count) tasks")
+            c.equal(items.first?.isDone, false)
+            c.equal(items.last?.isDone, true)
+        }
+
+        await Runner.test("clicking a box flips exactly one character") { c in
+            let text = "- [ ] milk\n- [x] bread"
+            guard let flip = Checkbox.toggle(in: text, at: 8) else {
+                c.expect(false, "clicking the first line found no task"); return
+            }
+            c.equal(flip.range.length, 1, "more than one character would be replaced")
+            c.equal(flip.replacement, "x")
+            let after = (text as NSString).replacingCharacters(in: flip.range, with: flip.replacement)
+            c.equal(after, "- [x] milk\n- [x] bread")
+
+            guard let back = Checkbox.toggle(in: after, at: 8) else {
+                c.expect(false, "cannot untick"); return
+            }
+            c.equal((after as NSString).replacingCharacters(in: back.range, with: back.replacement),
+                    text, "unticking did not restore the line")
+        }
+
+        await Runner.test("clicking a line with no task does nothing") { c in
+            c.expect(Checkbox.toggle(in: "- just a bullet", at: 4) == nil, "a plain bullet was toggled")
+            c.expect(Checkbox.toggle(in: "plain text", at: 4) == nil, "plain text was toggled")
+        }
+
+        await Runner.test("Enter continues a checklist, and an empty item ends it") { c in
+            c.equal(Checkbox.continuation(after: "- [ ] milk"), "- [ ] ")
+            c.equal(Checkbox.continuation(after: "  * [x] bread"), "  * [ ] ")
+            c.equal(Checkbox.continuation(after: "- [ ] "), "", "an empty task should end the list")
+            c.expect(Checkbox.continuation(after: "- plain") == nil, "a plain bullet is not a task")
+        }
+
+        await Runner.test("a note knows how much of it is done") { c in
+            c.equal(Checkbox.progress(in: "- [x] a\n- [ ] b\n- [x] c")?.done, 2)
+            c.equal(Checkbox.progress(in: "- [x] a\n- [ ] b\n- [x] c")?.total, 3)
+            c.expect(Checkbox.progress(in: "no tasks here") == nil)
+        }
+
+        Runner.suite("Links between notes")
+
+        await Runner.test("a wikilink is found, with its name") { c in
+            let text = "see [[Office]] and [[Side-projects]]"
+            c.equal(Wikilink.names(in: text), ["Office", "Side-projects"])
+            c.equal(Wikilink.link(in: text, at: 6)?.name, "Office")
+            c.expect(Wikilink.link(in: text, at: 2) == nil, "found a link where there is none")
+        }
+
+        await Runner.test("brackets that are not links are left alone") { c in
+            c.equal(Wikilink.names(in: "a [markdown](link) and [one bracket]"), [])
+            c.equal(Wikilink.names(in: "[[]]"), [])
+            c.equal(Wikilink.names(in: "[[ padded ]]"), ["padded"], "names are trimmed")
+        }
+
+        Runner.suite("The ledge:// scheme")
+
+        await Runner.test("a new note can be fully described in a link") { c in
+            let url = URL(string: "ledge://new?title=Groceries&text=milk&color=green&strip=left-1")!
+            c.equal(LedgeURL.parse(url),
+                    .new(title: "Groceries", text: "milk", color: .green, strip: "left-1"))
+        }
+
+        await Runner.test("the parts are all optional") { c in
+            c.equal(LedgeURL.parse(URL(string: "ledge://new")!),
+                    .new(title: nil, text: nil, color: nil, strip: nil))
+            c.equal(LedgeURL.parse(URL(string: "ledge://new?text=just%20this")!),
+                    .new(title: nil, text: "just this", color: nil, strip: nil))
+        }
+
+        await Runner.test("opening and searching") { c in
+            c.equal(LedgeURL.parse(URL(string: "ledge://open?title=Office")!), .open(reference: "Office"))
+            c.equal(LedgeURL.parse(URL(string: "ledge://search?q=plumber")!), .search("plumber"))
+            c.equal(LedgeURL.parse(URL(string: "ledge:///search?query=plumber")!), .search("plumber"),
+                    "a third slash is how plenty of tools write these")
+        }
+
+        await Runner.test("anything malformed is nil rather than a surprise") { c in
+            c.expect(LedgeURL.parse(URL(string: "https://example.com/new")!) == nil, "wrong scheme")
+            c.expect(LedgeURL.parse(URL(string: "ledge://delete?all=1")!) == nil, "unknown action")
+            c.expect(LedgeURL.parse(URL(string: "ledge://open")!) == nil, "open with nothing to open")
+            c.expect(LedgeURL.parse(URL(string: "ledge://search?q=")!) == nil, "an empty query")
+            c.equal(LedgeURL.parse(URL(string: "ledge://new?color=chartreuse")!),
+                    .new(title: nil, text: nil, color: nil, strip: nil),
+                    "an unknown colour is ignored, not fatal")
+        }
+
+        await Runner.test("a link back to a note round-trips") { c in
+            let url = LedgeURL.link(toTitle: "Hold my lid")
+            c.expect(url != nil)
+            c.equal(url.flatMap(LedgeURL.parse), .open(reference: "Hold my lid"))
+        }
+
         Runner.suite("Version comparison")
 
         await Runner.test("a newer release is recognised, an older one is not") { c in

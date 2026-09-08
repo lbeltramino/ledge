@@ -53,9 +53,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         add(menu, "New note", #selector(newNote), key: "n", modifiers: [.option, .command])
+        add(menu, "New note from clipboard", #selector(newFromClipboard), key: "v",
+            modifiers: [.option, .command])
         add(menu, "Show deck", #selector(showDeck), key: "d", modifiers: [.option, .command])
         menu.addItem(.separator())
         add(menu, "All notes…", #selector(allNotes), key: "a", modifiers: [.option, .command])
+        add(menu, "Search…", #selector(searchNotes), key: "f", modifiers: [.option, .command])
         add(menu, "Archive…", #selector(archive), key: "l", modifiers: [.option, .command])
         menu.addItem(.separator())
 
@@ -280,6 +283,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func allNotes() { workspace.showLibrary(filter: .all) }
+    @objc private func searchNotes() { workspace.showLibrary(filter: .all, query: "") }
+    @objc private func newFromClipboard() { workspace.newNoteFromClipboard() }
     @objc private func archive()  { workspace.showLibrary(filter: .archived) }
     @objc private func redockAll() { workspace.redockAll() }
 

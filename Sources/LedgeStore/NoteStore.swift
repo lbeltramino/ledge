@@ -207,6 +207,23 @@ public actor NoteStore {
         return imported
     }
 
+    /// Finds a note a `[[link]]` or a `ledge://open` refers to.
+    ///
+    /// Title first and exactly, then case-insensitively, then by search — and a
+    /// ULID is taken as an id, since that is what `ledge://open?id=` will send.
+    public func find(reference: String) throws -> NoteRecord? {
+        let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if ULID.isValid(trimmed), let byID = try index.record(id: trimmed) { return byID }
+
+        let all = try index.all(.all)
+        if let exact = all.first(where: { $0.displayTitle == trimmed }) { return exact }
+        if let insensitive = all.first(where: {
+            $0.displayTitle.compare(trimmed, options: .caseInsensitive) == .orderedSame
+        }) { return insensitive }
+        return try index.search(trimmed).first?.record
+    }
+
     /// Loads full notes for export. The index has metadata; the files have text.
     public func notes(ids: [String]) throws -> [Note] {
         try ids.compactMap { try? load(id: $0) }

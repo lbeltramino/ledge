@@ -1,4 +1,5 @@
 import AppKit
+import LedgeCore
 
 /// The editing half of Markdown support. Highlighting shows you what the syntax
 /// means; this puts the syntax there for you, so the editor is something you can
@@ -121,6 +122,35 @@ enum MarkdownEditing {
         return nil
     }
 
+    /// Turns the selected lines into tasks, or back again.
+    static func toggleTask(_ textView: NSTextView) {
+        guard let storage = textView.textStorage else { return }
+        let text = storage.string as NSString
+        let lines = text.lineRange(for: textView.selectedRange())
+        let existing = text.substring(with: lines).components(separatedBy: "\n")
+
+        let alreadyTasks = existing.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .allSatisfy { Checkbox.items(in: $0).count == 1 }
+
+        let rebuilt = existing.map { line -> String in
+            guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return line }
+            if alreadyTasks, let item = Checkbox.items(in: line).first {
+                return (line as NSString).substring(with: item.content)
+            }
+            // keep an existing bullet, otherwise add one
+            if let match = try? NSRegularExpression(pattern: "^([ \\t]*)([-*+])[ \\t]+")
+                .firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
+                let prefix = (line as NSString).substring(with: match.range)
+                return prefix + "[ ] " + (line as NSString).substring(from: match.range.length)
+            }
+            return "- [ ] " + line
+        }.joined(separator: "\n")
+
+        replace(textView, range: lines, with: rebuilt)
+        textView.setSelectedRange(NSRange(location: lines.location,
+                                          length: (rebuilt as NSString).length))
+    }
+
     /// A link, with the caret left where you would type next.
     static func link(_ textView: NSTextView) {
         guard let storage = textView.textStorage else { return }
@@ -142,6 +172,20 @@ enum MarkdownEditing {
         let lineRange = text.lineRange(for: NSRange(location: caret.location, length: 0))
         let line = text.substring(with: lineRange)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
+
+        // A task list continues as a task list, not as a plain bullet.
+        if let next = Checkbox.continuation(after: line) {
+            if next.isEmpty {
+                replace(textView, range: lineRange, with: "")
+                textView.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+            } else {
+                let insertion = "\n" + next
+                replace(textView, range: caret, with: insertion)
+                textView.setSelectedRange(NSRange(location: caret.location + (insertion as NSString).length,
+                                                  length: 0))
+            }
+            return true
+        }
 
         guard let match = try? NSRegularExpression(pattern: "^(\\s*)([-*+]|(\\d+)\\.)\\s+")
             .firstMatch(in: line, range: NSRange(location: 0, length: (line as NSString).length))

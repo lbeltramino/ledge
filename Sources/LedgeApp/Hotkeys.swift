@@ -72,4 +72,6 @@ extension Hotkeys.Shortcut {
     static let allNotes = Hotkeys.Shortcut.optionCommand(kVK_ANSI_A)
     static let archive  = Hotkeys.Shortcut.optionCommand(kVK_ANSI_L)
     static let showDeck = Hotkeys.Shortcut.optionCommand(kVK_ANSI_D)
+    static let search   = Hotkeys.Shortcut.optionCommand(kVK_ANSI_F)
+    static let paste    = Hotkeys.Shortcut.optionCommand(kVK_ANSI_V)
 }

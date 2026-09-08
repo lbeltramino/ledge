@@ -120,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.register(.newNote) { workspace.newNote() }
         hotkeys.register(.allNotes) { workspace.showLibrary(filter: .all) }
         hotkeys.register(.archive) { workspace.showLibrary(filter: .archived) }
+        hotkeys.register(.search) { workspace.showLibrary(filter: .all, query: "") }
+        hotkeys.register(.paste) { workspace.newNoteFromClipboard() }
         hotkeys.register(.showDeck) {
             guard let deck = workspace.primaryDeck else { return }
             if deck.state == .rest { deck.fanOut(takingFocus: true) } else { deck.dismiss() }
@@ -166,6 +168,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watcher?.stop()
         hotkeys.unregisterAll()
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    }
+
+    /// `ledge://` — how anything else on the machine reaches Ledge.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let workspace else { return }
+        for url in urls {
+            guard let command = LedgeURL.parse(url) else { continue }
+            workspace.handle(command)
+        }
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

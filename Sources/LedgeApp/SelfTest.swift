@@ -138,6 +138,24 @@ enum SelfTest {
         check(attribute(.link, at: "a link") != nil,
               "a [labelled](url) link becomes a real link")
 
+        // tasks and links
+        let tasks = NSTextStorage(string: "- [ ] milk\n- [x] bread\nsee [[Office]]")
+        highlighter.highlight(tasks)
+        let taskText = tasks.string as NSString
+        func taskAttribute(_ key: NSAttributedString.Key, at needle: String) -> Any? {
+            let range = taskText.range(of: needle)
+            guard range.location != NSNotFound else { return nil }
+            return tasks.attribute(key, at: range.location, effectiveRange: nil)
+        }
+        check((taskAttribute(.foregroundColor, at: "- [ ]") as? NSColor)?.alphaComponent ?? 1 < 0.6,
+              "an unticked box recedes")
+        check(taskAttribute(.strikethroughStyle, at: "bread") != nil,
+              "a finished task is struck through")
+        check(taskAttribute(.strikethroughStyle, at: "milk") == nil,
+              "…and an unfinished one is not")
+        check(taskAttribute(.underlineStyle, at: "Office") != nil,
+              "a [[link]] is underlined so it looks like one")
+
         let blockFont = attribute(.font, at: "let answer = 42") as? NSFont
         check(blockFont?.isFixedPitch == true, "a ``` block is monospaced")
         check(attribute(.backgroundColor, at: "let answer = 42") != nil,
@@ -275,6 +293,28 @@ enum SelfTest {
 
         let plain = editor("just words", selection: NSRange(location: 10, length: 0))
         check(!MarkdownEditing.continueList(plain), "Enter outside a list is left alone — this is what broke it before")
+
+        // ---- tasks
+        let task = editor("- [ ] milk", selection: NSRange(location: 10, length: 0))
+        check(MarkdownEditing.continueList(task), "Enter in a task list is handled")
+        check(task.string == "- [ ] milk\n- [ ] ",
+              "a checklist continues as a checklist, not as a plain bullet: \(task.string.debugDescription)")
+
+        let taskEnding = editor("- [ ] milk\n- [ ] ", selection: NSRange(location: 17, length: 0))
+        _ = MarkdownEditing.continueList(taskEnding)
+        check(taskEnding.string == "- [ ] milk\n", "an empty task ends the list")
+
+        let promote = editor("milk\nbread", selection: NSRange(location: 0, length: 10))
+        MarkdownEditing.toggleTask(promote)
+        check(promote.string == "- [ ] milk\n- [ ] bread",
+              "⌘⇧T turns lines into tasks: \(promote.string.debugDescription)")
+        MarkdownEditing.toggleTask(promote)
+        check(promote.string == "milk\nbread", "and turns them back")
+
+        let fromBullets = editor("- milk", selection: NSRange(location: 0, length: 6))
+        MarkdownEditing.toggleTask(fromBullets)
+        check(fromBullets.string == "- [ ] milk",
+              "an existing bullet keeps its bullet: \(fromBullets.string.debugDescription)")
     }
 
     /// The editor writes through the same debounced path as the cards. This

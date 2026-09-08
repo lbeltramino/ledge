@@ -51,6 +51,37 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             this.fade(storage, match.range(at: 1), 0.28)
         }
 
+        // - [ ] tasks. The marker recedes; a finished one is struck through and
+        // steps back, so what is left to do is what stands out.
+        rule(Checkbox.pattern) { storage, match, this in
+            let markerEnd = match.range(at: 3).location + 2
+            this.fade(storage, NSRange(location: match.range.location,
+                                       length: markerEnd - match.range.location), 0.45)
+            let done = (storage.string as NSString)
+                .substring(with: match.range(at: 3)).lowercased() == "x"
+            let content = match.range(at: 4)
+            guard content.length > 0 else { return }
+            if done {
+                storage.addAttribute(.strikethroughStyle,
+                                     value: NSUnderlineStyle.single.rawValue, range: content)
+                storage.addAttribute(.foregroundColor,
+                                     value: this.ink.withAlphaComponent(0.42), range: content)
+            } else {
+                storage.addAttribute(.foregroundColor, value: this.ink, range: content)
+            }
+        }
+
+        // [[links between notes]]
+        rule(Wikilink.pattern) { storage, match, this in
+            storage.addAttribute(.foregroundColor, value: this.accent, range: match.range(at: 1))
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
+                                 range: match.range(at: 1))
+            let open = NSRange(location: match.range.location, length: 2)
+            let close = NSRange(location: match.range.upperBound - 2, length: 2)
+            this.fade(storage, open, 0.30)
+            this.fade(storage, close, 0.30)
+        }
+
         // - list item — the marker hangs and dims
         rule("^\\s*([-*+]|\\d+\\.)\\s+") { storage, match, this in
             this.fade(storage, match.range(at: 1), 0.40)

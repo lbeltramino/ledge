@@ -477,11 +477,39 @@ final class NoteTextView: NSTextView {
     var onChange: (() -> Void)?
     var onBeginEditing: (() -> Void)?
     var onEscape: (() -> Void)?
+    /// A `[[link]]` was followed.
+    var onOpenLink: ((String) -> Void)?
 
     /// Enter inside a list continues it, the way every editor worth using does.
     override func insertNewline(_ sender: Any?) {
         if MarkdownEditing.continueList(self) { return }
         super.insertNewline(sender)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = characterIndexForInsertion(at: point)
+
+        // ⌘-click follows a link, the way it already does for markdown ones.
+        if event.modifierFlags.contains(.command),
+           let link = Wikilink.link(in: string, at: index) {
+            onOpenLink?(link.name)
+            return
+        }
+
+        // A plain click on the `- [ ]` marker ticks it. Anywhere else on the
+        // line still just places the caret.
+        if let item = Checkbox.item(in: string, at: index),
+           index <= item.box.upperBound,
+           let flip = Checkbox.toggle(in: string, at: index) {
+            if shouldChangeText(in: flip.range, replacementString: flip.replacement) {
+                textStorage?.replaceCharacters(in: flip.range, with: flip.replacement)
+                didChangeText()
+            }
+            return
+        }
+
+        super.mouseDown(with: event)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -496,6 +524,7 @@ final class NoteTextView: NSTextView {
         case "k": MarkdownEditing.link(self); return true
         case "e": MarkdownEditing.code(self); return true
         case "l" where shift: MarkdownEditing.togglePrefix(self, "- "); return true
+        case "t" where shift: MarkdownEditing.toggleTask(self); return true
         case "." where shift: MarkdownEditing.togglePrefix(self, "> "); return true
         case "1" where shift: MarkdownEditing.togglePrefix(self, "# "); return true
         case "2" where shift: MarkdownEditing.togglePrefix(self, "## "); return true

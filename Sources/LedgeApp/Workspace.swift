@@ -116,13 +116,13 @@ final class Workspace {
 
     // MARK: - shared windows
 
-    func showLibrary(filter: NoteIndex.Filter) {
-        if let library, library.isVisible { library.show(filter: filter); return }
+    func showLibrary(filter: NoteIndex.Filter, query: String? = nil) {
+        if let library, library.isVisible { library.show(filter: filter, query: query); return }
         let window = AllNotesWindow(store: store)
         window.onOpenInEditor = { [weak self] id in self?.openEditor(id) }
         window.onChanged = { [weak self] in Task { await self?.refreshAll() } }
         library = window
-        window.show(filter: filter)
+        window.show(filter: filter, query: query)
     }
 
     func openEditor(_ id: String) {
@@ -168,5 +168,47 @@ final class Workspace {
 
     func newNote() {
         (primaryDeck ?? decks.first)?.newNote()
+    }
+
+    /// A note from whatever is on the clipboard.
+    ///
+    /// The cheap half of capture-first: no Accessibility permission, no reading
+    /// anyone's selection — you copy, you press, it is a note.
+    func newNoteFromClipboard() {
+        let text = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !text.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        (primaryDeck ?? decks.first)?.newNote(body: text)
+    }
+
+    /// Opens the note a `[[link]]` or a `ledge://` URL points at, creating it if
+    /// nothing matches — an unresolved link you can click into existence is what
+    /// makes linking worth doing.
+    func open(reference: String, creatingIfMissing: Bool = true) {
+        Task {
+            if let found = try? await store.find(reference: reference) {
+                await deck(for: found.strip.isEmpty ? StripConfig.primaryID : found.strip)?
+                    .reveal(id: found.id)
+                return
+            }
+            guard creatingIfMissing else { NSSound.beep(); return }
+            (primaryDeck ?? decks.first)?.newNote(title: reference)
+        }
+    }
+
+    func handle(_ command: LedgeURL.Command) {
+        switch command {
+        case .new(let title, let text, let color, let strip):
+            let target = strip.flatMap { name in decks.first { $0.strip.id == name || $0.strip.name == name } }
+            (target ?? primaryDeck ?? decks.first)?
+                .newNote(title: title ?? "", body: text ?? "", color: color)
+        case .open(let reference):
+            open(reference: reference)
+        case .search(let query):
+            showLibrary(filter: .all, query: query)
+        }
     }
 }

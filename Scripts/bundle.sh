@@ -42,6 +42,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <!-- No Dock icon, no menu bar. The deck is the whole interface. -->
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- ledge:// — so anything on the machine can make or open a note. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleURLName</key><string>com.lisandro.Ledge.url</string>
+        <key>CFBundleURLSchemes</key><array><string>ledge</string></array>
+      </dict>
+    </array>
 $(if [ -n "$FONTS" ]; then printf '    <key>ATSApplicationFontsPath</key><string>.</string>\n'; fi)
 </dict>
 </plist>

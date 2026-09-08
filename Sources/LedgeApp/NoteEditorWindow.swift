@@ -24,6 +24,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
     var onEdit: ((String) -> Void)?
     var onTitle: ((String) -> Void)?
     var onClose: (() -> Void)?
+    var onOpenLink: ((String) -> Void)?
 
     init(record: NoteRecord, title: String, body: String) {
         self.record = record
@@ -87,6 +88,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         if let storage = textView.textStorage { highlighter.highlight(storage) }
         textView.onChange = { [weak self] in self?.onEdit?(self?.textView.string ?? "") }
         textView.onEscape = { [weak self] in self?.window.performClose(nil) }
+        textView.onOpenLink = { [weak self] name in self?.onOpenLink?(name) }
 
         // An NSTextView made the document view of a hand-built scroll view has to
         // be told how to size itself. Without this its frame is undefined: on

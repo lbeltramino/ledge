@@ -42,6 +42,13 @@ SQLite index beside it is a cache you can delete at any moment.
   note, archived ones included.
 - **Tags you just type.** `#work` in the body is a tag; `# Heading` is a heading.
   Searchable, clickable, and gone the moment you delete the hashtag.
+- **Checklists.** `- [ ]` is a task. Click the box to tick it, and a finished one
+  steps back so what is left to do is what stands out. Enter continues the list.
+- **Links between notes.** `[[Another note]]` — ⌘-click follows it, and if no
+  such note exists yet, following it makes one.
+- **Capture what you copied.** `⌥⌘V` turns the clipboard into a note.
+- **Reachable from anything.** `ledge://new?title=…&text=…`, `ledge://open?title=…`
+  and `ledge://search?q=…`, so a Shortcut or a script can put things here.
 - **Export.** Markdown, plain text, a single file, or a `.ledge` archive that
   imports back with colours, states, tags and dates intact.
 - **Your folder, wherever you want it.** Move it into iCloud Drive and it syncs;
@@ -230,6 +237,21 @@ typography, and the build order the project followed.
 offers to bring the notes with it. Put it in iCloud Drive and it syncs — every
 read and write is coordinated through `NSFileCoordinator`, so nothing has to
 change for that to work.
+
+## Shortcuts
+
+| | |
+|---|---|
+| `⌥⌘N` | New note |
+| `⌥⌘V` | New note from the clipboard |
+| `⌥⌘F` | Search every note |
+| `⌥⌘A` | All notes |
+| `⌥⌘L` | The archive |
+| `⌥⌘D` | Show or hide the deck |
+| `⌘↩` | Open the note in the full editor |
+| `⌘B` `⌘I` `⌘E` `⌘K` | Bold, italic, code, link |
+| `⌘⇧T` | Turn lines into tasks, or back |
+| `⌘⇧L` `⌘⇧1…3` | List, headings |
 
 ## Tags
 

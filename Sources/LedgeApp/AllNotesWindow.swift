@@ -137,12 +137,16 @@ final class AllNotesWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, N
 
     // MARK: - showing
 
-    func show(filter selected: NoteIndex.Filter) {
+    func show(filter selected: NoteIndex.Filter, query: String? = nil) {
+        if let query { search.stringValue = query }
         filter.selectedSegment = selected == .archived ? 2 : (selected == .active ? 1 : 0)
         focus.capture()
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(search)
+        // Select what is there, so ⌥⌘F starts a new search rather than making
+        // you clear the last one.
+        (search.currentEditor())?.selectAll(nil)
         Task { await reload() }
     }
 

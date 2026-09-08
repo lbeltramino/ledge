@@ -780,6 +780,7 @@ final class DeckController {
         }
         view.onBeginEditing = { [weak self] in self?.beginEditing(id) }
         view.textView.onEscape = { [weak self] in self?.dismiss() }
+        view.textView.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
         view.onClose = { [weak self] in self?.closeNote() }
         view.onTitle = { [weak self] title in self?.rename(id: id, to: title) }
         view.onExpand = { [weak self] in self?.expand(id) }
@@ -885,6 +886,17 @@ final class DeckController {
         } catch {}
     }
 
+    /// Brings a note to the front of whatever strip it lives on, opened and
+    /// ready to write in. What a followed link lands on.
+    func reveal(id: String) async {
+        await refresh()
+        guard records.contains(where: { $0.id == id }) else { return }
+        if let float = floating[id] { float.front(); return }
+        if state == .rest { fanOut(takingFocus: true) }
+        preview(id)
+        beginEditing(id)
+    }
+
     /// Renaming a note renames its file. Identity lives in the frontmatter, so
     /// the note survives it — see `Frontmatter`.
     private func rename(id: String, to title: String) {
@@ -985,6 +997,7 @@ final class DeckController {
             self?.scheduleSave(id: id, body: text, from: editor)
         }
         editor.onTitle = { [weak self] text in self?.rename(id: id, to: text) }
+        editor.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
         editor.onClose = { [weak self] in
             self?.editors[id] = nil
             self?.commitPendingSave()
@@ -1104,10 +1117,11 @@ final class DeckController {
         }
     }
 
-    func newNote() {
+    func newNote(title: String = "", body: String = "", color: NoteColor? = nil) {
         Task {
-            guard let note = try? await store.create(strip: stripTag) else { return }
-            bodies[note.id] = ""
+            guard let note = try? await store.create(title: title, color: color,
+                                                     body: body, strip: stripTag) else { return }
+            bodies[note.id] = body
             await refresh()
             if state == .rest { fanOut(takingFocus: true) }
             preview(note.id)
