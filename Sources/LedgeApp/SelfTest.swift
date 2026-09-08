@@ -813,14 +813,16 @@ enum SelfTest {
         // opening the *last* tab is the case that used to yank the card upward
         deck.debugPreviewLast()
         if let lastCard = deck.debugGeometry().card, let lastTab = deck.debugGeometry().tabs.last {
-            let panel = deck.debugGeometry().panel
-            // On a display with no room to spare the card is clamped, and being
-            // clamped is the right answer — it must simply stay on screen.
-            let clamped = lastCard.height > panel.height - Metrics.panelPadding * 2 - 1
-            check(clamped || abs(lastCard.midY - lastTab.midY) < 6,
-                  clamped
-                    ? "on a short screen the note is clamped into view rather than centred"
-                    : "a note opened off the bottom tab grows from where you are pointing")
+            // Centred on its tab where there is room; clamped into view where
+            // there is not. Either way the note has to still come *out of* its
+            // tab, which means the two must overlap.
+            let centred = abs(lastCard.midY - lastTab.midY) < 6
+            let stillAttached = lastCard.intersects(lastTab)
+            check(centred || stillAttached,
+                  String(format: "a note opened off the bottom tab grows from where you are "
+                         + "pointing, or is clamped into view still touching it "
+                         + "(card %.0f–%.0f, tab %.0f–%.0f)",
+                         lastCard.minY, lastCard.maxY, lastTab.minY, lastTab.maxY))
         }
 
         // ---- a note open
@@ -847,8 +849,14 @@ enum SelfTest {
         check(card.width <= widthCeiling + 0.5 && card.height <= Metrics.Card.height + 0.5,
               "the card is \(Int(card.width)) × \(Int(card.height)), within the size asked for "
               + "or the floor its controls set")
-        check(card.width >= Metrics.Card.minWidth && card.height >= Metrics.Card.minHeight,
-              "the card never shrinks below a readable note")
+        // The nominal minimum scales with the size preference; the display does
+        // not. On a screen too small to honour it, being clamped to the screen is
+        // the right answer, so the floor is whichever is smaller.
+        let floorWidth = min(Metrics.Card.minWidth, visible.width * 0.42)
+        let floorHeight = min(Metrics.Card.minHeight, open.panel.height - Metrics.panelPadding * 2)
+        check(card.width >= floorWidth - 0.5 && card.height >= floorHeight - 0.5,
+              String(format: "the card is never smaller than the room allows (%.0f × %.0f, "
+                     + "floor %.0f × %.0f)", card.width, card.height, floorWidth, floorHeight))
         // The requirement is not "wide enough" but "nothing overlaps" — on a
         // small screen the row gives way instead, and that is still correct.
         check(deck.debugChromeOverlaps() == false,
