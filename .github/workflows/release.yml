@@ -101,13 +101,15 @@ jobs:
 
             ${{ steps.signing.outputs.signed == 'true' && 'This build is signed and notarised — it should open normally.' || '**This build is not notarised.** macOS will refuse it, and on Apple Silicon it usually says *"Ledge is damaged and can''t be opened"*. It is not damaged — that is the message for an app macOS cannot check. The SHA-256 beside this download will confirm the file arrived intact.
 
-            To open it, remove the quarantine flag macOS attaches to downloads:
+            Double-click it, let macOS refuse, then open **System Settings → Privacy & Security**, scroll to *Security*, and click **Open Anyway**. (Right-click → Open no longer works as a bypass — Apple removed it in Sequoia.)
+
+            Or, from the terminal:
 
             ```sh
             xattr -dr com.apple.quarantine /Applications/Ledge.app
             ```
 
-            That flag is the whole of what is stopping it. Removing it means you vouch for this app — do that only for software you are willing to vouch for.' }}
+            Either one says you vouch for this app. Do that only for software you are willing to vouch for.' }}
 
             Ledge has no Dock icon. It appears as a coloured stripe on the right
             edge of your screen, and as a small glyph in the menu bar.

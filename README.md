@@ -55,21 +55,28 @@ SQLite index beside it is a cache you can delete at any moment.
 Unpack the zip and move `Ledge.app` to `/Applications`.
 
 The build is **not notarised** — the signing and notarisation steps exist and are
-waiting on a Developer ID — so macOS will not open it until you say so. On Apple
-Silicon the message is usually *"Ledge is damaged and can't be opened"*. **It is
-not damaged.** That is what macOS says about an app it cannot check, and the zip
-carries a SHA-256 next to it if you want to confirm the download.
+waiting on a Developer ID — so macOS blocks it the first time and asks you to
+vouch for it. Either way works:
 
-To open it, remove the quarantine flag macOS attaches to anything downloaded:
+**From System Settings.** Double-click Ledge, let it be refused, then open
+**System Settings → Privacy & Security**, scroll to *Security*, and click
+**Open Anyway** next to "Ledge was blocked". It stays allowed after that.
+(Right-click → Open no longer works as a bypass; Apple removed it in Sequoia.)
+
+**From the terminal**, if you prefer one line:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Ledge.app
 ```
 
-That flag is the whole of what is stopping it; removing it says you vouch for
-this app. Do that only for software you are willing to vouch for. **System
-Settings → Privacy & Security → Open Anyway** does the same thing through the UI
-on some macOS versions.
+Either one says the same thing: you vouch for this app. Do that only for
+software you are willing to vouch for — the zip has a SHA-256 beside it if you
+want to confirm the download first.
+
+> Builds before **v0.2.1** were reported as *"damaged and can't be opened"*, and
+> nothing in the interface could get past that — the app bundle's signature did
+> not cover its own resources, so it really was invalid. Fixed in v0.2.1; if you
+> saw that message, download again.
 
 Ledge has no Dock icon. It appears as a coloured stripe on the right edge of your
 screen and as a small glyph in the menu bar. Notes land in `~/Documents/Ledge`.
