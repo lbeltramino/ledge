@@ -56,6 +56,11 @@ SQLite index beside it is a cache you can delete at any moment.
   `# comment` and `- name:`. The note takes its name from the snippet:
   `Deployment/api`, `aws_s3_bucket.logs`, `kubectl rollout status`. Pasting
   prose is still pasting prose.
+- **A note something else keeps up to date.** `ledge`, the command that ships
+  inside the app, lets a script or an agent create a note, add checklist items,
+  tick them off and append what it found. A note on a feed carries a small mark
+  on its tab — hollow while you are up to date, filled when there is something
+  you have not seen. Nothing pops up, nothing steals focus.
 - **Take the code back out.** Hover a code block and a small mark appears at its
   top right; click it and the block is on your clipboard without its fences,
   ready to paste into a terminal. `⌘⇧C` does the same for the block the caret is
@@ -195,7 +200,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 146 unit tests
+swift run ledge-tests                               # 162 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -345,6 +350,40 @@ between notes, and links out. For code, all three of Markdown's forms: inline
 `` ` ``, fenced ``` ``` ``` and `~~~`, and four-space indented blocks — which is
 what you get from pasting a terminal. A nested list item also starts with four
 spaces and is deliberately not treated as code.
+
+## Notes something else writes
+
+Ledge notes are files in a folder, and the app watches that folder, so anything
+that writes a `.md` file there shows up within 150 ms. `ledge` is the supported
+way to do that — it writes through the same file coordination the app uses, so
+it cannot land in the middle of one of its saves.
+
+```bash
+ID=$(ledge new "Migrate billing" --feed claude-code --strip work)
+ledge task add "$ID" run the schema migration
+ledge task check "$ID" schema migration
+ledge append "$ID" -- "Backfill ran in 4m12s, 3 rows failed validation."
+ledge list --feed claude-code          # → 01J…  Migrate billing  [1/3]  ← claude-code
+```
+
+Every command is a *local* edit — it appends, or it changes one line. There is
+deliberately no way to replace a note's body: you may be typing in it at the
+same time, and with a 250 ms autosave you are typing more often than it looks.
+Tasks are matched by their words rather than by position, ignoring case and
+accents, because an agent that remembers "item 3" ticks the wrong thing the
+moment you add one.
+
+`--feed NAME` is what marks the note as written-to by something else. That is
+what puts the dot on the tab. Whether you have seen the changes is kept per
+machine, in preferences rather than in the file: written to the note it would
+show the same dot on your other Mac, and clearing it would be a write, which
+would wake the watcher, which would refresh, which would clear it again.
+
+`skills/ledge/SKILL.md` in this repo is a Claude Code skill that teaches an
+agent the above. Copy it to `~/.claude/skills/` to have it available everywhere.
+
+If you installed with Homebrew, `ledge` is already on your PATH. Otherwise it is
+at `/Applications/Ledge.app/Contents/MacOS/ledge-cli`.
 
 ## Code
 

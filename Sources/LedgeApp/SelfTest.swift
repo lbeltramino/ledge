@@ -838,6 +838,83 @@ enum SelfTest {
         check(pixels(of: button) == resting, "and it goes back to the copy mark afterwards")
     }
 
+    /// Notes something else is writing to.
+    ///
+    /// The point of the whole feature is that this happens while you are doing
+    /// something else, so what is checked is that it does *not* disturb what you
+    /// are doing: same tab views, no teardown, and a mark small enough to ignore.
+    static func checkFeeds(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let first = deck.recordsForTesting.first else {
+            check(false, "no note to put on a feed"); return
+        }
+        let before = deck.tabsForTesting
+        guard !before.isEmpty else { check(false, "no tabs"); return }
+
+        // An agent writes to the note: the file changes, the deck refreshes.
+        let url = folder.appendingPathComponent(first.filename)
+        var note = Frontmatter.parse((try? String(contentsOf: url, encoding: .utf8)) ?? "",
+                                     fallbackTitle: "", fallbackID: first.id)
+        note.feed = "self-test"
+        note.body = FeedEdit.appending("una entrada del agente", to: note.body)
+        note.updated = Date().addingTimeInterval(5)
+        try? Frontmatter.serialize(note).write(to: url, atomically: true, encoding: .utf8)
+
+        // Exactly what the folder watcher does when something else writes.
+        await deck.reconcileForTesting([first.filename])
+        let after = deck.tabsForTesting
+        check(after.count == before.count, "the deck still has the same number of tabs")
+        check(zip(before, after).allSatisfy { $0 === $1 },
+              "a note changing must reuse its tab view — rebuilding tears down the view "
+              + "under the pointer, which is what used to close the deck mid-click")
+        check(after.first?.record.feed == "self-test", "…and the tab knows about the feed")
+        check(after.first?.hasUnseen == true, "a note written to since you looked is unseen")
+
+        // Looking at it is what clears the mark.
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(first.id)
+        check(deck.tabsForTesting.first?.hasUnseen == false, "opening the note clears the mark")
+        await deck.refresh()
+        check(deck.tabsForTesting.first?.hasUnseen == false, "…and it stays cleared across a refresh")
+
+        // The dot itself, read off the pixels.
+        func ink(_ tab: NoteTabView) -> [UInt8] {
+            tab.frame = NSRect(x: 0, y: 0, width: 40, height: 120)
+            guard let rep = tab.bitmapImageRepForCachingDisplay(in: tab.bounds) else { return [] }
+            tab.cacheDisplay(in: tab.bounds, to: rep)
+            guard let data = rep.bitmapData else { return [] }
+            return Array(UnsafeBufferPointer(start: data, count: rep.bytesPerRow * rep.pixelsHigh))
+        }
+        // The same note three ways. It has to be the same *id*: the paper tint
+        // is jittered from it, so three separate notes differ by more than the
+        // mark and the comparison would be measuring the wrong thing.
+        let base = Note(title: "sin feed")
+        var connected = base
+        connected.feed = "agent"
+        func tab(_ note: Note) -> NoteTabView {
+            NoteTabView(record: NoteRecord(note: note, filename: "a.md",
+                                           mtime: 0, size: 0, hash: ""))
+        }
+        let plain = tab(base), quiet = tab(connected), loud = tab(connected)
+        loud.hasUnseen = true
+
+        // How far each one departs from a tab with no mark at all. Summing the
+        // raw channel would depend on which channel and which way ink moves it;
+        // the distance from the unmarked tab does not.
+        func distance(_ a: [UInt8], _ b: [UInt8]) -> Int {
+            guard a.count == b.count else { return -1 }
+            return zip(a, b).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+        }
+        let none = ink(plain), ring = ink(quiet), filled = ink(loud)
+        let ringInk = distance(ring, none), filledInk = distance(filled, none)
+        check(ringInk > 0, "a note on a feed is marked and one without is not")
+        check(filledInk > ringInk,
+              "a filled dot must lay down more ink than a hollow one: ring \(ringInk), filled \(filledInk)")
+
+        // The self test's own ids should not linger in your preferences.
+        Settings.forgetSeen(keeping: [])
+    }
+
     /// The editor writes through the same debounced path as the cards. This
     /// drives it end to end and then reads the file back off disk.
     static func checkSaving(deck: DeckController, folder: URL) async {
@@ -1050,6 +1127,7 @@ enum SelfTest {
 
         print("\n\u{001B}[1mSaving\u{001B}[0m")
         await checkSaving(deck: deck, folder: deck.notesFolder)
+        await checkFeeds(deck: deck, folder: deck.notesFolder)
 
         let saved = (zoom: Settings.zoom, tab: Settings.tabScale, card: Settings.cardScale)
         defer {

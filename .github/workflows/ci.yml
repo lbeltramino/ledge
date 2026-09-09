@@ -21,6 +21,11 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
+      - name: Build the ledge command
+        # Before the tests: some of them run the binary itself, which is the only
+        # way the argument parsing and the exit codes get exercised at all.
+        run: swift build --product ledge
+
       - name: Unit tests
         # Not `swift test`: the suite is a plain executable target, because the
         # Command Line Tools ship Testing.framework without _Testing_Foundation.

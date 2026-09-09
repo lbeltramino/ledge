@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "LedgeStore", targets: ["LedgeStore"]),
         .executable(name: "ledge-tests", targets: ["LedgeTests"]),
         .executable(name: "LedgeApp", targets: ["LedgeApp"]),
+        .executable(name: "ledge", targets: ["LedgeCLI"]),
     ],
     targets: [
         .target(name: "LedgeCore"),
@@ -20,6 +21,9 @@ let package = Package(
         // This is the same suite as a plain executable — `swift run ledge-tests`.
         .executableTarget(name: "LedgeTests", dependencies: ["LedgeCore", "LedgeIndex", "LedgeStore"]),
         .executableTarget(name: "LedgeApp", dependencies: ["LedgeCore", "LedgeIndex", "LedgeStore"]),
+        // The headless half: no AppKit, so an agent calling it does not start a
+        // connection to the window server to tick a checkbox.
+        .executableTarget(name: "LedgeCLI", dependencies: ["LedgeCore", "LedgeStore"]),
     ],
     swiftLanguageModes: [.v6]
 )

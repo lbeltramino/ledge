@@ -87,6 +87,48 @@ enum Settings {
         zoom = zoomSteps[min(zoomSteps.count - 1, max(0, index + direction))]
     }
 
+    // MARK: - what you have already looked at
+
+    /// The last `updated` you saw, per note.
+    ///
+    /// This is the one piece of note state that is deliberately *not* in the
+    /// file. "Seen" is about you at this machine: written to the note it would
+    /// show the same dot on your other Mac, and clearing it would be a write,
+    /// which would wake the folder watcher, which would refresh, which would
+    /// clear it again. Per-device state in a watched file is a loop.
+    private static let seenKey = "ledge.seen"
+
+    static func lastSeen(_ id: String) -> Date? {
+        guard let stamps = UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Double],
+              let seconds = stamps[id] else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    static func markSeen(_ id: String, at date: Date) {
+        var stamps = (UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Double]) ?? [:]
+        stamps[id] = date.timeIntervalSince1970
+        UserDefaults.standard.set(stamps, forKey: seenKey)
+    }
+
+    /// True when something has written to this note since you last looked.
+    ///
+    /// Only for notes on a feed: an ordinary note is one you wrote yourself, and
+    /// telling you that you have not read your own writing is noise.
+    static func hasUnseen(feed: String, id: String, updated: Date) -> Bool {
+        guard !feed.isEmpty else { return false }
+        guard let seen = lastSeen(id) else { return true }
+        return updated > seen
+    }
+
+    /// Drops what we remember about notes that no longer exist, so the map
+    /// tracks the folder rather than growing forever.
+    static func forgetSeen(keeping ids: Set<String>) {
+        guard var stamps = UserDefaults.standard.dictionary(forKey: seenKey) as? [String: Double],
+              stamps.keys.contains(where: { !ids.contains($0) }) else { return }
+        stamps = stamps.filter { ids.contains($0.key) }
+        UserDefaults.standard.set(stamps, forKey: seenKey)
+    }
+
     static func resetSizes() {
         UserDefaults.standard.removeObject(forKey: Key.zoom.rawValue)
         UserDefaults.standard.removeObject(forKey: Key.tabScale.rawValue)

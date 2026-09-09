@@ -147,6 +147,9 @@ final class DeckController {
             bodies[open] = fresh
             propagate(body: fresh, of: open, from: nil)
         }
+        if let open = state.noteID, let record = records.first(where: { $0.id == open }) {
+            Settings.markSeen(open, at: record.updated)
+        }
         rebuildTabs()
         pill.colors = records.map(\.color)
         applyLayout(animated: false)
@@ -162,12 +165,29 @@ final class DeckController {
     }
 
     private func rebuildTabs() {
+        // Only a change in the shape of the deck justifies tearing views down.
+        // A note whose text changed — which is what a feed does, over and over —
+        // updates the tab it already has. Rebuilding under the pointer fires
+        // mouseExited, and that is what used to collapse the deck mid-click.
+        if tabs.count == records.count,
+           zip(tabs, records).allSatisfy({ $0.record.id == $1.id }) {
+            for (tab, record) in zip(tabs, records) {
+                if tab.record != record { tab.record = record }
+                tab.isFloating = floating[record.id] != nil
+                tab.hasUnseen = Settings.hasUnseen(feed: record.feed, id: record.id,
+                                                   updated: record.updated)
+            }
+            return
+        }
+
         tabs.forEach { $0.removeFromSuperview() }
         tabs = records.map { record in
             let tab = NoteTabView(record: record)
             tab.onClick = { [weak self] in self?.tabClicked($0) }
             tab.onContextMenu = { [weak self] tab, event in self?.showTabMenu(tab, event) }
             tab.isFloating = floating[record.id] != nil
+            tab.hasUnseen = Settings.hasUnseen(feed: record.feed, id: record.id,
+                                               updated: record.updated)
             root.addSubview(tab, positioned: .below, relativeTo: plusButton)
             return tab
         }
@@ -739,6 +759,10 @@ final class DeckController {
         cancelCollapse()
         commitPendingSave()
         state = .open(id)
+        if let record = records.first(where: { $0.id == id }) {
+            Settings.markSeen(id, at: record.updated)
+            tabs.first { $0.record.id == id }?.hasUnseen = false
+        }
         buildCard(for: id)
         applyLayout(animated: true)
         if let card {
@@ -1143,6 +1167,17 @@ final class DeckController {
     var cardRotationDegrees: Double { card.map { $0.jitter.cardRotation(focused: $0.isEditing) } ?? 0 }
     var liveRegionRect: NSRect { root.liveRegion }
     var recordsForTesting: [NoteRecord] { records }
+    /// The tab views themselves, so a check can ask whether they are the same
+    /// objects after a refresh or fresh ones.
+    var tabsForTesting: [NoteTabView] { tabs }
+
+    /// What the folder watcher does when a file changes underneath the app,
+    /// so a check can write a file the way an agent would and see the deck
+    /// react the way it will in the real thing.
+    func reconcileForTesting(_ filenames: [String]) async {
+        _ = try? await store.reconcile(filenames: filenames)
+        await refresh()
+    }
     func previewForTesting(_ id: String) { preview(id) }
 
     // MARK: - keyboard

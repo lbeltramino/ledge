@@ -103,6 +103,12 @@ final class Workspace {
 
     func refreshAll() async {
         for deck in decks { await deck.refresh() }
+        // Pruned here rather than in a deck: a deck only knows its own strip,
+        // and forgetting from there would mean each strip erasing what the
+        // others remembered.
+        if let all = try? await store.records() {
+            Settings.forgetSeen(keeping: Set(all.map(\.id)))
+        }
     }
 
     func deck(for stripID: String) -> DeckController? {

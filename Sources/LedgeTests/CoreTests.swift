@@ -485,6 +485,184 @@ enum CoreTests {
             c.expect(!UpdateCheckVersions.isNewer("0.1", than: "0.1.0"), "0.1 == 0.1.0")
         }
 
+        Runner.suite("What an agent may edit")
+
+        await Runner.test("appending keeps entries apart") { c in
+            c.equal(FeedEdit.appending("segundo", to: "primero"), "primero\n\nsegundo")
+            c.equal(FeedEdit.appending("solo", to: ""), "solo")
+            c.equal(FeedEdit.appending("  ", to: "intacto"), "intacto", "nothing to add, nothing changes")
+            c.equal(FeedEdit.appending("b", to: "a\n\n\n"), "a\n\nb", "no growing pile of blank lines")
+        }
+
+        await Runner.test("a new task joins the list instead of starting another") { c in
+            let body = "Plan\n\n- [ ] uno\n- [x] dos\n\nNotas al final"
+            let after = FeedEdit.addingTask("tres", to: body)
+            c.equal(after, "Plan\n\n- [ ] uno\n- [x] dos\n- [ ] tres\n\nNotas al final",
+                    "got: \(after.debugDescription)")
+            c.equal(Checkbox.items(in: after).count, 3)
+        }
+
+        await Runner.test("a new task keeps the indent of the list it joins") { c in
+            let after = FeedEdit.addingTask("b", to: "  - [ ] a")
+            c.equal(after, "  - [ ] a\n  - [ ] b")
+        }
+
+        await Runner.test("with no list, a task starts one at the end") { c in
+            c.equal(FeedEdit.addingTask("uno", to: "Contexto"), "Contexto\n\n- [ ] uno")
+            c.equal(FeedEdit.addingTask("uno", to: ""), "- [ ] uno")
+        }
+
+        await Runner.test("ticking finds the task by its words") { c in
+            let body = "- [ ] correr migraciones\n- [ ] desplegar a staging"
+            let hit = FeedEdit.setting(true, matching: "migraciones", in: body)
+            c.expect(hit?.changed == true, "should have ticked it")
+            c.equal(hit?.body, "- [x] correr migraciones\n- [ ] desplegar a staging")
+            c.equal(hit?.item, "correr migraciones", "and report what it ticked")
+        }
+
+        await Runner.test("ticking matches through case and accents") { c in
+            let body = "- [ ] Correr Migración"
+            c.expect(FeedEdit.setting(true, matching: "migracion", in: body)?.changed == true,
+                     "an agent quoting the task back should not miss on an accent")
+        }
+
+        await Runner.test("ticking twice is not work") { c in
+            let body = "- [x] listo"
+            let again = FeedEdit.setting(true, matching: "listo", in: body)
+            c.expect(again != nil, "the item is still found")
+            c.expect(again?.changed == false, "…but nothing changed, and it should say so")
+            c.equal(again?.body, body)
+        }
+
+        await Runner.test("a task that is not there is not invented") { c in
+            c.expect(FeedEdit.setting(true, matching: "no existe", in: "- [ ] algo") == nil)
+            c.expect(FeedEdit.setting(true, matching: "", in: "- [ ] algo") == nil,
+                     "an empty needle must not tick the first thing it sees")
+        }
+
+        await Runner.test("unticking is the same door") { c in
+            let hit = FeedEdit.setting(false, matching: "listo", in: "- [x] listo")
+            c.equal(hit?.body, "- [ ] listo")
+        }
+
+        await Runner.test("a feed is written to the file, not beside it") { c in
+            var note = Note(title: "Deploy", body: "x")
+            note.feed = "claude-code"
+            let text = Frontmatter.serialize(note)
+            c.expect(text.contains("feed: claude-code"), "not in the frontmatter: \(text)")
+            let back = Frontmatter.parse(text, fallbackTitle: "", fallbackID: note.id)
+            c.equal(back.feed, "claude-code", "and it survives the round trip")
+
+            let plain = Frontmatter.parse(Frontmatter.serialize(Note(title: "x")), fallbackTitle: "", fallbackID: ULID.generate())
+            c.equal(plain.feed, "", "a note nobody writes to says nothing at all")
+            c.expect(!Frontmatter.serialize(Note(title: "x")).contains("feed:"),
+                     "an empty feed does not clutter every file in the folder")
+        }
+
+        Runner.suite("The ledge command")
+
+        // Runs the binary itself rather than the functions under it: the
+        // argument parsing, the folder resolution and the exit codes are the
+        // parts an agent actually meets, and none of them are exercised by
+        // calling FeedStore directly.
+        let cli = Bundle.main.executableURL?.deletingLastPathComponent()
+            .appendingPathComponent("ledge")
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ledge-cli-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        @discardableResult
+        func run(_ arguments: [String]) -> (out: String, code: Int32) {
+            guard let cli, FileManager.default.isExecutableFile(atPath: cli.path) else {
+                return ("", -1)
+            }
+            let process = Process()
+            process.executableURL = cli
+            process.arguments = arguments
+            process.environment = ["LEDGE_FOLDER": folder.path]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try? process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return (String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines),
+                    process.terminationStatus)
+        }
+
+        await Runner.test("the command writes a note a person could have written") { c in
+            guard run(["folder"]).code == 0 else {
+                c.expect(false, "the ledge binary was not built beside the tests")
+                return
+            }
+            let id = run(["new", "Deploy 2.1", "--feed", "claude-code", "--strip", "work"])
+            c.expect(ULID.isValid(id.out), "new should print an id, printed \(id.out.debugDescription)")
+
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+            c.equal(files.filter { $0.hasSuffix(".md") }.count, 1, "one note, one file")
+
+            let text = (try? String(contentsOf: folder.appendingPathComponent(files[0]), encoding: .utf8)) ?? ""
+            c.expect(text.contains("feed: claude-code"), "the feed is in the frontmatter")
+            c.expect(text.contains("strip: work"), "and so is the strip it was asked for")
+        }
+
+        await Runner.test("tasks go on and come off the same list") { c in
+            run(["task", "add", "Deploy", "correr", "migraciones"])
+            run(["task", "add", "Deploy", "desplegar", "a", "staging"])
+            let done = run(["task", "check", "Deploy", "migraciones"])
+            c.equal(done.out, "done: correr migraciones")
+            c.equal(done.code, 0)
+
+            let again = run(["task", "check", "Deploy", "migraciones"])
+            c.equal(again.out, "already done: correr migraciones",
+                    "repeating itself is not an error — an agent will do it")
+            c.equal(again.code, 0, "…and must not look like a failure")
+
+            let missing = run(["task", "check", "Deploy", "algo que no está"])
+            c.equal(missing.code, 1, "a task that is not there is a failure")
+            c.expect(missing.out.contains("no task"), "and says so: \(missing.out)")
+        }
+
+        await Runner.test("progress is visible without opening anything") { c in
+            let listed = run(["list"])
+            c.expect(listed.out.contains("[1/2]"), "list should show progress: \(listed.out)")
+            c.expect(listed.out.contains("← claude-code"), "and who is writing: \(listed.out)")
+        }
+
+        await Runner.test("an ambiguous name is refused rather than guessed") { c in
+            run(["new", "Deploy staging"])
+            let ambiguous = run(["append", "Deploy", "algo"])
+            c.equal(ambiguous.code, 1, "two notes start with Deploy — picking one would be a coin toss")
+            let exact = run(["append", "Deploy staging", "algo"])
+            c.equal(exact.code, 0, "an exact title still works, even when it is a prefix of nothing else")
+        }
+
+        await Runner.test("text can arrive as arguments or on stdin") { c in
+            let id = run(["new", "Desde stdin"]).out
+            let process = Process()
+            process.executableURL = cli
+            process.arguments = ["append", id]
+            process.environment = ["LEDGE_FOLDER": folder.path]
+            let input = Pipe()
+            process.standardInput = input
+            process.standardOutput = Pipe()
+            try? process.run()
+            input.fileHandleForWriting.write(Data("línea uno\nlínea dos".utf8))
+            try? input.fileHandleForWriting.close()
+            process.waitUntilExit()
+
+            let body = run(["get", id]).out
+            c.expect(body.contains("línea uno\nlínea dos"),
+                     "a multi-line block should survive stdin: \(body.debugDescription)")
+        }
+
+        await Runner.test("it refuses to invent a note") { c in
+            let missing = run(["append", "no existe esta nota", "algo"])
+            c.equal(missing.code, 1)
+            c.expect(missing.out.contains("no note matches"), "said: \(missing.out)")
+        }
+
         Runner.suite("ULID")
 
         await Runner.test("sorts by creation time") { c in

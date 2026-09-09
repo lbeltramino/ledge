@@ -9,10 +9,26 @@ VERSION="${LEDGE_VERSION:-0.1.0}"
 APP="build/Ledge.app"
 
 swift build -c "$CONFIG" --product LedgeApp
+swift build -c "$CONFIG" --product ledge
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp ".build/$CONFIG/LedgeApp" "$APP/Contents/MacOS/Ledge"
+# The command-line half rides inside the bundle so it is covered by the same
+# signature. Homebrew symlinks it onto the PATH as `ledge`; otherwise it is one
+# ln -s away.
+#
+# Named ledge-cli, not ledge: the app's own binary is Ledge, and macOS
+# filesystems are case-insensitive by default, so copying it in as "ledge"
+# silently overwrites the app. That is not hypothetical — it is what happened
+# the first time, and the bundle still looked fine from the outside.
+cp ".build/$CONFIG/ledge" "$APP/Contents/MacOS/ledge-cli"
+
+# So it cannot happen again quietly.
+if ! cmp -s ".build/$CONFIG/LedgeApp" "$APP/Contents/MacOS/Ledge"; then
+  echo "the app binary in the bundle is not the app — something overwrote it" >&2
+  exit 1
+fi
 
 # The icon, if it has been generated. Scripts/icon.sh draws it with the app.
 if [ -f Resources/AppIcon.icns ]; then

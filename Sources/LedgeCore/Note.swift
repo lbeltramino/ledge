@@ -25,6 +25,13 @@ public struct Note: Sendable, Equatable, Identifiable {
     public var tags: [String]
     /// Which strip of the deck this note sits on. Empty means the primary one.
     public var strip: String
+    /// What is writing to this note, when something other than you is: the name
+    /// an agent gave when it took the note over. Empty means nobody.
+    ///
+    /// It lives in the file rather than beside it because it is a fact about the
+    /// note — it should follow it to your other machine, and survive a rebuild
+    /// of the index.
+    public var feed: String
     public var created: Date
     public var updated: Date
     public var body: String
@@ -41,6 +48,7 @@ public struct Note: Sendable, Equatable, Identifiable {
         rank: String = Rank.initial,
         tags: [String] = [],
         strip: String = "",
+        feed: String = "",
         created: Date = Date(),
         updated: Date = Date(),
         body: String = "",
@@ -53,6 +61,7 @@ public struct Note: Sendable, Equatable, Identifiable {
         self.rank = rank
         self.tags = tags
         self.strip = strip
+        self.feed = feed
         self.created = Frontmatter.normalized(created)
         self.updated = Frontmatter.normalized(updated)
         self.body = body

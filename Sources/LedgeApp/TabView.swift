@@ -11,8 +11,21 @@ import LedgeIndex
 /// pointer instead, and the controller decides which tab it is over.
 final class NoteTabView: NSView {
 
-    let record: NoteRecord
+    /// Reassigned in place when the note changes, rather than the whole tab
+    /// being rebuilt: a feed writes to a note far more often than you do, and
+    /// tearing down the view under the pointer is what used to close the deck.
+    var record: NoteRecord {
+        didSet {
+            overrideTitle = nil
+            overrideColor = nil
+            needsDisplay = true
+            updateAccessibility()
+        }
+    }
     let jitter: Jitter
+    /// This note has changes you have not looked at. Nothing about what they
+    /// are — just that they happened.
+    var hasUnseen = false { didSet { needsDisplay = true } }
     var isSelected = false { didSet { needsDisplay = true } }
     /// False while the deck is at rest. An invisible tab must not sit on top of
     /// the pill quietly eating the pointer.
@@ -143,6 +156,29 @@ final class NoteTabView: NSView {
         fold.setLineDash([2.5, 3.5], count: 2, phase: 0)
         ink.withAlphaComponent(isFloating ? 0.12 : 0.30).setStroke()
         fold.stroke()
+
+        // A note something else is writing to gets a mark in the fold margin,
+        // which is otherwise empty. Hollow while you are up to date, filled when
+        // there is something you have not seen — the whole vocabulary.
+        if !record.feed.isEmpty {
+            let diameter = Metrics.Tab.foldInset * 0.5
+            let centre: NSPoint = horizontal
+                ? NSPoint(x: Metrics.Tab.labelInset * 0.7 + diameter,
+                          y: bounds.maxY - Metrics.Tab.foldInset / 2)
+                : NSPoint(x: mirrored ? Metrics.Tab.foldInset / 2 : bounds.maxX - Metrics.Tab.foldInset / 2,
+                          y: Metrics.Tab.labelInset * 0.7 + diameter)
+            let dot = NSBezierPath(ovalIn: NSRect(x: centre.x - diameter / 2,
+                                                  y: centre.y - diameter / 2,
+                                                  width: diameter, height: diameter))
+            if hasUnseen {
+                ink.withAlphaComponent(isFloating ? 0.30 : 0.75).setFill()
+                dot.fill()
+            } else {
+                ink.withAlphaComponent(isFloating ? 0.14 : 0.34).setStroke()
+                dot.lineWidth = 1
+                dot.stroke()
+            }
+        }
 
         let labelColor = ink.withAlphaComponent(isFloating ? 0.32 : 0.88)
         if horizontal {

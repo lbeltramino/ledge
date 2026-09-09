@@ -7,7 +7,7 @@ import LedgeCore
 /// Therefore: **no migrations, ever.** A schema mismatch deletes the file and
 /// rebuilds. A derived cache that needs migration logic has stopped being one.
 public final class NoteIndex {
-    public static let schemaVersion = 2
+    public static let schemaVersion = 3
     public static let filename = ".index.sqlite3"
 
     private var db: Connection
@@ -89,6 +89,7 @@ public final class NoteIndex {
           rank     TEXT NOT NULL,
           tags     TEXT NOT NULL,
           strip    TEXT NOT NULL DEFAULT '',
+          feed     TEXT NOT NULL DEFAULT '',
           snippet  TEXT NOT NULL,
           created  TEXT NOT NULL,
           updated  TEXT NOT NULL,
@@ -101,6 +102,7 @@ public final class NoteIndex {
         CREATE INDEX IF NOT EXISTS notes_state_rank ON notes(state, rank);
         CREATE INDEX IF NOT EXISTS notes_strip      ON notes(strip, rank);
         CREATE INDEX IF NOT EXISTS notes_filename   ON notes(filename);
+        CREATE INDEX IF NOT EXISTS notes_feed       ON notes(feed);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
           title, body, tags,
@@ -129,20 +131,20 @@ public final class NoteIndex {
     private func writeRow(_ r: NoteRecord, body: String) throws {
         let tagsJSON = (try? String(data: JSONEncoder().encode(r.tags), encoding: .utf8)) ?? "[]"
         try db.run("""
-        INSERT INTO notes (id, filename, title, color, state, rank, tags, strip, snippet,
+        INSERT INTO notes (id, filename, title, color, state, rank, tags, strip, feed, snippet,
                            created, updated, mtime, size, hash, width, height)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
           filename = excluded.filename, title = excluded.title, color = excluded.color,
           state = excluded.state, rank = excluded.rank, tags = excluded.tags,
-          strip = excluded.strip, snippet = excluded.snippet, created = excluded.created, updated = excluded.updated,
+          strip = excluded.strip, feed = excluded.feed, snippet = excluded.snippet, created = excluded.created, updated = excluded.updated,
           mtime = excluded.mtime, size = excluded.size, hash = excluded.hash,
           width = COALESCE(excluded.width, notes.width),
           height = COALESCE(excluded.height, notes.height)
         """, [
             .text(r.id), .text(r.filename), .text(r.title), .text(r.color.rawValue),
             .text(r.state.rawValue), .text(r.rank), .text(tagsJSON ?? "[]"),
-            .text(r.strip), .text(r.snippet),
+            .text(r.strip), .text(r.feed), .text(r.snippet),
             .text(Frontmatter.string(from: r.created)), .text(Frontmatter.string(from: r.updated)),
             .double(r.mtime), .int(Int64(r.size)), .text(r.hash),
             .double(r.width), .double(r.height)
@@ -196,6 +198,15 @@ public final class NoteIndex {
             : "WHERE state = 'active' AND strip = ?"
         return try db.query("SELECT \(NoteIndex.columns) FROM notes \(clause) ORDER BY rank ASC",
                             [.text(strip)], NoteIndex.decode)
+    }
+
+    /// Every note something is writing to, newest change first — what a feed
+    /// reader wants and what `ledge list --feed` answers with.
+    public func all(feed: String) throws -> [NoteRecord] {
+        let clause = feed.isEmpty ? "WHERE feed != ''" : "WHERE feed = ?"
+        let arguments: [SQLValue] = feed.isEmpty ? [] : [.text(feed)]
+        return try db.query("SELECT \(NoteIndex.columns) FROM notes \(clause) ORDER BY updated DESC",
+                            arguments, NoteIndex.decode)
     }
 
     public func record(id: String) throws -> NoteRecord? {
@@ -274,8 +285,8 @@ public final class NoteIndex {
 
     static let columns = """
     notes.id, notes.filename, notes.title, notes.color, notes.state, notes.rank, notes.tags, \
-    notes.strip, notes.snippet, notes.created, notes.updated, notes.mtime, notes.size, notes.hash, \
-    notes.width, notes.height
+    notes.strip, notes.feed, notes.snippet, notes.created, notes.updated, notes.mtime, notes.size, \
+    notes.hash, notes.width, notes.height
     """
 
     static func decode(_ row: Row) -> NoteRecord {
@@ -289,14 +300,15 @@ public final class NoteIndex {
             rank: row.text(5),
             tags: tags,
             strip: row.text(7),
-            snippet: row.text(8),
-            created: Frontmatter.date(from: row.text(9)) ?? Date(),
-            updated: Frontmatter.date(from: row.text(10)) ?? Date(),
-            mtime: row.double(11),
-            size: row.int(12),
-            hash: row.text(13),
-            width: row.optionalDouble(14),
-            height: row.optionalDouble(15)
+            feed: row.text(8),
+            snippet: row.text(9),
+            created: Frontmatter.date(from: row.text(10)) ?? Date(),
+            updated: Frontmatter.date(from: row.text(11)) ?? Date(),
+            mtime: row.double(12),
+            size: row.int(13),
+            hash: row.text(14),
+            width: row.optionalDouble(15),
+            height: row.optionalDouble(16)
         )
     }
 }

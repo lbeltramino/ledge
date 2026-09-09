@@ -26,6 +26,10 @@ jobs:
           echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Build the ledge command
+        # Before the tests: some of them run the binary itself.
+        run: swift build --product ledge
+
       - name: Unit tests
         run: swift run ledge-tests
 
