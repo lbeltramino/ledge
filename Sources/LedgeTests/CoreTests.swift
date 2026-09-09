@@ -382,6 +382,43 @@ enum CoreTests {
                     "  > quoted")
         }
 
+        await Runner.test("a line can be moved up and down") { c in
+            let text = "one\ntwo\nthree"
+            let down = MarkdownText.moveLines(text, lines: NSRange(location: 0, length: 3), by: 1)
+            c.equal(down?.text, "two\none\nthree")
+            c.equal(down?.selection, NSRange(location: 4, length: 3),
+                    "the moved line stays selected so you can keep pressing")
+
+            let up = MarkdownText.moveLines(text, lines: NSRange(location: 8, length: 5), by: -1)
+            c.equal(up?.text, "one\nthree\ntwo")
+        }
+
+        await Runner.test("moving past either end does nothing") { c in
+            c.expect(MarkdownText.moveLines("a\nb", lines: NSRange(location: 0, length: 1), by: -1) == nil,
+                     "the first line cannot go up")
+            c.expect(MarkdownText.moveLines("a\nb", lines: NSRange(location: 2, length: 1), by: 1) == nil,
+                     "the last line cannot go down")
+            c.expect(MarkdownText.moveLines("only", lines: NSRange(location: 0, length: 4), by: 1) == nil,
+                     "a single line has nowhere to go")
+        }
+
+        await Runner.test("moving a numbered item renumbers the list") { c in
+            let text = "1. a\n2. b\n3. c"
+            let moved = MarkdownText.moveLines(text, lines: NSRange(location: 0, length: 4), by: 1)
+            c.equal(moved?.text, "1. b\n2. a\n3. c",
+                    "the numbers should describe the new order, not follow the lines")
+        }
+
+        await Runner.test("a pasted URL is recognised, other text is not") { c in
+            c.expect(MarkdownText.isLink("https://example.com"), "https")
+            c.expect(MarkdownText.isLink("http://example.com/a?b=c"), "with a query")
+            c.expect(MarkdownText.isLink("mailto:someone@example.com"), "mailto")
+            c.expect(!MarkdownText.isLink("just some words"), "prose is not a link")
+            c.expect(!MarkdownText.isLink("example.com"), "no scheme, no link")
+            c.expect(!MarkdownText.isLink("https://example.com and more"), "a sentence is not a link")
+            c.expect(!MarkdownText.isLink(""), "nothing is not a link")
+        }
+
         Runner.suite("Links between notes")
 
         await Runner.test("a wikilink is found, with its name") { c in

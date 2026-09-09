@@ -264,6 +264,64 @@ enum MarkdownEditing {
         return true
     }
 
+    /// ⌥↑ and ⌥↓ — move the lines you are on, keeping them selected so you can
+    /// keep pressing.
+    @discardableResult
+    static func moveLines(_ textView: NSTextView, by direction: Int) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let text = storage.string as NSString
+        let lines = text.lineRange(for: textView.selectedRange())
+        guard let moved = MarkdownText.moveLines(storage.string, lines: lines, by: direction)
+        else { return false }
+
+        replace(textView, range: NSRange(location: 0, length: text.length), with: moved.text)
+        textView.setSelectedRange(moved.selection)
+        textView.scrollRangeToVisible(moved.selection)
+        return true
+    }
+
+    /// Pasting a URL over some words makes them the link text, rather than
+    /// throwing away what you had selected.
+    @discardableResult
+    static func pasteLink(_ textView: NSTextView,
+                          from pasteboard: NSPasteboard = .general) -> Bool {
+        let selection = textView.selectedRange()
+        guard selection.length > 0, let storage = textView.textStorage else { return false }
+        guard let pasted = pasteboard.string(forType: .string),
+              MarkdownText.isLink(pasted) else { return false }
+
+        let label = (storage.string as NSString).substring(with: selection)
+        // Whole lines are a block of text, not a phrase to make into a link.
+        guard !label.contains("\n") else { return false }
+
+        let url = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markdown = "[\(label)](\(url))"
+        replace(textView, range: selection, with: markdown)
+        textView.setSelectedRange(NSRange(location: selection.location + (markdown as NSString).length,
+                                          length: 0))
+        return true
+    }
+
+    /// Typing a bracket or a quote with something selected puts it around the
+    /// selection instead of replacing it.
+    @discardableResult
+    static func wrapSelection(_ textView: NSTextView, typing input: String) -> Bool {
+        guard input.count == 1, let opener = input.first,
+              let closer = MarkdownText.wrappingPairs[opener] else { return false }
+        let selection = textView.selectedRange()
+        guard selection.length > 0, let storage = textView.textStorage else { return false }
+
+        let selected = (storage.string as NSString).substring(with: selection)
+        // Several lines is a block; ⌘E fences those, a quote mark would not.
+        guard !selected.contains("\n") else { return false }
+
+        let wrapped = String(opener) + selected + closer
+        replace(textView, range: selection, with: wrapped)
+        textView.setSelectedRange(NSRange(location: selection.location + 1,
+                                          length: (selected as NSString).length))
+        return true
+    }
+
     /// Goes through the undo manager, so every one of these is undoable and the
     /// delegate sees the change.
     private static func replace(_ textView: NSTextView, range: NSRange, with string: String) {

@@ -526,6 +526,81 @@ enum SelfTest {
         MarkdownEditing.toggleTask(fromBullets)
         check(fromBullets.string == "- [ ] milk",
               "an existing bullet keeps its bullet: \(fromBullets.string.debugDescription)")
+
+        // ---- the three things a text editor is expected to do
+
+        // A real NoteTextView, so the key handling is exercised and not just the
+        // transformation underneath it.
+        func note(_ text: String, selection: NSRange) -> NoteTextView {
+            let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+            view.string = text
+            view.setSelectedRange(selection)
+            return view
+        }
+        func optionArrow(_ up: Bool) -> NSEvent {
+            let key = String(UnicodeScalar(UInt32(up ? NSUpArrowFunctionKey : NSDownArrowFunctionKey))!)
+            return NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .option,
+                                    timestamp: 0, windowNumber: 0, context: nil,
+                                    characters: key, charactersIgnoringModifiers: key,
+                                    isARepeat: false, keyCode: up ? 126 : 125)!
+        }
+
+        let moving = note("alpha\nbeta\ngamma", selection: NSRange(location: 0, length: 0))
+        moving.keyDown(with: optionArrow(false))
+        check(moving.string == "beta\nalpha\ngamma",
+              "⌥↓ moves the line down: \(moving.string.debugDescription)")
+        check(moving.selectedRange().location == 5 && moving.selectedRange().length == 5,
+              "the moved line stays selected, so ⌥↓ can be pressed again")
+        moving.keyDown(with: optionArrow(true))
+        check(moving.string == "alpha\nbeta\ngamma", "⌥↑ brings it back")
+
+        let stuck = note("only\nline", selection: NSRange(location: 0, length: 0))
+        stuck.keyDown(with: optionArrow(true))
+        check(stuck.string == "only\nline", "⌥↑ on the first line does nothing rather than eating it")
+
+        let renumbered = note("1. a\n2. b\n3. c", selection: NSRange(location: 0, length: 0))
+        renumbered.keyDown(with: optionArrow(false))
+        check(renumbered.string == "1. b\n2. a\n3. c",
+              "moving a numbered item renumbers the list: \(renumbered.string.debugDescription)")
+
+        // Typing a bracket over a selection.
+        let wrapping = note("call me maybe", selection: NSRange(location: 5, length: 2))
+        wrapping.insertText("(", replacementRange: NSRange(location: NSNotFound, length: 0))
+        check(wrapping.string == "call (me) maybe",
+              "typing ( with a selection wraps it: \(wrapping.string.debugDescription)")
+        check(wrapping.selectedRange() == NSRange(location: 6, length: 2),
+              "and the same words stay selected, so you can wrap again")
+
+        let replacing = note("call me maybe", selection: NSRange(location: 5, length: 2))
+        replacing.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+        check(replacing.string == "call x maybe",
+              "an ordinary character still replaces the selection: \(replacing.string.debugDescription)")
+
+        let multiline = note("one\ntwo", selection: NSRange(location: 0, length: 7))
+        multiline.insertText("\"", replacementRange: NSRange(location: NSNotFound, length: 0))
+        check(multiline.string == "\"", "several lines are a block, not a phrase to quote")
+
+        // Pasting a link over a selection. A private pasteboard, so running the
+        // self test does not touch what you had copied.
+        let board = NSPasteboard(name: NSPasteboard.Name("ledge.selftest"))
+        board.clearContents()
+        board.setString("https://example.com/a", forType: .string)
+
+        let linking = note("read the docs here", selection: NSRange(location: 9, length: 4))
+        check(MarkdownEditing.pasteLink(linking, from: board), "pasting a URL over words is handled")
+        check(linking.string == "read the [docs](https://example.com/a) here",
+              "the selection becomes the link text: \(linking.string.debugDescription)")
+
+        let noSelection = note("nothing selected", selection: NSRange(location: 4, length: 0))
+        check(!MarkdownEditing.pasteLink(noSelection, from: board),
+              "with no selection a URL is pasted as a URL")
+
+        board.clearContents()
+        board.setString("some copied prose", forType: .string)
+        let prose = note("read the docs here", selection: NSRange(location: 9, length: 4))
+        check(!MarkdownEditing.pasteLink(prose, from: board),
+              "pasting text that is not a URL is an ordinary paste")
+        board.clearContents()
     }
 
     /// The editor writes through the same debounced path as the cards. This

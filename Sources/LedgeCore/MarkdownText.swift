@@ -138,6 +138,62 @@ public enum MarkdownText {
         return rows.joined(separator: "\n")
     }
 
+    // MARK: - moving lines
+
+    /// Moves the lines a selection touches up or down by one.
+    ///
+    /// Returns the new text and where the selection ends up, so the lines you
+    /// moved stay selected and you can keep pressing.
+    public static func moveLines(_ text: String, lines: NSRange,
+                                 by direction: Int) -> (text: String, selection: NSRange)? {
+        let source = text as NSString
+        var rows = text.components(separatedBy: "\n")
+        guard rows.count > 1 else { return nil }
+
+        // which rows the range covers
+        var starts: [Int] = []
+        var offset = 0
+        for row in rows {
+            starts.append(offset)
+            offset += (row as NSString).length + 1
+        }
+        let first = starts.lastIndex { $0 <= lines.location } ?? 0
+        let last = starts.lastIndex { $0 < max(lines.upperBound, lines.location + 1) } ?? first
+
+        let target = direction < 0 ? first - 1 : last + 1
+        guard target >= 0, target < rows.count else { return nil }
+
+        let block = Array(rows[first...last])
+        rows.removeSubrange(first...last)
+        let insertAt = direction < 0 ? first - 1 : first + 1
+        rows.insert(contentsOf: block, at: insertAt)
+
+        let joined = rows.joined(separator: "\n")
+        // where the moved block now begins
+        var newStart = 0
+        for row in rows.prefix(insertAt) { newStart += (row as NSString).length + 1 }
+        let length = block.map { ($0 as NSString).length + 1 }.reduce(0, +) - 1
+        _ = source
+        return (renumber(joined), NSRange(location: newStart, length: max(0, length)))
+    }
+
+    // MARK: - pasting
+
+    /// Whether a pasted string is a link, in which case pasting it over some
+    /// selected words should make them the link's text rather than replace them.
+    public static func isLink(_ string: String) -> Bool {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace) else { return false }
+        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() else { return false }
+        return ["http", "https", "mailto", "ftp", "ledge"].contains(scheme) && url.host != nil
+            || scheme == "mailto"
+    }
+
+    /// The pairs that wrap a selection when you type the opening one.
+    public static let wrappingPairs: [Character: String] = [
+        "(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'", "`": "`", "*": "*", "_": "_",
+    ]
+
     // MARK: - backspace
 
     /// Backspace at the very start of a list item's text takes the marker off

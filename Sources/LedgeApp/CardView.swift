@@ -675,6 +675,32 @@ final class NoteTextView: NSTextView {
         super.deleteBackward(sender)
     }
 
+    /// ⌥↑ and ⌥↓ move the current line. AppKit sends those through
+    /// `moveToBeginningOfParagraph:`, which is not what anyone means by them in
+    /// an editor, so they are caught before `interpretKeyEvents` sees them.
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == .option, let key = event.charactersIgnoringModifiers?.unicodeScalars.first {
+            if key.value == UInt32(NSUpArrowFunctionKey), MarkdownEditing.moveLines(self, by: -1) { return }
+            if key.value == UInt32(NSDownArrowFunctionKey), MarkdownEditing.moveLines(self, by: 1) { return }
+        }
+        super.keyDown(with: event)
+    }
+
+    /// Typing a bracket or a quote with a selection wraps it.
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        let typed = (string as? String) ?? (string as? NSAttributedString)?.string
+        if let typed, replacementRange.location == NSNotFound,
+           MarkdownEditing.wrapSelection(self, typing: typed) { return }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    /// Pasting a URL over a selection links it rather than replacing it.
+    override func paste(_ sender: Any?) {
+        if MarkdownEditing.pasteLink(self) { return }
+        super.paste(sender)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let index = characterIndexForInsertion(at: point)

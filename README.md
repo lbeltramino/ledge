@@ -50,6 +50,10 @@ SQLite index beside it is a cache you can delete at any moment.
   steps back so what is left to do is what stands out. Enter continues the list,
   Tab nests it, Shift-Tab takes it back out, and numbered lists renumber
   themselves.
+- **The small things.** Paste a URL over some words and they become the link
+  text. Type a bracket or a quote with something selected and it wraps rather
+  than replaces. `⌥↑` and `⌥↓` move the line you are on, renumbering the list
+  behind you.
 - **A highlighter.** `==like this==`, drawn as a marker swipe rather than a
   coloured rectangle — it overshoots, wobbles and presses harder where it
   started. Yellow, or pink on a yellow note.
@@ -181,7 +185,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 110 unit tests
+swift run ledge-tests                               # 114 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -320,6 +324,7 @@ change for that to work.
 | `⌘F` | Find in this note |
 | `⌘G` `⇧⌘G` | Next match, previous match |
 | `⇥` `⇧⇥` | Nest a list item, or take it back out |
+| `⌥↑` `⌥↓` | Move the line, or the selected lines |
 | `⌘⇧L` `⌘⇧1…3` | List, headings |
 
 ## Markdown it understands
