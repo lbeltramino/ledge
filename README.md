@@ -188,7 +188,7 @@ Measured on an idle Mac with five notes, by `--diagnose` and by macOS itself:
 
 | | |
 |---|---|
-| Memory | **16 MB** — the `phys_footprint` Activity Monitor shows |
+| Memory | **13 MB** — the `phys_footprint` Activity Monitor shows |
 | CPU, idle | **0.0%** across ten one-second samples |
 | Threads | 3 |
 | Highlighting | **under 0.1 ms** per keystroke, at 20 lines or at 1000 |
@@ -196,11 +196,15 @@ Measured on an idle Mac with five notes, by `--diagnose` and by macOS itself:
 Resident size reads around 68 MB, and almost all of that is shared AppKit pages
 every Mac app maps. The number that costs you something is the footprint.
 
-It was 12 MB when this table was first written and is 16 MB now — the difference
-is the code added since, and it is here rather than quietly corrected because a
-number in a README is a claim, and a claim that only ever moves in the flattering
-direction is not being measured. Run `--diagnose` and see what your own machine
-says.
+It was 12 MB when this table was first written and is 13.4 MB now, measured from
+outside the process with `vmmap --summary` after eighteen idle seconds. For
+comparison, on the machine that number came from: Notes 103 MB, Chrome 281 MB,
+Safari 496 MB.
+
+`--diagnose` will tell you about 16 MB, and that is not the same measurement:
+it prints the footprint *after* compiling every highlighting rule, resolving
+fonts, building text views and rendering notes to bitmaps, because those are the
+things it exists to check. The idle number is the one in the table.
 
 Nothing polls. The deck sleeps until the pointer reaches the edge, the folder is
 watched by FSEvents rather than scanned, notes are written 250 ms after you stop
