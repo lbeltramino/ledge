@@ -81,6 +81,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.drawsBackground = false
         textView.textColor = ink
         textView.insertionPointColor = ink
+        textView.codeCopy.ink = ink
         textView.textContainerInset = NSSize(width: 0, height: 6)
         textView.isContinuousSpellCheckingEnabled = true
         textView.font = Typography.noteBody(size: 20)
@@ -260,6 +261,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         titleField.textColor = ink
         textView.textColor = ink
         textView.insertionPointColor = ink
+        textView.codeCopy.ink = ink
         highlighter.ink = ink
         highlighter.accent = Palette.tab(record.color)
             .blended(withFraction: 0.35, of: ink) ?? ink

@@ -301,6 +301,7 @@ final class NoteCardView: NSView {
         if let storage = textView.textStorage { highlighter?.highlight(storage) }
         titleField.textColor = ink
         textView.textColor = ink.withAlphaComponent(0.92)
+        textView.codeCopy.ink = ink
         textView.insertionPointColor = ink
     }
 
@@ -717,6 +718,155 @@ final class NoteTextView: NSTextView {
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
         isAutomaticSpellingCorrectionEnabled = false
+
+        codeCopy.onCopy = { [weak self] in self?.copyHoveredBlock() }
+        addSubview(codeCopy)
+    }
+
+    // MARK: - copying a code block
+
+    let codeCopy = CodeCopyButton()
+    /// The block the pointer is over, and the text length that was true when we
+    /// found it — cheap enough to redo on every mouse move, but there is no
+    /// reason to.
+    private var hoveredBlock: (whole: NSRange, body: NSRange)?
+    private var hoveredWhen = -1
+    private var codeTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let codeTracking { removeTrackingArea(codeTracking) }
+        let area = NSTrackingArea(rect: .zero,
+                                  options: [.mouseMoved, .mouseEnteredAndExited,
+                                            .activeAlways, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(area)
+        codeTracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        updateCodeCopy(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hideCodeCopy()
+    }
+
+    /// Scrolling moves the block out from under a pointer that never moved, so
+    /// the mark has to be placed again whenever the text is drawn.
+    override func viewWillDraw() {
+        super.viewWillDraw()
+        guard !codeCopy.isHidden, let window else { return }
+        let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        updateCodeCopy(at: convert(inWindow, from: nil))
+    }
+
+    /// Shows the mark at the top right of the block under `point`, or hides it.
+    func updateCodeCopy(at point: NSPoint) {
+        guard let storage = textStorage, let layoutManager, let container = textContainer,
+              !storage.string.isEmpty else { return hideCodeCopy() }
+
+        if hoveredWhen != storage.length { hoveredBlock = nil }
+        let text = storage.string as NSString
+
+        // Still the same block? Then only the position needs redoing.
+        var block = hoveredBlock
+        if block == nil || !rectOf(block!.whole, layoutManager, container).contains(point) {
+            let index = characterIndexForInsertion(at: point)
+            let caret = NSRange(location: min(index, text.length), length: 0)
+            block = MarkdownEditing.enclosingFence(in: text, at: caret)
+            hoveredWhen = storage.length
+        }
+        guard let block, block.body.length > 0 else { return hideCodeCopy() }
+
+        let rect = rectOf(block.whole, layoutManager, container)
+        guard rect.contains(point) else { return hideCodeCopy() }
+
+        hoveredBlock = block
+        let inset: CGFloat = 6
+        codeCopy.setFrameOrigin(NSPoint(x: rect.maxX - CodeCopyButton.size - inset,
+                                        y: rect.minY + inset * 0.7))
+        if codeCopy.isHidden {
+            codeCopy.forget()
+            codeCopy.isHidden = false
+        }
+    }
+
+    /// The block's rectangle, widened to the text container: the right margin
+    /// beside a short line is still part of the block you are pointing at.
+    private func rectOf(_ range: NSRange, _ layoutManager: NSLayoutManager,
+                        _ container: NSTextContainer) -> NSRect {
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+        rect.origin.x = textContainerOrigin.x
+        rect.origin.y += textContainerOrigin.y
+        rect.size.width = container.size.width
+        return rect
+    }
+
+    func hideCodeCopy() {
+        guard !codeCopy.isHidden else { return }
+        codeCopy.isHidden = true
+        codeCopy.forget()
+        hoveredBlock = nil
+    }
+
+    /// The block under the pointer, on the clipboard, without its fences.
+    @discardableResult
+    func copyHoveredBlock(to pasteboard: NSPasteboard = .general) -> String? {
+        guard let block = hoveredBlock, let storage = textStorage else { return nil }
+        return copy(body: block.body, from: storage, to: pasteboard)
+    }
+
+    /// ⌘⇧C — the block the caret is in, for when your hands are on the keys.
+    @discardableResult
+    func copyBlockAtCaret(to pasteboard: NSPasteboard = .general) -> String? {
+        guard let storage = textStorage,
+              let block = MarkdownEditing.enclosingFence(in: storage.string as NSString,
+                                                         at: selectedRange())
+        else { return nil }
+        return copy(body: block.body, from: storage, to: pasteboard)
+    }
+
+    /// Puts the tick over the block ⌘⇧C just took, then lets the pointer decide
+    /// whether the mark stays.
+    private func showCopyConfirmation() {
+        guard let storage = textStorage, let layoutManager, let container = textContainer,
+              let block = MarkdownEditing.enclosingFence(in: storage.string as NSString,
+                                                         at: selectedRange())
+        else { return }
+        let rect = rectOf(block.whole, layoutManager, container)
+        hoveredBlock = block
+        hoveredWhen = storage.length
+        codeCopy.setFrameOrigin(NSPoint(x: rect.maxX - CodeCopyButton.size - 6,
+                                        y: rect.minY + 4.2))
+        codeCopy.isHidden = false
+        codeCopy.confirm()
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard let self, let window = self.window else { return }
+            let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+            self.updateCodeCopy(at: self.convert(inWindow, from: nil))
+        }
+    }
+
+    private func copy(body: NSRange, from storage: NSTextStorage,
+                      to pasteboard: NSPasteboard) -> String? {
+        let code = (storage.string as NSString).substring(with: body)
+        pasteboard.clearContents()
+        pasteboard.setString(code, forType: .string)
+        return code
+    }
+
+    /// Where the mark sits, for the checks that cannot see it.
+    var codeCopyFrameForTesting: NSRect? { codeCopy.isHidden ? nil : codeCopy.frame }
+    var codeBlockRectForTesting: NSRect? {
+        guard let block = hoveredBlock, let layoutManager, let container = textContainer
+        else { return nil }
+        return rectOf(block.whole, layoutManager, container)
     }
 
     /// Nothing in a code block is a spelling mistake.
@@ -783,6 +933,10 @@ final class NoteTextView: NSTextView {
         case "l" where shift: MarkdownEditing.togglePrefix(self, "- "); return true
         case "t" where shift: MarkdownEditing.toggleTask(self); return true
         case "h" where shift: MarkdownEditing.wrap(self, with: "=="); return true
+        case "c" where shift:
+            guard copyBlockAtCaret() != nil else { return false }
+            showCopyConfirmation()
+            return true
         case "f" where !shift: onFind?(); return true
         case "g": onStepFind?(shift ? -1 : 1); return true
         case "." where shift: MarkdownEditing.togglePrefix(self, "> "); return true

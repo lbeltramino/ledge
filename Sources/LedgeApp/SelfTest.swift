@@ -715,6 +715,129 @@ enum SelfTest {
               "the comment should be the faintest thing in the block")
     }
 
+    /// The copy mark on a code block. None of this can be seen from here, so
+    /// the position is read back off the view and the drawing off its pixels.
+    static func checkCodeCopy() {
+        let text = """
+        antes
+
+        ```bash
+        kubectl get pods
+        helm upgrade --install api ./chart
+        ```
+
+        después
+        """
+        let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 260))
+        view.configureForNotes()
+        view.isVerticallyResizable = true
+        view.textContainer?.containerSize = NSSize(width: 300, height: CGFloat.greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = false
+        view.string = text
+        guard let layoutManager = view.layoutManager, let container = view.textContainer else {
+            check(false, "the text view has no layout")
+            return
+        }
+        layoutManager.ensureLayout(for: container)
+
+        func rect(_ needle: String) -> NSRect {
+            let range = (text as NSString).range(of: needle)
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var r = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+            r.origin.x += view.textContainerOrigin.x
+            r.origin.y += view.textContainerOrigin.y
+            return r
+        }
+
+        let block = rect("kubectl get pods")
+        let outside = rect("después")
+
+        view.updateCodeCopy(at: NSPoint(x: block.midX, y: block.midY))
+        check(view.codeCopyFrameForTesting != nil, "hovering a code block shows the copy mark")
+
+        if let mark = view.codeCopyFrameForTesting, let whole = view.codeBlockRectForTesting {
+            check(mark.maxX <= whole.maxX && mark.minX > whole.midX,
+                  "the mark sits at the right-hand end of the block: \(mark.minX) in \(whole)")
+            check(abs(mark.minY - whole.minY) < 12,
+                  "…at its top, not floating in the middle: \(mark.minY) vs \(whole.minY)")
+            check(mark.maxX <= container.size.width + view.textContainerOrigin.x,
+                  "…and inside the note, not off its right edge")
+        }
+
+        view.updateCodeCopy(at: NSPoint(x: outside.midX, y: outside.midY))
+        check(view.codeCopyFrameForTesting == nil, "hovering ordinary text hides it again")
+
+        // Below the last line there is no text, but asking which character is
+        // under the pointer still answers with the last one — which is inside
+        // the block when the block ends the note. Only the rectangle knows.
+        let ending = NoteTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 400))
+        ending.configureForNotes()
+        ending.isVerticallyResizable = true
+        ending.textContainer?.containerSize = NSSize(width: 300, height: CGFloat.greatestFiniteMagnitude)
+        ending.textContainer?.widthTracksTextView = false
+        ending.string = "nota\n\n```bash\nkubectl get pods\n```"
+        if let lm = ending.layoutManager, let tc = ending.textContainer {
+            lm.ensureLayout(for: tc)
+            let used = lm.usedRect(for: tc)
+            ending.updateCodeCopy(at: NSPoint(x: 40, y: used.maxY + 60))
+            check(ending.codeCopyFrameForTesting == nil,
+                  "the empty space under a note is not part of the block that ends it")
+            ending.updateCodeCopy(at: NSPoint(x: 40, y: used.maxY - 8))
+            check(ending.codeCopyFrameForTesting != nil, "…while the block itself still shows it")
+        }
+
+        // What it puts on the clipboard.
+        let board = NSPasteboard(name: NSPasteboard.Name("ledge.selftest.copy"))
+        view.updateCodeCopy(at: NSPoint(x: block.midX, y: block.midY))
+        let before = view.string
+        let copied = view.copyHoveredBlock(to: board)
+        check(copied == "kubectl get pods\nhelm upgrade --install api ./chart",
+              "the block is copied without its fences: \(copied?.debugDescription ?? "nothing")")
+        check(board.string(forType: .string) == copied, "…and it is on the clipboard")
+        check(!(copied?.contains("```") ?? true), "no backticks: pasting this into a shell must just run")
+        check(view.string == before, "copying does not change a single character")
+
+        // ⌘⇧C takes the block the caret is in, and only then.
+        let caret = (text as NSString).range(of: "helm upgrade")
+        view.setSelectedRange(NSRange(location: caret.location, length: 0))
+        check(view.copyBlockAtCaret(to: board) == copied, "⌘⇧C takes the block the caret is in")
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        check(view.copyBlockAtCaret(to: board) == nil,
+              "with the caret outside a block it does nothing, so ⌘⇧C stays ⌘⇧C")
+        board.clearContents()
+
+        // The drawing, read back as pixels: the two states have to look
+        // different, or the tick is not feedback.
+        func pixels(of button: CodeCopyButton) -> [UInt8] {
+            guard let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds) else { return [] }
+            button.cacheDisplay(in: button.bounds, to: rep)
+            guard let data = rep.bitmapData else { return [] }
+            return Array(UnsafeBufferPointer(start: data, count: rep.bytesPerRow * rep.pixelsHigh))
+        }
+        let button = CodeCopyButton()
+        button.ink = .black
+        button.isHidden = false
+        let resting = pixels(of: button)
+        check(resting.contains { $0 != 0 }, "the copy mark draws something at all")
+
+        // Compared as shapes, not as pixels: the two states are drawn at
+        // different alphas, so any two renderings differ and a pixel comparison
+        // would pass even with the tick never drawn.
+        let sheets = button.markPath(confirmed: false)
+        let tick = button.markPath(confirmed: true)
+        check(sheets.elementCount != tick.elementCount,
+              "the tick is the same shape as the copy mark — no feedback at all")
+        check(tick.elementCount == 3, "the tick is three points: \(tick.elementCount)")
+        check(tick.bounds.height < sheets.bounds.height,
+              "the tick should sit inside the space the sheets used")
+
+        button.confirm()
+        check(button.showingConfirmation, "clicking leaves the tick showing")
+        check(pixels(of: button) != resting, "and the button redraws")
+        button.forget()
+        check(pixels(of: button) == resting, "and it goes back to the copy mark afterwards")
+    }
+
     /// The editor writes through the same debounced path as the cards. This
     /// drives it end to end and then reads the file back off disk.
     static func checkSaving(deck: DeckController, folder: URL) async {
@@ -916,6 +1039,7 @@ enum SelfTest {
         checkFind()
         checkMarkdownEditing()
         checkPastedCode()
+        checkCodeCopy()
         checkCodeFormatting()
         checkChromeDegradation()
         checkPressAndSettle()

@@ -56,6 +56,10 @@ SQLite index beside it is a cache you can delete at any moment.
   `# comment` and `- name:`. The note takes its name from the snippet:
   `Deployment/api`, `aws_s3_bucket.logs`, `kubectl rollout status`. Pasting
   prose is still pasting prose.
+- **Take the code back out.** Hover a code block and a small mark appears at its
+  top right; click it and the block is on your clipboard without its fences,
+  ready to paste into a terminal. `⌘⇧C` does the same for the block the caret is
+  in.
 - **The small things.** Paste a URL over some words and they become the link
   text. Type a bracket or a quote with something selected and it wraps rather
   than replaces. `⌥↑` and `⌥↓` move the line you are on, renumbering the list
@@ -327,6 +331,7 @@ change for that to work.
 | `⌘B` `⌘I` `⌘E` `⌘K` | Bold, italic, code, link |
 | `⌘⇧T` | Turn lines into tasks, or back |
 | `⌘⇧H` | Highlight the selection |
+| `⌘⇧C` | Copy the code block the caret is in |
 | `⌘F` | Find in this note |
 | `⌘G` `⇧⌘G` | Next match, previous match |
 | `⇥` `⇧⇥` | Nest a list item, or take it back out |
@@ -347,6 +352,10 @@ Fenced blocks are recognised and coloured in **HCL/Terraform, YAML, JSON,
 JavaScript, TypeScript, Python, Go, Bash, Dockerfile, SQL, TOML, Makefile,
 Groovy/Jenkinsfile and XML**. The language is detected from what you pasted —
 you do not have to tag the fence — and the note is named after the snippet.
+
+Hovering a block shows a copy mark at its top right — the block without its
+fences, on the clipboard, in one click. That is usually the whole reason the
+snippet is in a note.
 
 The colouring uses the note's own two colours rather than a syntax theme:
 structure in ink, values in the accent, comments faded back. Eleven paper
