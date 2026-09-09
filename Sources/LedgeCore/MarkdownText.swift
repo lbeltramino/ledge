@@ -177,6 +177,27 @@ public enum MarkdownText {
         return (renumber(joined), NSRange(location: newStart, length: max(0, length)))
     }
 
+    /// ⌥⇧↓ — the line, or the selected lines, again below.
+    ///
+    /// The companion to moving them. A numbered list renumbers, so duplicating
+    /// "3. thing" gives you a 4, not a second 3.
+    public static func duplicateLines(_ text: String, lines: NSRange) -> (text: String, selection: NSRange)? {
+        let source = text as NSString
+        let block = source.lineRange(for: lines)
+        let body = source.substring(with: block).trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
+        guard !body.isEmpty else { return nil }
+
+        // The block may or may not end in a newline — the last line of a note
+        // does not — so the copy brings its own separator on whichever side it
+        // needs, and the selection covers the text alone.
+        let endsWithNewline = source.substring(with: block).hasSuffix("\n")
+        let insertion = endsWithNewline ? body + "\n" : "\n" + body
+        let at = NSRange(location: block.upperBound, length: 0)
+        let joined = source.replacingCharacters(in: at, with: insertion)
+        let start = block.upperBound + (endsWithNewline ? 0 : 1)
+        return (renumber(joined), NSRange(location: start, length: (body as NSString).length))
+    }
+
     // MARK: - pasting
 
     /// Whether a pasted string is a link, in which case pasting it over some

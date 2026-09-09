@@ -50,11 +50,11 @@ public enum FeedEdit {
         public let item: String
     }
 
-    /// Ticks (or unticks) the first task whose text contains `needle`.
+    /// Moves the first task whose text contains `needle` into a state.
     ///
     /// Matching on the text rather than an index because an agent that
     /// remembers "item 3" will tick the wrong thing the moment you add one.
-    public static func setting(_ done: Bool, matching needle: String,
+    public static func setting(_ state: Checkbox.State, matching needle: String,
                                in body: String) -> Ticked? {
         let source = body as NSString
         let wanted = fold(needle)
@@ -63,10 +63,10 @@ public enum FeedEdit {
         for item in Checkbox.items(in: body) {
             let text = source.substring(with: item.content)
             guard fold(text).contains(wanted) else { continue }
-            guard item.isDone != done else {
+            guard item.state != state else {
                 return Ticked(body: body, changed: false, item: text)
             }
-            let updated = source.replacingCharacters(in: item.box, with: done ? "[x]" : "[ ]")
+            let updated = source.replacingCharacters(in: item.box, with: "[\(state.mark)]")
             return Ticked(body: updated, changed: true, item: text)
         }
         return nil

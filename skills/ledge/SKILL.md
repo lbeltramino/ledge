@@ -48,11 +48,17 @@ ledge task add "$ID" backfill and verify
 
 ## As you go
 
-Tick things off as they actually finish, not when you start them:
+Mark a task in progress when you actually start it, and tick it when it is
+actually finished:
 
 ```bash
-ledge task check "$ID" schema migration
+ledge task start "$ID" schema migration     # [/] — a half tick appears on it
+ledge task check "$ID" schema migration     # [x]
 ```
+
+`start` is what makes the note answer "what is it doing right now" rather than
+only "what is left". Normally one task is in progress at a time; nothing stops
+you marking several, but a note with five things underway tells the user nothing.
 
 Matching is on the words, not on a position, so quote enough of the task to be
 unambiguous. It ignores case and accents. Ticking something already ticked is
@@ -79,8 +85,8 @@ ledge get "$ID"                    # the note's text
 ledge get "$ID" --json             # id, title, tasks, state
 ```
 
-`ledge get --json` is the reliable way to see which tasks exist and which are
-done before deciding what to tick.
+`ledge get --json` is the reliable way to see which tasks exist and what state
+each is in — `todo`, `doing` or `done` — before deciding what to change.
 
 ## When the task is finished
 

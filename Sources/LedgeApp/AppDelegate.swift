@@ -17,6 +17,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let selfTestFolder = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("ledge-selftest")
 
+    // MARK: - the keys everyone's fingers already know
+    //
+    // These live on the app delegate because that is where the main menu can
+    // reach them: a status item's menu is not in the key equivalent chain, so
+    // the ⌘+ and ⌘- printed beside its zoom entries never actually fired.
+
+    @objc func zoomIn(_ sender: Any?)    { Settings.stepZoom(1) }
+    @objc func zoomOut(_ sender: Any?)   { Settings.stepZoom(-1) }
+    @objc func zoomReset(_ sender: Any?) { Settings.resetSizes() }
+
+    @objc func openSettings(_ sender: Any?) { statusItem?.openMenu() }
+
+    @objc func newNote(_ sender: Any?) { workspace?.newNote() }
+
+    /// ⌘S. It already saved — the note has been on disk since 250 ms after you
+    /// stopped typing. But the hand goes there on its own, and a key that does
+    /// nothing is worse than one that confirms what already happened.
+    @objc func saveNow(_ sender: Any?) { workspace?.commitAllSaves() }
+
+    /// ⌘W puts the note away rather than closing a window: there is no window.
+    @objc func putAway(_ sender: Any?) { workspace?.putAwayOpenNote() }
+
+    @objc func openNoteAt(_ sender: NSMenuItem) {
+        workspace?.openNote(at: sender.tag)
+    }
+
     static var notesFolder: URL {
         if let override = ProcessInfo.processInfo.environment["LEDGE_FOLDER"] {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)

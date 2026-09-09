@@ -12,6 +12,10 @@ import LedgeIndex
 final class StatusItemController: NSObject, NSMenuDelegate {
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
+    /// Opens the menu as if it had been clicked. The settings live here, so this
+    /// is what ⌘, has to reach — there is no preferences window to open.
+    func openMenu() { item.button?.performClick(nil) }
     private let updates = UpdateCheck()
     private unowned let workspace: Workspace
 

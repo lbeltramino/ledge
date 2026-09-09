@@ -109,7 +109,12 @@ func describe(_ note: Note) -> [String: Any] {
         "tags": note.tags,
         "updated": Frontmatter.string(from: note.updated),
         "tasks": Checkbox.items(in: note.body).map { item -> [String: Any] in
-            ["text": (note.body as NSString).substring(with: item.content), "done": item.isDone]
+            [
+                "text": (note.body as NSString).substring(with: item.content),
+                "state": item.state.rawValue,
+                // Kept alongside `state` so anything already reading it still works.
+                "done": item.isDone,
+            ]
         },
     ]
 }
@@ -120,6 +125,7 @@ ledge — write to your Ledge notes from a script or an agent
   ledge new <title> [--feed NAME] [--strip NAME] [--color C] [--body TEXT]
   ledge append <note> <text…>            add a block at the end
   ledge task add <note> <text…>          add an unticked task
+  ledge task start <note> <text…>        mark it in progress — [/]
   ledge task check <note> <text…>        tick the task whose text matches
   ledge task uncheck <note> <text…>
   ledge set <note> [--title T] [--color C] [--feed F] [--archive] [--activate]
@@ -187,22 +193,23 @@ do {
             note.body = FeedEdit.addingTask(words, to: note.body)
             _ = try store.write(note, to: entry.url)
             print("added: \(words)")
-        case "check", "uncheck":
-            let done = verb == "check"
-            guard let ticked = FeedEdit.setting(done, matching: words, in: note.body) else {
+        case "check", "uncheck", "start":
+            let state: Checkbox.State = verb == "check" ? .done : (verb == "start" ? .doing : .todo)
+            let said = ["done": "done", "doing": "started", "todo": "reopened"]
+            guard let ticked = FeedEdit.setting(state, matching: words, in: note.body) else {
                 fail("no task in \(note.displayTitle.debugDescription) matches \(words.debugDescription)")
             }
             guard ticked.changed else {
                 // Not an error: an agent repeating itself is not a failure, it
                 // just is not work. Saying so costs a write nobody needed.
-                print("already \(done ? "done" : "open"): \(ticked.item)")
+                print("already \(state.rawValue): \(ticked.item)")
                 exit(0)
             }
             note.body = ticked.body
             _ = try store.write(note, to: entry.url)
-            print("\(done ? "done" : "reopened"): \(ticked.item)")
+            print("\(said[state.rawValue] ?? state.rawValue): \(ticked.item)")
         default:
-            fail("task what? add, check or uncheck")
+            fail("task what? add, start, check or uncheck")
         }
 
     case "set":
@@ -242,9 +249,11 @@ do {
         } else {
             for entry in all {
                 let tasks = Checkbox.items(in: entry.note.body)
+                let doing = tasks.filter { $0.state == .doing }.count
                 let progress = tasks.isEmpty
                     ? ""
-                    : "  [\(tasks.filter(\.isDone).count)/\(tasks.count)]"
+                    : "  [\(tasks.filter(\.isDone).count)/\(tasks.count)"
+                        + (doing > 0 ? " ·\(doing) doing]" : "]")
                 let feed = entry.note.feed.isEmpty ? "" : "  ← \(entry.note.feed)"
                 print("\(entry.note.id)  \(entry.note.displayTitle)\(progress)\(feed)")
             }

@@ -1,10 +1,36 @@
 import Foundation
 
-/// `- [ ]` and `- [x]`.
+/// `- [ ]`, `- [/]` and `- [x]`.
 ///
 /// A sticky note is a to-do list most of the time, so the list markers Ledge
 /// already understood were only ever half the job.
 public enum Checkbox {
+
+    /// What a task is doing.
+    ///
+    /// `/` for in progress is Obsidian's convention, and it looks like half a
+    /// tick, which is the whole idea. A viewer that does not know it — GitHub,
+    /// say — renders `[/]` as literal text rather than as a box. That is the
+    /// property that matters: an unknown marker must never read as *done*.
+    public enum State: String, Equatable, Sendable, CaseIterable {
+        case todo, doing, done
+
+        public var mark: String {
+            switch self {
+            case .todo: return " "
+            case .doing: return "/"
+            case .done:  return "x"
+            }
+        }
+
+        public init(mark: String) {
+            switch mark.lowercased() {
+            case "x": self = .done
+            case "/": self = .doing
+            default:  self = .todo
+            }
+        }
+    }
 
     public struct Item: Equatable, Sendable {
         /// The whole line.
@@ -13,13 +39,15 @@ public enum Checkbox {
         public let box: NSRange
         /// The text after the box.
         public let content: NSRange
-        public let isDone: Bool
+        public let state: State
+        /// Only `x` counts as done, so a count of "1 of 3" never flatters.
+        public var isDone: Bool { state == .done }
     }
 
     /// `[^\n]*` rather than `.*` on purpose: the markdown highlighter compiles
     /// its patterns with `dotMatchesLineSeparators`, and a `.` there swallows
     /// every line below — the same pattern behaving differently in two places.
-    public static let pattern = "^([ \\t]*)([-*+])[ \\t]+\\[([ xX])\\][ \\t]*([^\\n]*)$"
+    public static let pattern = "^([ \\t]*)([-*+])[ \\t]+\\[([ xX/])\\][ \\t]*([^\\n]*)$"
 
     private static let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
 
@@ -33,7 +61,7 @@ public enum Checkbox {
                 let box = NSRange(location: match.range(at: 3).location - 1,
                                   length: match.range(at: 3).length + 2)
                 return Item(line: match.range, box: box, content: match.range(at: 4),
-                            isDone: mark.lowercased() == "x")
+                            state: State(mark: mark))
             }
     }
 
@@ -50,7 +78,20 @@ public enum Checkbox {
     public static func toggle(in text: String, at index: Int) -> (range: NSRange, replacement: String)? {
         guard let item = item(in: text, at: index) else { return nil }
         let markLocation = item.box.location + 1
+        // Clicking finishes things. From in progress it also finishes: you are
+        // completing what something else started, and a person ticking a
+        // shopping list should never need two clicks per line.
         return (NSRange(location: markLocation, length: 1), item.isDone ? " " : "x")
+    }
+
+    /// Puts the box on the line containing `index` into a particular state.
+    ///
+    /// What ⌥-click uses to mark something in progress by hand. Returns nil when
+    /// it is already in that state, so nothing is written for nothing.
+    public static func set(_ state: State, in text: String,
+                           at index: Int) -> (range: NSRange, replacement: String)? {
+        guard let item = item(in: text, at: index), item.state != state else { return nil }
+        return (NSRange(location: item.box.location + 1, length: 1), state.mark)
     }
 
     /// The marker to continue a checklist with, given the line above.
@@ -67,9 +108,11 @@ public enum Checkbox {
     }
 
     /// How many are done, out of how many — for a note's summary line.
-    public static func progress(in text: String) -> (done: Int, total: Int)? {
+    public static func progress(in text: String) -> (done: Int, doing: Int, total: Int)? {
         let all = items(in: text)
         guard !all.isEmpty else { return nil }
-        return (all.filter(\.isDone).count, all.count)
+        return (all.filter { $0.state == .done }.count,
+                all.filter { $0.state == .doing }.count,
+                all.count)
     }
 }

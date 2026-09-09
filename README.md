@@ -200,7 +200,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 164 unit tests
+swift run ledge-tests                               # 181 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -341,6 +341,13 @@ change for that to work.
 | `⌘G` `⇧⌘G` | Next match, previous match |
 | `⇥` `⇧⇥` | Nest a list item, or take it back out |
 | `⌥↑` `⌥↓` | Move the line, or the selected lines |
+| `⌥⇧↓` | Duplicate them |
+| `⌘+` `⌘-` `⌘0` | Bigger, smaller, back to normal |
+| `⌘S` | Save now — it saves itself anyway |
+| `⌘W` | Put the note away |
+| `⌘N` | New note |
+| `⌘1`…`⌘9` | Open the nth note on the deck |
+| `⌘,` | Settings |
 | `⌘⇧L` `⌘⇧1…3` | List, headings |
 
 ## Markdown it understands
@@ -361,10 +368,18 @@ it cannot land in the middle of one of its saves.
 ```bash
 ID=$(ledge new "Migrate billing" --feed claude-code)
 ledge task add "$ID" run the schema migration
-ledge task check "$ID" schema migration
+ledge task start "$ID" schema migration      # [/] — in progress
+ledge task check "$ID" schema migration      # [x] — done
 ledge append "$ID" -- "Backfill ran in 4m12s, 3 rows failed validation."
 ledge list --feed claude-code          # → 01J…  Migrate billing  [1/3]  ← claude-code
 ```
+
+A task in progress is written `- [/]`, which is Obsidian's convention and looks
+like half a tick — which is what Ledge draws over it: the first stroke of a
+tick, in the note's accent, with the text at full strength while finished tasks
+recede. A viewer that does not know `[/]` shows it as plain text rather than as
+a box, so an unknown marker can never read as *done*. ⌥-click a box to set it by
+hand; a plain click still finishes a task from any state.
 
 Every command is a *local* edit — it appends, or it changes one line. There is
 deliberately no way to replace a note's body: you may be typing in it at the

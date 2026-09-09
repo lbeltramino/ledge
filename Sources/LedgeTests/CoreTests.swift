@@ -409,6 +409,24 @@ enum CoreTests {
                     "the numbers should describe the new order, not follow the lines")
         }
 
+        await Runner.test("a line can be duplicated") { c in
+            let copied = MarkdownText.duplicateLines("uno\ndos", lines: NSRange(location: 0, length: 3))
+            c.equal(copied?.text, "uno\nuno\ndos")
+            c.equal(copied?.selection, NSRange(location: 4, length: 3),
+                    "the copy is what stays selected, so pressing again stacks them")
+        }
+
+        await Runner.test("duplicating the last line still leaves two") { c in
+            let copied = MarkdownText.duplicateLines("solo", lines: NSRange(location: 0, length: 4))
+            c.equal(copied?.text, "solo\nsolo")
+        }
+
+        await Runner.test("duplicating a numbered item renumbers") { c in
+            let copied = MarkdownText.duplicateLines("1. a\n2. b", lines: NSRange(location: 0, length: 4))
+            c.equal(copied?.text, "1. a\n2. a\n3. b",
+                    "the copy takes the next number: \(copied?.text.debugDescription ?? "nil")")
+        }
+
         await Runner.test("a pasted URL is recognised, other text is not") { c in
             c.expect(MarkdownText.isLink("https://example.com"), "https")
             c.expect(MarkdownText.isLink("http://example.com/a?b=c"), "with a query")
@@ -514,7 +532,7 @@ enum CoreTests {
 
         await Runner.test("ticking finds the task by its words") { c in
             let body = "- [ ] correr migraciones\n- [ ] desplegar a staging"
-            let hit = FeedEdit.setting(true, matching: "migraciones", in: body)
+            let hit = FeedEdit.setting(.done, matching: "migraciones", in: body)
             c.expect(hit?.changed == true, "should have ticked it")
             c.equal(hit?.body, "- [x] correr migraciones\n- [ ] desplegar a staging")
             c.equal(hit?.item, "correr migraciones", "and report what it ticked")
@@ -522,26 +540,26 @@ enum CoreTests {
 
         await Runner.test("ticking matches through case and accents") { c in
             let body = "- [ ] Correr Migración"
-            c.expect(FeedEdit.setting(true, matching: "migracion", in: body)?.changed == true,
+            c.expect(FeedEdit.setting(.done, matching: "migracion", in: body)?.changed == true,
                      "an agent quoting the task back should not miss on an accent")
         }
 
         await Runner.test("ticking twice is not work") { c in
             let body = "- [x] listo"
-            let again = FeedEdit.setting(true, matching: "listo", in: body)
+            let again = FeedEdit.setting(.done, matching: "listo", in: body)
             c.expect(again != nil, "the item is still found")
             c.expect(again?.changed == false, "…but nothing changed, and it should say so")
             c.equal(again?.body, body)
         }
 
         await Runner.test("a task that is not there is not invented") { c in
-            c.expect(FeedEdit.setting(true, matching: "no existe", in: "- [ ] algo") == nil)
-            c.expect(FeedEdit.setting(true, matching: "", in: "- [ ] algo") == nil,
+            c.expect(FeedEdit.setting(.done, matching: "no existe", in: "- [ ] algo") == nil)
+            c.expect(FeedEdit.setting(.done, matching: "", in: "- [ ] algo") == nil,
                      "an empty needle must not tick the first thing it sees")
         }
 
         await Runner.test("unticking is the same door") { c in
-            let hit = FeedEdit.setting(false, matching: "listo", in: "- [x] listo")
+            let hit = FeedEdit.setting(.todo, matching: "listo", in: "- [x] listo")
             c.equal(hit?.body, "- [ ] listo")
         }
 
@@ -661,6 +679,149 @@ enum CoreTests {
             let missing = run(["append", "no existe esta nota", "algo"])
             c.equal(missing.code, 1)
             c.expect(missing.out.contains("no note matches"), "said: \(missing.out)")
+        }
+
+        Runner.suite("Two writers at once")
+
+        await Runner.test("the case that started this: an agent appends while you type") { c in
+            let base = "- [ ] uno\n- [ ] dos"
+            // You are editing the first line…
+            let mine = "- [ ] uno con detalle\n- [ ] dos"
+            // …while the agent adds three tasks at the end.
+            let theirs = "- [ ] uno\n- [ ] dos\n- [ ] tres\n- [ ] cuatro\n- [ ] cinco"
+
+            let merged = Merge.lines(base: base, mine: mine, theirs: theirs)
+            c.equal(merged.text, "- [ ] uno con detalle\n- [ ] dos\n- [ ] tres\n- [ ] cuatro\n- [ ] cinco",
+                    "got: \(merged.text.debugDescription)")
+            c.expect(!merged.conflicted, "these edits do not overlap")
+        }
+
+        await Runner.test("nine tasks appended in a row all arrive") { c in
+            var theirs = "Plan"
+            for n in 1...9 { theirs = FeedEdit.addingTask("tarea \(n)", to: theirs) }
+            let merged = Merge.lines(base: "Plan", mine: "Plan\n\nmis notas", theirs: theirs)
+            c.equal(Checkbox.items(in: merged.text).count, 9, "lost some: \(merged.text)")
+            c.expect(merged.text.contains("mis notas"), "and it kept what I was writing")
+        }
+
+        await Runner.test("ticking a box while you write elsewhere keeps both") { c in
+            let base = "- [ ] migrar\n- [ ] avisar\n\nnotas"
+            let mine = "- [ ] migrar\n- [ ] avisar\n\nnotas mías"
+            let theirs = "- [x] migrar\n- [ ] avisar\n\nnotas"
+            let merged = Merge.lines(base: base, mine: mine, theirs: theirs)
+            c.equal(merged.text, "- [x] migrar\n- [ ] avisar\n\nnotas mías")
+        }
+
+        await Runner.test("nothing is ever lost, even when both change one line") { c in
+            let merged = Merge.lines(base: "una línea",
+                                     mine: "una línea mía",
+                                     theirs: "una línea suya")
+            c.expect(merged.conflicted, "this is a real conflict and should say so")
+            c.expect(merged.text.contains("mía") && merged.text.contains("suya"),
+                     "both versions have to survive: \(merged.text.debugDescription)")
+        }
+
+        await Runner.test("the easy answers stay easy") { c in
+            c.equal(Merge.lines(base: "a", mine: "a mío", theirs: "a").text, "a mío",
+                    "no external change: mine wins outright")
+            c.equal(Merge.lines(base: "a", mine: "a", theirs: "a suyo").text, "a suyo",
+                    "I typed nothing: theirs is adopted")
+            c.equal(Merge.lines(base: "a", mine: "b", theirs: "b").text, "b",
+                    "the same edit twice is not a conflict")
+            c.equal(Merge.lines(base: "", mine: "", theirs: "primera línea").text, "primera línea",
+                    "an empty note taking its first content")
+        }
+
+        await Runner.test("deletions are respected, not undone") { c in
+            let merged = Merge.lines(base: "uno\ndos\ntres",
+                                     mine: "uno\ntres",
+                                     theirs: "uno\ndos\ntres\ncuatro")
+            c.equal(merged.text, "uno\ntres\ncuatro",
+                    "deleting a line must not be undone by the other side's append: \(merged.text.debugDescription)")
+        }
+
+        await Runner.test("the caret stays on the word it was on") { c in
+            let base = "primera\nsegunda"
+            let mine = "primera\nsegunda mía"
+            let theirs = "cero\nprimera\nsegunda"
+            let merged = Merge.lines(base: base, mine: mine, theirs: theirs)
+            c.equal(merged.text, "cero\nprimera\nsegunda mía")
+
+            // caret just after "segunda mía" in `mine`
+            let offset = (mine as NSString).length
+            let moved = Merge.caret(offset, from: mine, into: merged)
+            let text = merged.text as NSString
+            c.equal(text.substring(to: moved), "cero\nprimera\nsegunda mía",
+                    "a line arriving above must carry the caret with it, not slide it "
+                    + "through the sentence: landed after \(text.substring(to: moved).debugDescription)")
+        }
+
+        await Runner.test("a long note merges without taking a noticeable pause") { c in
+            let long = (1...800).map { "línea número \($0) con algo de texto para que pese" }
+                .joined(separator: "\n")
+            let mine = long + "\nmi párrafo"
+            let theirs = long.replacingOccurrences(of: "línea número 400 ", with: "línea CUATROCIENTOS ")
+            let started = Date()
+            let merged = Merge.lines(base: long, mine: mine, theirs: theirs)
+            let elapsed = Date().timeIntervalSince(started)
+            c.expect(merged.text.contains("mi párrafo") && merged.text.contains("CUATROCIENTOS"),
+                     "both edits should survive in a long note")
+            c.expect(elapsed < 0.2, "800 lines took \(Int(elapsed * 1000)) ms — that runs on a save")
+        }
+
+        Runner.suite("Tasks in progress")
+
+        await Runner.test("[/] is a task, and it is not done") { c in
+            let body = "- [ ] uno\n- [/] dos\n- [x] tres"
+            let items = Checkbox.items(in: body)
+            c.equal(items.count, 3, "all three are tasks")
+            c.equal(items.map(\.state), [.todo, .doing, .done])
+            c.expect(!items[1].isDone, "in progress is not done")
+
+            let counted = Checkbox.progress(in: body)
+            c.equal(counted?.done, 1, "only [x] counts as done — the count must not flatter")
+            c.equal(counted?.doing, 1)
+            c.equal(counted?.total, 3)
+        }
+
+        await Runner.test("clicking finishes a task from any state") { c in
+            let body = "- [/] a"
+            let flip = Checkbox.toggle(in: body, at: 3)
+            c.equal(flip?.replacement, "x",
+                    "a click on something in progress completes it — you finished what it started")
+            c.equal(Checkbox.toggle(in: "- [x] a", at: 3)?.replacement, " ")
+            c.equal(Checkbox.toggle(in: "- [ ] a", at: 3)?.replacement, "x")
+        }
+
+        await Runner.test("⌥-click sets and clears in progress") { c in
+            c.equal(Checkbox.set(.doing, in: "- [ ] a", at: 3)?.replacement, "/")
+            c.equal(Checkbox.set(.todo, in: "- [/] a", at: 3)?.replacement, " ")
+            c.expect(Checkbox.set(.doing, in: "- [/] a", at: 3) == nil,
+                     "already in that state: nothing should be written")
+        }
+
+        await Runner.test("Enter after an in-progress task starts an empty one") { c in
+            c.equal(Checkbox.continuation(after: "- [/] algo"), "- [ ] ",
+                    "the next task is not also in progress")
+        }
+
+        await Runner.test("the command can start a task") { c in
+            let body = "- [ ] correr migraciones"
+            let started = FeedEdit.setting(.doing, matching: "migraciones", in: body)
+            c.equal(started?.body, "- [/] correr migraciones")
+            c.expect(started?.changed == true)
+
+            let finished = FeedEdit.setting(.done, matching: "migraciones", in: started!.body)
+            c.equal(finished?.body, "- [x] correr migraciones",
+                    "and take it from in progress to done without passing through anything")
+        }
+
+        await Runner.test("an unknown marker never reads as done") { c in
+            // A viewer that does not know [/] shows the literal text. What must
+            // never happen is the opposite mistake.
+            c.expect(!Checkbox.items(in: "- [/] a")[0].isDone)
+            c.equal(Checkbox.items(in: "- [?] a").count, 0,
+                    "a marker we do not know is not a checkbox at all, so it cannot be ticked")
         }
 
         Runner.suite("ULID")

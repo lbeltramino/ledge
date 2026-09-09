@@ -1,6 +1,7 @@
 import AppKit
 import LedgeCore
 import LedgeIndex
+import LedgeStore
 
 /// Drives the deck through its states and checks the geometry it actually
 /// produces. It exists because the layout is all hand-computed frames, rotations
@@ -838,6 +839,129 @@ enum SelfTest {
         check(pixels(of: button) == resting, "and it goes back to the copy mark afterwards")
     }
 
+    /// The bug this was built for: a note open on screen while an agent writes
+    /// to it. End to end, through the real card, the real debounce and the real
+    /// file — the pieces each behaved correctly on their own, which is why it
+    /// took a note on screen to see it.
+    static func checkConcurrentWriters(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let record = deck.recordsForTesting.first else {
+            check(false, "no note to write to"); return
+        }
+        let url = folder.appendingPathComponent(record.filename)
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(record.id)
+        deck.expand(record.id)
+        guard deck.debugCardBody() != nil else { check(false, "the card did not open"); return }
+
+        // You are typing in it.
+        let typed = "lo que estaba escribiendo \(Int(Date().timeIntervalSince1970))"
+        deck.debugTypeIntoCard("\n" + typed)
+
+        // The agent adds nine tasks, exactly as the command does.
+        let feed = FeedStore(folder: folder)
+        guard let entry = try? feed.find(record.id) else {
+            check(false, "the command cannot find the note"); return
+        }
+        var note = entry.note
+        for n in 1...9 { note.body = FeedEdit.addingTask("tarea \(n)", to: note.body) }
+        _ = try? feed.write(note, to: entry.url)
+
+        // Deliberately no refresh in between.
+        //
+        // That is the reported case: the card is the key window's first
+        // responder, so the update is refused on the way in — quite rightly,
+        // nothing should yank text out from under a caret — and the save then
+        // goes out carrying text that predates the agent. Driving it this way
+        // reproduces it without needing a key window, which a self test running
+        // without a display does not have.
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(900))
+
+        let onDisk = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        check(onDisk.contains(typed), "your own typing must survive the agent's write")
+        check(Checkbox.items(in: onDisk).count >= 9,
+              "all nine of the agent's tasks must survive yours — this is the bug: "
+              + "found \(Checkbox.items(in: onDisk).count)")
+
+        // And the other half: a change arriving while the note is open has to
+        // show up on screen, not wait for you to touch something.
+        var later = Frontmatter.parse(onDisk, fallbackTitle: "", fallbackID: record.id)
+        later.body = FeedEdit.appending("una entrada más del agente", to: later.body)
+        _ = try? feed.write(later, to: url)
+        await deck.reconcileForTesting([record.filename])
+
+        check(deck.debugCardBody()?.contains("una entrada más del agente") == true,
+              "…and it appears on screen without waiting for anything")
+        check(deck.debugCardBody()?.contains(typed) == true,
+              "…with your text still in the card")
+    }
+
+    /// The half tick on a task in progress. Read off the attributes and then
+    /// off the pixels, because neither one alone says it was drawn.
+    static func checkProgressTick() {
+        let source = "- [ ] todo\n- [/] en curso\n- [x] hecho"
+        let highlighter = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14),
+                                              ink: .black, accent: .systemBlue)
+        let storage = NSTextStorage(string: source)
+        highlighter.highlight(storage)
+
+        let slash = (source as NSString).range(of: "/")
+        let tick = storage.attribute(ProgressTick.attribute, at: slash.location, effectiveRange: nil)
+        check(tick != nil, "an in-progress box is marked for the tick to be drawn on")
+        let glyph = storage.attribute(.foregroundColor, at: slash.location,
+                                      effectiveRange: nil) as? NSColor
+        check(glyph?.alphaComponent == 0,
+              "the slash itself is painted out — the tick replaces it, it does not sit on top of it")
+
+        // The other two lines must not be marked.
+        let plain = (source as NSString).range(of: "- [ ]")
+        check(storage.attribute(ProgressTick.attribute, at: plain.location + 3,
+                                effectiveRange: nil) == nil,
+              "an ordinary task carries no tick")
+
+        let content = (source as NSString).range(of: "en curso")
+        let ink = storage.attribute(.foregroundColor, at: content.location,
+                                    effectiveRange: nil) as? NSColor
+        let doneContent = (source as NSString).range(of: "hecho")
+        let doneInk = storage.attribute(.foregroundColor, at: doneContent.location,
+                                        effectiveRange: nil) as? NSColor
+        check((ink?.alphaComponent ?? 0) > (doneInk?.alphaComponent ?? 1),
+              "a task in progress leans forward while a finished one recedes")
+
+        // And that something is actually drawn.
+        let box = NSRect(x: 0, y: 0, width: 12, height: 16)
+        let blank = NSImage(size: box.size)
+        blank.lockFocus(); blank.unlockFocus()
+        let drawn = NSImage(size: box.size)
+        drawn.lockFocus()
+        ProgressTick.draw(in: box, colour: .black)
+        drawn.unlockFocus()
+        func pixels(_ image: NSImage) -> [UInt8] {
+            guard let data = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: data), let bytes = rep.bitmapData
+            else { return [] }
+            return Array(UnsafeBufferPointer(start: bytes, count: rep.bytesPerRow * rep.pixelsHigh))
+        }
+        let empty = pixels(blank), marked = pixels(drawn)
+        check(!marked.isEmpty && marked != empty, "the tick draws nothing at all")
+
+        // Half a tick, not a whole one: it must stay in the left half of the box.
+        var rightmost = 0
+        if let data = drawn.tiffRepresentation, let rep = NSBitmapImageRep(data: data) {
+            for x in 0..<rep.pixelsWide {
+                for y in 0..<rep.pixelsHigh {
+                    if let colour = rep.colorAt(x: x, y: y), colour.alphaComponent > 0.1 {
+                        rightmost = max(rightmost, x)
+                    }
+                }
+            }
+            check(rightmost > 0 && rightmost < rep.pixelsWide * 3 / 4,
+                  "the mark has to read as unfinished — it reaches \(rightmost) of \(rep.pixelsWide)")
+        }
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1116,6 +1240,7 @@ enum SelfTest {
         checkFind()
         checkMarkdownEditing()
         checkPastedCode()
+        checkProgressTick()
         checkCodeCopy()
         checkCodeFormatting()
         checkChromeDegradation()
@@ -1128,6 +1253,7 @@ enum SelfTest {
         print("\n\u{001B}[1mSaving\u{001B}[0m")
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
+        await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 
         let saved = (zoom: Settings.zoom, tab: Settings.tabScale, card: Settings.cardScale)
         defer {

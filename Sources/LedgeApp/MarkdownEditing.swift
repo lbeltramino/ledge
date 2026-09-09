@@ -302,6 +302,20 @@ enum MarkdownEditing {
         return true
     }
 
+    /// ⌥⇧↓ — duplicate the current line or selection.
+    @discardableResult
+    static func duplicateLines(_ textView: NSTextView) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let text = storage.string as NSString
+        let lines = text.lineRange(for: textView.selectedRange())
+        guard let copied = MarkdownText.duplicateLines(storage.string, lines: lines) else { return false }
+
+        replace(textView, range: NSRange(location: 0, length: text.length), with: copied.text)
+        textView.setSelectedRange(copied.selection)
+        textView.scrollRangeToVisible(copied.selection)
+        return true
+    }
+
     /// Pasting source code fences it, so a manifest arrives looking like a
     /// manifest instead of a page of headings and bullets.
     ///

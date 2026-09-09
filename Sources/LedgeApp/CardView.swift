@@ -598,6 +598,14 @@ final class NoteTextView: NSTextView {
                 MarkerStroke.draw(in: box, colour: colour, seed: strokeSeed, index: index)
             }
         }
+
+        storage.enumerateAttribute(ProgressTick.attribute,
+                                   in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard let colour = value as? NSColor else { return }
+            for box in rects(for: range) where box.intersects(rect) {
+                ProgressTick.draw(in: box, colour: colour)
+            }
+        }
     }
 
     var onChange: (() -> Void)?
@@ -689,9 +697,17 @@ final class NoteTextView: NSTextView {
     /// an editor, so they are caught before `interpretKeyEvents` sees them.
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if flags == .option, let key = event.charactersIgnoringModifiers?.unicodeScalars.first {
-            if key.value == UInt32(NSUpArrowFunctionKey), MarkdownEditing.moveLines(self, by: -1) { return }
-            if key.value == UInt32(NSDownArrowFunctionKey), MarkdownEditing.moveLines(self, by: 1) { return }
+        if let key = event.charactersIgnoringModifiers?.unicodeScalars.first {
+            let isUp = key.value == UInt32(NSUpArrowFunctionKey)
+            let isDown = key.value == UInt32(NSDownArrowFunctionKey)
+            if flags == .option {
+                if isUp, MarkdownEditing.moveLines(self, by: -1) { return }
+                if isDown, MarkdownEditing.moveLines(self, by: 1) { return }
+            }
+            // ⌥⇧↓ and ⌥⇧↑ both leave a copy below and put you on it, which is
+            // what every editor that has this does.
+            if flags == [.option, .shift], isUp || isDown,
+               MarkdownEditing.duplicateLines(self) { return }
         }
         super.keyDown(with: event)
     }
@@ -904,6 +920,20 @@ final class NoteTextView: NSTextView {
             return
         }
 
+        // ⌥-click puts a task in progress, or takes it back out. Plain click
+        // finishes it — from any state, so a shopping list is still one click a
+        // line and `[/]` stays something you rarely set by hand.
+        if event.modifierFlags.contains(.option),
+           let item = Checkbox.item(in: string, at: index),
+           index <= item.box.upperBound,
+           let mark = Checkbox.set(item.state == .doing ? .todo : .doing, in: string, at: index) {
+            if shouldChangeText(in: mark.range, replacementString: mark.replacement) {
+                textStorage?.replaceCharacters(in: mark.range, with: mark.replacement)
+                didChangeText()
+            }
+            return
+        }
+
         // A plain click on the `- [ ]` marker ticks it. Anywhere else on the
         // line still just places the caret.
         if let item = Checkbox.item(in: string, at: index),
@@ -964,6 +994,23 @@ final class NoteTextView: NSTextView {
 
     /// Takes new text from somewhere else showing the same note — the big
     /// editor, a floating copy — without disturbing whoever is typing.
+    /// Takes a merge in, keeping the caret on the word it was on.
+    ///
+    /// This one is allowed to run while you are typing, which the plain
+    /// `syncBody` is not. The difference is that a merge contains your text —
+    /// it adds the other writer's lines around it rather than replacing what
+    /// you have. Refusing it was what made an agent's work disappear the moment
+    /// you touched the keyboard.
+    func syncBody(_ merged: Merge.Result, from mine: String) {
+        guard string != merged.text else { return }
+        let caret = Merge.caret(selectedRange().location, from: mine, into: merged)
+        string = merged.text
+        setSelectedRange(NSRange(location: min(caret, (merged.text as NSString).length), length: 0))
+        if let storage = textStorage, let highlighter = storage.delegate as? MarkdownHighlighter {
+            highlighter.highlight(storage)
+        }
+    }
+
     func syncBody(_ text: String) {
         guard string != text else { return }
         // Never pull text out from under a *live* caret — which means the key

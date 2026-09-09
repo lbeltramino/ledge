@@ -66,8 +66,19 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             let markerEnd = match.range(at: 3).location + 2
             this.fade(storage, NSRange(location: match.range.location,
                                        length: markerEnd - match.range.location), 0.45)
-            let done = (storage.string as NSString)
-                .substring(with: match.range(at: 3)).lowercased() == "x"
+            let state = Checkbox.State(mark: (storage.string as NSString)
+                .substring(with: match.range(at: 3)))
+
+            // In progress: the slash is painted out and half a tick is drawn
+            // where it was. See ProgressTick.
+            if state == .doing {
+                storage.addAttribute(.foregroundColor, value: NSColor.clear,
+                                     range: match.range(at: 3))
+                storage.addAttribute(ProgressTick.attribute, value: this.accent,
+                                     range: match.range(at: 3))
+            }
+
+            let done = state == .done
             let content = match.range(at: 4)
             guard content.length > 0 else { return }
             if done {

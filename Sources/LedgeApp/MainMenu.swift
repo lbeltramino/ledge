@@ -49,6 +49,39 @@ enum MainMenu {
         editItem.submenu = edit
         main.addItem(editItem)
 
+        // The keys every Mac app has, which this one did not. The zoom entries
+        // in the status menu printed ⌘+ and ⌘- beside them and never fired: a
+        // status item's menu is not consulted for key equivalents. These are.
+        let noteItem = NSMenuItem()
+        let note = NSMenu(title: "Note")
+        add(note, "New Note", #selector(AppDelegate.newNote(_:)), "n")
+        add(note, "Save", #selector(AppDelegate.saveNow(_:)), "s")
+        add(note, "Put Away", #selector(AppDelegate.putAway(_:)), "w")
+        note.addItem(.separator())
+        let goItem = NSMenuItem(title: "Go to", action: nil, keyEquivalent: "")
+        let go = NSMenu(title: "Go to")
+        for n in 1...9 {
+            let item = NSMenuItem(title: "Note \(n)", action: #selector(AppDelegate.openNoteAt(_:)),
+                                  keyEquivalent: "\(n)")
+            item.keyEquivalentModifierMask = [.command]
+            item.tag = n
+            go.addItem(item)
+        }
+        goItem.submenu = go
+        note.addItem(goItem)
+        noteItem.submenu = note
+        main.addItem(noteItem)
+
+        let viewItem = NSMenuItem()
+        let view = NSMenu(title: "View")
+        add(view, "Bigger", #selector(AppDelegate.zoomIn(_:)), "+")
+        add(view, "Smaller", #selector(AppDelegate.zoomOut(_:)), "-")
+        add(view, "Actual Size", #selector(AppDelegate.zoomReset(_:)), "0")
+        view.addItem(.separator())
+        add(view, "Settings…", #selector(AppDelegate.openSettings(_:)), ",")
+        viewItem.submenu = view
+        main.addItem(viewItem)
+
         NSApp.mainMenu = main
     }
 

@@ -47,6 +47,14 @@ final class DeckController {
 
     private var records: [NoteRecord] = []
     private var bodies: [String: String] = [:]
+    /// What the file said the last time this note's text and the file agreed.
+    ///
+    /// A save is not "put my copy on disk" any more. Something else may have
+    /// written to the note since — and while it is open on screen is exactly
+    /// when that is most likely — so the baseline is what makes the difference
+    /// between my edits and theirs knowable. Without it, the only two options
+    /// are overwriting them or overwriting you.
+    private var baselines: [String: String] = [:]
     /// Shared across every strip: a note on the desk belongs to no edge.
     private var floating: [String: FloatingNote] {
         get { workspace.floating }
@@ -143,11 +151,11 @@ final class DeckController {
         records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
                                          collectingUnassigned: strip.isPrimary,
                                          knownStrips: knownStrips)) ?? []
-        // A note edited outside Ledge should appear in whatever is showing it.
-        if let open = state.noteID, let fresh = try? await store.load(id: open).body,
-           fresh != bodies[open] {
-            bodies[open] = fresh
-            propagate(body: fresh, of: open, from: nil)
+        // A note edited outside Ledge should appear in whatever is showing it —
+        // including while you are typing in it, which used to be the one case it
+        // gave up on.
+        if let open = state.noteID, let fresh = try? await store.load(id: open).body {
+            adoptExternal(fresh, for: open)
         }
         if let open = state.noteID, let record = records.first(where: { $0.id == open }) {
             Settings.markSeen(open, at: record.updated)
@@ -162,7 +170,9 @@ final class DeckController {
     /// never waits on disk.
     private func prefetchBodies() async {
         for record in records where bodies[record.id] == nil {
-            bodies[record.id] = (try? await store.load(id: record.id))?.body ?? ""
+            let loaded = (try? await store.load(id: record.id))?.body ?? ""
+            bodies[record.id] = loaded
+            baselines[record.id] = loaded
         }
     }
 
@@ -878,6 +888,33 @@ final class DeckController {
     /// One note can be on screen three times at once — as a tab's card, as a
     /// floating copy, and in the editor. They all have to agree as you type, or
     /// the stale one silently overwrites the fresh one the moment you touch it.
+    /// Takes a change that arrived from outside into the note on screen.
+    ///
+    /// Merged rather than assigned: you may have typed since, and the whole
+    /// point of the exercise is that neither writer has to lose.
+    private func adoptExternal(_ fresh: String, for id: String) {
+        let mine = bodies[id] ?? fresh
+        guard fresh != mine else {
+            baselines[id] = fresh
+            return
+        }
+        let merged = Merge.lines(base: baselines[id] ?? mine, mine: mine, theirs: fresh)
+        bodies[id] = merged.text
+        baselines[id] = fresh
+        propagate(merged: merged, from: mine, of: id)
+
+        // The merged text is not on disk yet when both sides had changed.
+        if merged.text != fresh { scheduleSave(id: id, body: merged.text) }
+    }
+
+    /// Like `propagate`, but the views are told where the caret should end up,
+    /// so lines arriving above it do not drag it through your own sentence.
+    private func propagate(merged: Merge.Result, from mine: String, of id: String) {
+        if let card, card.record.id == id { card.textView.syncBody(merged, from: mine) }
+        if let float = floating[id] { float.cardView.textView.syncBody(merged, from: mine) }
+        if let editor = editors[id] { editor.textView.syncBody(merged, from: mine) }
+    }
+
     private func propagate(body: String, of id: String, from source: AnyObject?) {
         if let card, card.record.id == id, card !== source {
             card.textView.syncBody(body)
@@ -890,7 +927,7 @@ final class DeckController {
         }
     }
 
-    fileprivate func commitPendingSave() {
+    func commitPendingSave() {
         guard save != nil, let id = pendingSaveID else { return }
         save?.invalidate(); save = nil
         pendingSaveID = nil
@@ -903,7 +940,18 @@ final class DeckController {
         guard let body = bodies[id] else { return }
         do {
             var note = try await store.load(id: id)
-            note.body = body
+
+            // Merge rather than overwrite. `note.body` is what the file says
+            // right now, which is not necessarily what it said when this note
+            // was opened.
+            let merged = Merge.lines(base: baselines[id] ?? note.body,
+                                     mine: body, theirs: note.body)
+            note.body = merged.text
+            if merged.text != body {
+                bodies[id] = merged.text
+                propagate(merged: merged, from: body, of: id)
+            }
+            baselines[id] = merged.text
             if naming, note.title.isEmpty {
                 let firstLine = body.split(separator: "\n").first.map(String.init) ?? ""
                 note.title = String(firstLine.trimmingCharacters(in: .whitespaces).prefix(60))
@@ -1044,7 +1092,9 @@ final class DeckController {
     private func expandFromLibrary(_ id: String) {
         Task {
             if bodies[id] == nil {
-                bodies[id] = (try? await store.load(id: id))?.body ?? ""
+                let loaded = (try? await store.load(id: id))?.body ?? ""
+                bodies[id] = loaded
+                baselines[id] = loaded
             }
             if records.first(where: { $0.id == id }) == nil,
                let all = try? await store.records(.all),
@@ -1174,6 +1224,16 @@ final class DeckController {
     /// Every strip that exists right now. The primary deck needs it to know
     /// which notes are strays.
     private var knownStrips: Set<String> { Set(Settings.strips.map(\.id)) }
+
+    var openNoteID: String? { state.noteID }
+
+    /// One-based, because the keys are ⌘1 to ⌘9.
+    func openNote(at position: Int) {
+        guard position >= 1, position <= records.count else { return }
+        if state == .rest { fanOut(takingFocus: true) }
+        preview(records[position - 1].id)
+        beginEditing(records[position - 1].id)
+    }
 
     var recordsForTesting: [NoteRecord] { records }
     /// The tab views themselves, so a check can ask whether they are the same

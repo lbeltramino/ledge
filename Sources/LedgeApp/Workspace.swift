@@ -206,6 +206,24 @@ final class Workspace {
         (primaryDeck ?? decks.first)?.newNote()
     }
 
+    /// ⌘S. Everything is already saved on a 250 ms debounce; this only makes
+    /// whatever is still in flight land now.
+    func commitAllSaves() {
+        for deck in decks { deck.commitPendingSave() }
+    }
+
+    /// ⌘W. There is no window to close — the note goes back to being a tab.
+    func putAwayOpenNote() {
+        for deck in decks where deck.openNoteID != nil { deck.closeNote() }
+    }
+
+    /// ⌘1…⌘9 — the nth note on the deck you can see.
+    func openNote(at position: Int) {
+        guard let deck = decks.first(where: { $0.openNoteID != nil })
+                ?? primaryDeck ?? decks.first else { return }
+        deck.openNote(at: position)
+    }
+
     /// A note from whatever is on the clipboard.
     ///
     /// The cheap half of capture-first: no Accessibility permission, no reading
