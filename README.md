@@ -162,8 +162,16 @@ rather have the tip than a tagged release.
 
 ## Requirements
 
-macOS 15 or later, and a Swift 6 toolchain. **Xcode is not required** — the Swift
-Command Line Tools are enough.
+macOS 15 or later on **Apple Silicon**. The published build is arm64 only, so it
+will not launch on an Intel Mac even though macOS 15 runs on some of them —
+build from source there, or ask and it can ship as a universal binary.
+
+To build: a Swift 6 toolchain. **Xcode is not required** — the Swift Command
+Line Tools are enough.
+
+The download is 1.3 MB. Unpacked it is 3.4 MB: a 2.1 MB app, the 776 KB `ledge`
+command beside it, a 396 KB handwriting font and a 212 KB icon. There are no
+third-party frameworks and nothing is embedded — no runtime, no browser.
 
 ## Build and run
 
