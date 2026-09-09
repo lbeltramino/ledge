@@ -55,6 +55,9 @@ final class DeckController {
     /// between my edits and theirs knowable. Without it, the only two options
     /// are overwriting them or overwriting you.
     private var baselines: [String: String] = [:]
+    /// The file hash each cached body was read from, so a note that changed on
+    /// disk can be told from one that did not without reading every file.
+    private var fileHashes: [String: String] = [:]
     /// Shared across every strip: a note on the desk belongs to no edge.
     private var floating: [String: FloatingNote] {
         get { workspace.floating }
@@ -151,11 +154,21 @@ final class DeckController {
         records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
                                          collectingUnassigned: strip.isPrimary,
                                          knownStrips: knownStrips)) ?? []
-        // A note edited outside Ledge should appear in whatever is showing it —
-        // including while you are typing in it, which used to be the one case it
-        // gave up on.
-        if let open = state.noteID, let fresh = try? await store.load(id: open).body {
-            adoptExternal(fresh, for: open)
+
+        // Every note whose file changed, not only the one on screen.
+        //
+        // Bodies are cached so that opening a note never waits on disk, and the
+        // cache was refreshed for the open note alone. Write to any other note
+        // from outside — which is the whole point of the `ledge` command — and
+        // the index knew about it while the cache did not, so opening the note
+        // showed you what it used to say. Quitting emptied the cache, which is
+        // why restarting looked like the cure.
+        for record in records where fileHashes[record.id] != record.hash {
+            fileHashes[record.id] = record.hash
+            guard bodies[record.id] != nil else { continue }   // never read; prefetch will
+            if let fresh = try? await store.load(id: record.id).body {
+                adoptExternal(fresh, for: record.id)
+            }
         }
         if let open = state.noteID, let record = records.first(where: { $0.id == open }) {
             Settings.markSeen(open, at: record.updated)
@@ -173,6 +186,7 @@ final class DeckController {
             let loaded = (try? await store.load(id: record.id))?.body ?? ""
             bodies[record.id] = loaded
             baselines[record.id] = loaded
+            fileHashes[record.id] = record.hash
         }
     }
 
@@ -901,17 +915,25 @@ final class DeckController {
     /// point of the exercise is that neither writer has to lose.
     private func adoptExternal(_ fresh: String, for id: String) {
         let mine = bodies[id] ?? fresh
-        guard fresh != mine else {
+        // Compared as the file would hold them. A view whose text ends in a
+        // newline is not somebody else's edit — but it never matches the file,
+        // so this used to merge on every refresh and schedule a save nobody
+        // asked for. When one of those landed after an agent's write, it wrote
+        // the agent's work away.
+        guard Frontmatter.normalizedBody(mine) != fresh else {
             baselines[id] = fresh
             return
         }
-        let merged = Merge.lines(base: baselines[id] ?? mine, mine: mine, theirs: fresh)
+        let merged = Merge.lines(base: baselines[id] ?? Frontmatter.normalizedBody(mine),
+                                 mine: mine, theirs: fresh)
         bodies[id] = merged.text
         baselines[id] = fresh
         propagate(merged: merged, from: mine, of: id)
 
         // The merged text is not on disk yet when both sides had changed.
-        if merged.text != fresh { scheduleSave(id: id, body: merged.text) }
+        if Frontmatter.normalizedBody(merged.text) != fresh {
+            scheduleSave(id: id, body: merged.text)
+        }
     }
 
     /// Like `propagate`, but the views are told where the caret should end up,
@@ -969,6 +991,9 @@ final class DeckController {
             // had edited the note, and kept both versions of the line.
             let saved = try await store.save(note)
             baselines[id] = saved.body
+            // Otherwise the next refresh sees a file that changed — because we
+            // changed it — and does the whole merge dance against ourselves.
+            fileHashes[id] = try? await store.records().first { $0.id == id }?.hash
             records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
                                              collectingUnassigned: strip.isPrimary,
                                              knownStrips: knownStrips)) ?? records
@@ -1247,6 +1272,8 @@ final class DeckController {
         beginEditing(records[position - 1].id)
     }
 
+    func loadForTesting(id: String) async throws -> Note { try await store.load(id: id) }
+    var hasPendingSaveForTesting: Bool { pendingSaveID != nil }
     func debugCardFrame() -> NSRect? { card?.frame }
     func beginEditingForTesting(_ id: String) { beginEditing(id) }
     func setGeometryForTesting(id: String, width: Double?, height: Double?) async throws {

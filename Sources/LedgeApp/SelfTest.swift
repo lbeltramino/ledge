@@ -1278,6 +1278,74 @@ enum SelfTest {
               "the card and the file still agree")
     }
 
+    /// An agent writing to a note you do *not* have open.
+    ///
+    /// The index picks it up, so All Notes and search are right — and the deck
+    /// keeps a cache of note bodies that was only ever refreshed for the one
+    /// note on screen. Open the note afterwards and you are looking at what it
+    /// said before. Quitting cleared the cache, which is why restarting
+    /// "fixed" it.
+    static func checkExternalWriteToClosedNote(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let record = deck.recordsForTesting.first else {
+            check(false, "no note"); return
+        }
+
+        // Make sure it has been read once and is then put away — the state the
+        // report describes.
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(record.id)
+        deck.closeNote()
+        await deck.refresh()
+
+        let stamp = Int(Date().timeIntervalSince1970)
+        let addition = "escrito por el agente \(stamp)"
+        let feed = FeedStore(folder: folder)
+        guard let entry = try? feed.find(record.id) else {
+            check(false, "the command cannot find the note"); return
+        }
+
+        // Leave the note's text ending in a newline — pressing Enter and
+        // stopping, which is an ordinary thing to do. The file will not keep
+        // that newline, so from here on the text on screen and the file
+        // disagree by one character, permanently.
+        deck.previewForTesting(record.id)
+        deck.debugTypeIntoCard("\n")
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(700))
+        deck.closeNote()
+        await deck.refresh()
+
+        var note = (try? feed.find(record.id))?.note ?? entry.note
+        note.body = FeedEdit.appending(addition, to: note.body)
+        _ = try? feed.write(note, to: entry.url)
+
+        await deck.reconcileForTesting([record.filename])
+        try? await Task.sleep(for: .milliseconds(800))
+
+        // The index is the easy half — it reads the file.
+        let stored = try? await deck.loadForTesting(id: record.id).body
+        check(stored?.contains(addition) == true, "the store should know about it")
+
+        // And a refresh with nothing to do must not schedule a save at all: a
+        // save nobody asked for is a save that can land on top of somebody
+        // else's write, which is how this reached the file in the first place.
+        let settled = (try? String(contentsOf: entry.url, encoding: .utf8)) ?? ""
+        for _ in 0..<3 { await deck.refresh() }
+        check(!deck.hasPendingSaveForTesting,
+              "a refresh with nothing to do must not schedule a save")
+        try? await Task.sleep(for: .milliseconds(700))
+        let untouched = (try? String(contentsOf: entry.url, encoding: .utf8)) ?? ""
+        check(untouched == settled, "…and must not rewrite the file")
+
+        // Opening it is the half that was broken.
+        deck.previewForTesting(record.id)
+        check(deck.debugCardBody()?.contains(addition) == true,
+              "opening the note must show what was written to it while it was closed — "
+              + "otherwise it takes a restart, which is what was reported")
+        deck.closeNote()
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1573,6 +1641,7 @@ enum SelfTest {
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
+        await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
         await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 
