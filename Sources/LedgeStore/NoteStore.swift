@@ -32,8 +32,10 @@ public actor NoteStore {
 
     public func deck() throws -> [NoteRecord] { try index.deck() }
 
-    public func deck(strip: String, collectingUnassigned: Bool) throws -> [NoteRecord] {
-        try index.deck(strip: strip, collectingUnassigned: collectingUnassigned)
+    public func deck(strip: String, collectingUnassigned: Bool,
+                     knownStrips: Set<String>) throws -> [NoteRecord] {
+        try index.deck(strip: strip, collectingUnassigned: collectingUnassigned,
+                       knownStrips: knownStrips)
     }
 
     /// Moves a note to another strip. Persisted in the file, because which strip

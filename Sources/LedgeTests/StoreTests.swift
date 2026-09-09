@@ -359,10 +359,12 @@ enum StoreTests {
             _ = try await store.create(title: "Unassigned", body: "x")
             _ = try await store.create(title: "Sidebar", body: "x", strip: "left-1")
 
-            let primary = try await store.deck(strip: "", collectingUnassigned: true)
+            let primary = try await store.deck(strip: "", collectingUnassigned: true,
+                                               knownStrips: ["", "left-1"])
             c.equal(primary.map(\.title), ["Unassigned"],
                     "the primary strip should collect notes with no strip of their own")
-            let other = try await store.deck(strip: "left-1", collectingUnassigned: false)
+            let other = try await store.deck(strip: "left-1", collectingUnassigned: false,
+                                             knownStrips: ["", "left-1"])
             c.equal(other.map(\.title), ["Sidebar"])
         }
 
@@ -380,7 +382,8 @@ enum StoreTests {
             c.equal(moved.color, .coral, "colour was lost in the move")
             c.equal(moved.body, "- tickets", "body was lost in the move")
             c.equal(moved.created, created, "creation date was lost in the move")
-            c.equal(try await store.deck(strip: "", collectingUnassigned: true).count, 0,
+            c.equal(try await store.deck(strip: "", collectingUnassigned: true,
+                                         knownStrips: ["", "left-1"]).count, 0,
                     "the note is still on the strip it left")
         }
 
@@ -395,7 +398,8 @@ enum StoreTests {
 
             c.equal(try await store.load(id: stranded.id).strip, "",
                     "the stranded note did not come home")
-            c.equal(try await store.deck(strip: "", collectingUnassigned: true).count, 2,
+            c.equal(try await store.deck(strip: "", collectingUnassigned: true,
+                                         knownStrips: [""]).count, 2,
                     "a note on a removed strip vanished from every deck")
         }
 
@@ -573,5 +577,60 @@ enum StoreTests {
             c.equal(try await reopened.records().count, 2, "notes did not come back from the folder")
             c.equal(try await reopened.search("PRD").count, 1, "search did not come back")
         }
+
+        Runner.suite("A note arriving from outside")
+
+        await Runner.test("the watcher notices a file that did not exist") { c in
+            let folder = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ledge-watch-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+
+            let seen = Reported()
+            let watcher = FolderWatcher(folder: folder) { names in seen.add(names) }
+            watcher.start()
+            defer { watcher.stop() }
+            // FSEvents needs a moment before it is actually listening.
+            try? await Task.sleep(for: .milliseconds(400))
+
+            let url = folder.appendingPathComponent("nueva.md")
+            try? "---\nid: \(ULID.generate())\ntitle: Nueva\n---\nhola".write(to: url, atomically: true, encoding: .utf8)
+
+            for _ in 0..<40 where !seen.names.contains("nueva.md") {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            c.expect(seen.names.contains("nueva.md"),
+                     "a new file must wake the app, not only a changed one: saw \(seen.names)")
+        }
+
+        await Runner.test("a note lands on the deck even when its strip does not exist") { c in
+            let folder = FileManager.default.temporaryDirectory
+                .appendingPathComponent("ledge-strip-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+
+            // What the command does when an agent is told to file the note
+            // somewhere: the strip is just a name, and nothing checks it exists.
+            let feed = FeedStore(folder: folder)
+            _ = try? feed.create(title: "Desde el agente", feed: "claude-code", strip: "no-existe")
+
+            let index = try NoteIndex(path: ":memory:")
+            let store = try NoteStore(folder: folder, index: index)
+            _ = try await store.scan()
+
+            let onDeck = try await store.deck(strip: "", collectingUnassigned: true,
+                                              knownStrips: ["", "otra"])
+            c.expect(onDeck.contains { $0.title == "Desde el agente" },
+                     "a note whose strip is not one of yours must still be somewhere you can see it — "
+                     + "otherwise it only appears after a restart, which is what reassignOrphans does")
+        }
     }
+}
+
+/// Collects what a watcher reported, across the threads it reports on.
+final class Reported: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen: Set<String> = []
+    func add(_ names: [String]) { lock.lock(); seen.formUnion(names); lock.unlock() }
+    var names: Set<String> { lock.lock(); defer { lock.unlock() }; return seen }
 }

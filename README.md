@@ -200,7 +200,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 162 unit tests
+swift run ledge-tests                               # 164 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -359,7 +359,7 @@ way to do that — it writes through the same file coordination the app uses, so
 it cannot land in the middle of one of its saves.
 
 ```bash
-ID=$(ledge new "Migrate billing" --feed claude-code --strip work)
+ID=$(ledge new "Migrate billing" --feed claude-code)
 ledge task add "$ID" run the schema migration
 ledge task check "$ID" schema migration
 ledge append "$ID" -- "Backfill ran in 4m12s, 3 rows failed validation."

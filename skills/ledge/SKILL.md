@@ -27,13 +27,16 @@ and a plain write can land in the middle of one of its saves.
 ## At the start of a task
 
 ```bash
-ID=$(ledge new "Migrate the billing service" --feed claude-code --strip work)
+ID=$(ledge new "Migrate the billing service" --feed claude-code)
 ```
 
 `--feed` is what marks the note as written-to by something other than the user;
 it is what puts the indicator on the tab. Use a name that says what is writing —
-`claude-code` is a good default. `--strip` is optional and names which edge of
-the screen the note lives on. Keep the id: every other command takes it.
+`claude-code` is a good default. Keep the id: every other command takes it.
+
+There is also `--strip NAME`, which puts the note on one of the extra edges of
+the screen the user may have set up. Only pass it if they named one: a strip
+that does not exist is not an error, the note simply lands on the main deck.
 
 Then lay out the plan as tasks:
 

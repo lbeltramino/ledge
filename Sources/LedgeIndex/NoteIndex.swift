@@ -190,14 +190,35 @@ public final class NoteIndex {
 
     public func deck() throws -> [NoteRecord] { try all(.active) }
 
-    /// The active notes on one strip. The primary strip also collects every
-    /// note that has never been assigned to one.
-    public func deck(strip: String, collectingUnassigned: Bool) throws -> [NoteRecord] {
-        let clause = collectingUnassigned
-            ? "WHERE state = 'active' AND (strip = ? OR strip = '')"
-            : "WHERE state = 'active' AND strip = ?"
+    /// The active notes on one strip.
+    ///
+    /// The primary strip is where anything unclaimed ends up: notes with no
+    /// strip, and notes naming a strip that does not exist. That second case is
+    /// not hypothetical — anything writing a note from outside the app can put
+    /// any word in that field, and a note nobody shows is a note you have lost.
+    /// It used to take a restart, and `reassignOrphans` rewriting the file, for
+    /// one of those to appear.
+    public func deck(strip: String, collectingUnassigned: Bool,
+                     knownStrips: Set<String>) throws -> [NoteRecord] {
+        guard collectingUnassigned else {
+            return try db.query(
+                "SELECT \(NoteIndex.columns) FROM notes WHERE state = 'active' AND strip = ? ORDER BY rank ASC",
+                [.text(strip)], NoteIndex.decode)
+        }
+
+        var clause = "WHERE state = 'active' AND (strip = ? OR strip = ''"
+        var arguments: [SQLValue] = [.text(strip)]
+        if knownStrips.isEmpty {
+            // No strips configured at all: every note belongs here.
+            clause += " OR strip != ''"
+        } else {
+            clause += " OR strip NOT IN (\(knownStrips.map { _ in "?" }.joined(separator: ",")))"
+            arguments += knownStrips.map { .text($0) }
+        }
+        clause += ")"
+
         return try db.query("SELECT \(NoteIndex.columns) FROM notes \(clause) ORDER BY rank ASC",
-                            [.text(strip)], NoteIndex.decode)
+                            arguments, NoteIndex.decode)
     }
 
     /// Every note something is writing to, newest change first — what a feed

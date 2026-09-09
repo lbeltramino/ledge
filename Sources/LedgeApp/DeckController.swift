@@ -131,7 +131,8 @@ final class DeckController {
         guard !Settings.hasBeenSeeded(strip.id) else { return }
         Settings.markSeeded(strip.id)
         let existing = (try? await store.deck(strip: stripTag,
-                                              collectingUnassigned: strip.isPrimary)) ?? []
+                                              collectingUnassigned: strip.isPrimary,
+                                              knownStrips: knownStrips)) ?? []
         guard existing.isEmpty else { return }
         _ = try? await store.create(title: strip.isPrimary ? "Welcome" : strip.name,
                                     body: strip.isPrimary ? "" : "",
@@ -140,7 +141,8 @@ final class DeckController {
 
     func refresh() async {
         records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
-                                         collectingUnassigned: strip.isPrimary)) ?? []
+                                         collectingUnassigned: strip.isPrimary,
+                                         knownStrips: knownStrips)) ?? []
         // A note edited outside Ledge should appear in whatever is showing it.
         if let open = state.noteID, let fresh = try? await store.load(id: open).body,
            fresh != bodies[open] {
@@ -908,7 +910,8 @@ final class DeckController {
             }
             _ = try await store.save(note)
             records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
-                                             collectingUnassigned: strip.isPrimary)) ?? records
+                                             collectingUnassigned: strip.isPrimary,
+                                             knownStrips: knownStrips)) ?? records
         } catch {}
     }
 
@@ -931,7 +934,8 @@ final class DeckController {
             note.title = title
             _ = try? await store.save(note)
             records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
-                                             collectingUnassigned: strip.isPrimary)) ?? records
+                                             collectingUnassigned: strip.isPrimary,
+                                             knownStrips: knownStrips)) ?? records
             // Refresh the tab under the card without tearing the card down.
             if let index = records.firstIndex(where: { $0.id == id }),
                let tab = tabs.first(where: { $0.record.id == id }) {
@@ -1093,7 +1097,8 @@ final class DeckController {
         Task {
             try? await store.setGeometry(id: id, width: size.width, height: size.height)
             records = (try? await store.deck(strip: stripTag,
-                                             collectingUnassigned: strip.isPrimary)) ?? records
+                                             collectingUnassigned: strip.isPrimary,
+                                             knownStrips: knownStrips)) ?? records
         }
     }
 
@@ -1166,6 +1171,10 @@ final class DeckController {
     var cardFrame: NSRect? { card?.frame }
     var cardRotationDegrees: Double { card.map { $0.jitter.cardRotation(focused: $0.isEditing) } ?? 0 }
     var liveRegionRect: NSRect { root.liveRegion }
+    /// Every strip that exists right now. The primary deck needs it to know
+    /// which notes are strays.
+    private var knownStrips: Set<String> { Set(Settings.strips.map(\.id)) }
+
     var recordsForTesting: [NoteRecord] { records }
     /// The tab views themselves, so a check can ask whether they are the same
     /// objects after a refresh or fresh ones.
