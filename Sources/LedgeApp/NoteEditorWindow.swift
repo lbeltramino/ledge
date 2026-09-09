@@ -41,7 +41,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
             backing: .buffered, defer: false
         )
         highlighter = MarkdownHighlighter(
-            baseFont: Typography.noteBody(size: 20),
+            baseFont: Typography.noteBody(size: Metrics.Editor.bodySize),
             ink: ink,
             accent: Palette.tab(record.color).blended(withFraction: 0.35, of: ink) ?? ink
         )
@@ -64,7 +64,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
 
         titleField.stringValue = title
         titleField.placeholderString = "Title"
-        titleField.font = .systemFont(ofSize: 22, weight: .semibold)
+        titleField.font = .systemFont(ofSize: Metrics.Editor.titleSize, weight: .semibold)
         titleField.textColor = ink
         titleField.isBordered = false
         titleField.drawsBackground = false
@@ -75,6 +75,14 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
 
         textView.isRichText = false
         textView.configureForNotes()
+
+        // The editor is a window of its own, so nothing else was going to tell
+        // it the size had changed.
+        NotificationCenter.default.addObserver(
+            forName: Settings.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applySizeSettings() }
+        }
         textView.isEditable = true
         textView.isSelectable = true
         textView.allowsUndo = true
@@ -84,7 +92,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.codeCopy.ink = ink
         textView.textContainerInset = NSSize(width: 0, height: 6)
         textView.isContinuousSpellCheckingEnabled = true
-        textView.font = Typography.noteBody(size: 20)
+        textView.font = Typography.noteBody(size: Metrics.Editor.bodySize)
         textView.string = body
         highlighter.highlight = MarkerStroke.colour(for: record.color, dark: dark)
         textView.strokeSeed = record.id
@@ -235,6 +243,19 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
     }
 
     func syncBody(_ text: String) { textView.syncBody(text) }
+
+    /// Re-applies the size setting to a window that is already open.
+    private func applySizeSettings() {
+        titleField.font = .systemFont(ofSize: Metrics.Editor.titleSize, weight: .semibold)
+        textView.font = Typography.noteBody(size: Metrics.Editor.bodySize)
+        highlighter.baseFont = Typography.noteBody(size: Metrics.Editor.bodySize)
+        if let storage = textView.textStorage {
+            storage.addAttribute(.font, value: Typography.noteBody(size: Metrics.Editor.bodySize),
+                                 range: NSRange(location: 0, length: storage.length))
+            highlighter.highlight(storage)
+        }
+        window.contentView?.needsLayout = true
+    }
 
     /// The editor is the same note on a bigger page, so it repaints too.
     func setColor(_ color: NoteColor) {

@@ -87,6 +87,25 @@ final class FloatingNote: NSObject {
 
     func front() { panel.orderFrontRegardless() }
 
+    /// Follows a change to the size settings without being rebuilt.
+    func resizeToSettings(body: String) {
+        card.applySizeSettings()
+        // The chrome grew with it, so the window may now be too small to hold
+        // the card at all.
+        let room = FloatingNote.shadowRoom
+        let needed = NSSize(width: card.minimumWidth + room * 2,
+                            height: card.minimumHeight + room * 2)
+        if panel.frame.width < needed.width || panel.frame.height < needed.height {
+            panel.setFrame(NSRect(x: panel.frame.minX,
+                                  y: panel.frame.maxY - max(panel.frame.height, needed.height),
+                                  width: max(panel.frame.width, needed.width),
+                                  height: max(panel.frame.height, needed.height)),
+                           display: true)
+        }
+        card.frame = panel.contentView?.bounds.insetBy(dx: room, dy: room) ?? card.frame
+        card.needsLayout = true
+    }
+
     /// Where the pointer was when it was let go.
     private(set) var dropPoint: NSPoint = .zero
 

@@ -74,7 +74,15 @@ enum MainMenu {
 
         let viewItem = NSMenuItem()
         let view = NSMenu(title: "View")
-        add(view, "Bigger", #selector(AppDelegate.zoomIn(_:)), "+")
+        // ⌘+ is typed as ⌘⇧= on most layouts, so the event arrives carrying
+        // shift and a "+" declared as plain ⌘ never matches it. Both spellings
+        // are claimed, which is what every app that gets this right does.
+        add(view, "Bigger", #selector(AppDelegate.zoomIn(_:)), "+", [.command, .shift])
+        let alsoBigger = NSMenuItem(title: "Bigger", action: #selector(AppDelegate.zoomIn(_:)),
+                                    keyEquivalent: "=")
+        alsoBigger.keyEquivalentModifierMask = [.command]
+        alsoBigger.isHidden = true
+        view.addItem(alsoBigger)
         add(view, "Smaller", #selector(AppDelegate.zoomOut(_:)), "-")
         add(view, "Actual Size", #selector(AppDelegate.zoomReset(_:)), "0")
         view.addItem(.separator())

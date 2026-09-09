@@ -53,6 +53,15 @@ enum Metrics {
         static var foldInset: CGFloat { t(9) }
     }
 
+    /// The full editor. Bigger than a card because it is a window you opened
+    /// on purpose, but it still follows the size setting — it was the one place
+    /// that did not, and it is the place you read in.
+    @MainActor
+    enum Editor {
+        static var bodySize: CGFloat { z(20) }
+        static var titleSize: CGFloat { z(22) }
+    }
+
     @MainActor
     enum Card {
         static var width: CGFloat { c(300) }

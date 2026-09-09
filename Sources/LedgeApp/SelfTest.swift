@@ -962,6 +962,158 @@ enum SelfTest {
         }
     }
 
+    /// Changing the size while a note is open.
+    ///
+    /// Everything else on the deck follows the zoom immediately; the note you
+    /// are reading is the one thing you would notice, and it was the one thing
+    /// that did not.
+    static func checkZoomWithNoteOpen(deck: DeckController) async {
+        let saved = Settings.zoom
+        defer { Settings.zoom = saved }
+
+        await deck.refresh()
+        guard let record = deck.recordsForTesting.first else {
+            check(false, "no note to open"); return
+        }
+        Settings.zoom = 1.0
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(record.id)
+        guard let before = deck.debugCardFrame(), let beforeFont = deck.debugCardFontSize() else {
+            check(false, "no card is open"); return
+        }
+
+        Settings.zoom = 1.45
+        guard let after = deck.debugCardFrame(), let afterFont = deck.debugCardFontSize() else {
+            check(false, "the card disappeared when the size changed"); return
+        }
+
+        check(after.width > before.width,
+              "the open note has to grow with everything else: \(before.width) → \(after.width)")
+        check(afterFont > beforeFont,
+              "and so does its text: \(beforeFont) pt → \(afterFont) pt")
+
+        Settings.zoom = 1.0
+        guard let back = deck.debugCardFrame() else { check(false, "no card"); return }
+        check(abs(back.width - before.width) < 0.5,
+              "and it goes back down again: \(back.width) vs \(before.width)")
+
+        // The same, with the caret in it — which is how a note is usually open.
+        deck.beginEditingForTesting(record.id)
+        let editingBefore = deck.debugCardFrame()?.width ?? 0
+        Settings.zoom = 1.45
+        let editingAfter = deck.debugCardFrame()?.width ?? 0
+        check(editingAfter > editingBefore,
+              "a note being written in follows the size too: \(editingBefore) → \(editingAfter)")
+        Settings.zoom = 1.0
+
+        // And a note the user has dragged to a size of its own. Its size is
+        // remembered in points, so without scaling it is the one note on the
+        // deck that ignores the setting entirely.
+        try? await deck.setGeometryForTesting(id: record.id, width: 420, height: 300)
+        await deck.refresh()
+        deck.previewForTesting(record.id)
+        let resizedBefore = deck.debugCardFrame()?.width ?? 0
+        Settings.zoom = 1.45
+        let resizedAfter = deck.debugCardFrame()?.width ?? 0
+        check(resizedAfter > resizedBefore,
+              "a note you resized still has to follow the zoom: \(resizedBefore) → \(resizedAfter)")
+        Settings.zoom = 1.0
+        try? await deck.setGeometryForTesting(id: record.id, width: nil, height: nil)
+        await deck.refresh()
+
+        // The full editor is a window of its own, so nothing was going to tell
+        // it. Its body size was a hard-coded 20 pt: reopening it did not help
+        // either, it simply never followed the setting.
+        deck.previewForTesting(record.id)
+        deck.expand(record.id)
+        guard let editor = deck.debugEditor(record.id) else {
+            check(false, "the editor did not open"); return
+        }
+        let editorBefore = editor.textView.font?.pointSize ?? 0
+        Settings.zoom = 1.45
+        let editorAfter = editor.textView.font?.pointSize ?? 0
+        check(editorAfter > editorBefore,
+              "the full editor follows the size too: \(editorBefore) pt → \(editorAfter) pt")
+        Settings.zoom = 1.0
+
+        // And a note on the desk. Checked through the card rather than through
+        // a real floating panel: making one here hung the suite, and what the
+        // desk actually calls is this.
+        let desk = NoteCardView(record: record, body: "una nota en el escritorio")
+        desk.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
+        let deskBefore = desk.textView.font?.pointSize ?? 0
+        Settings.zoom = 1.45
+        desk.applySizeSettings()
+        let deskAfter = desk.textView.font?.pointSize ?? 0
+        check(deskAfter > deskBefore,
+              "a note on the desk follows it as well: \(deskBefore) pt → \(deskAfter) pt")
+        Settings.zoom = 1.0
+    }
+
+    /// The keys, pressed rather than declared.
+    ///
+    /// A menu item is a claim that a key does something. The status menu made
+    /// that claim about ⌘+ and ⌘- for months and could never have honoured it,
+    /// because a status item's menu is not in the key equivalent chain. So these
+    /// are checked by handing the event to the menu and watching what changes.
+    static func checkShortcuts() {
+        let saved = (zoom: Settings.zoom, tab: Settings.tabScale,
+                     card: Settings.cardScale, length: Settings.tabMaxLength)
+        defer {
+            Settings.zoom = saved.zoom; Settings.tabScale = saved.tab
+            Settings.cardScale = saved.card; Settings.tabMaxLength = saved.length
+        }
+        MainMenu.install()
+        guard let menu = NSApp.mainMenu else { check(false, "no main menu"); return }
+
+        func event(_ characters: String, _ ignoring: String,
+                   _ modifiers: NSEvent.ModifierFlags) -> NSEvent? {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                             timestamp: 0, windowNumber: 0, context: nil, characters: characters,
+                             charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: 0)
+        }
+
+        // The zoom keys are pressed for real: they only move a setting, and this
+        // one has to be end to end, because what was wrong with ⌘+ was that the
+        // item existed and AppKit still would not match it.
+        func press(_ characters: String, _ ignoring: String,
+                   _ modifiers: NSEvent.ModifierFlags = [.command]) -> Bool {
+            guard let event = event(characters, ignoring, modifiers) else { return false }
+            return menu.performKeyEquivalent(with: event)
+        }
+
+        Settings.zoom = 1.0
+        // ⌘+ is typed as ⌘⇧= on most layouts: the event says "+" with shift held.
+        check(press("+", "=", [.command, .shift]),
+              "⌘+ has to be claimed by the menu — this is the one that never worked")
+        check(Settings.zoom > 1.0, "…and make things bigger: zoom is \(Settings.zoom)")
+        check(press("=", "="), "⌘= is the same key on a layout that does not need shift")
+
+        Settings.zoom = 1.45
+        check(press("-", "-"), "⌘- is claimed")
+        check(Settings.zoom < 1.45, "…and takes it back down: \(Settings.zoom)")
+
+        // The rest are only inspected. Pressing them would actually create a
+        // note, put one away and open the status menu, which then turns up as a
+        // mysterious failure three checks later — it did.
+        func claims(_ key: String, _ modifiers: NSEvent.ModifierFlags = [.command]) -> Bool {
+            func search(_ menu: NSMenu) -> Bool {
+                for item in menu.items {
+                    if item.keyEquivalent == key,
+                       item.keyEquivalentModifierMask == modifiers { return true }
+                    if let submenu = item.submenu, search(submenu) { return true }
+                }
+                return false
+            }
+            return search(menu)
+        }
+        for (key, what) in [("s", "⌘S"), ("w", "⌘W"), ("n", "⌘N"), (",", "⌘,"),
+                            ("0", "⌘0"), ("1", "⌘1"), ("9", "⌘9")] {
+            check(claims(key), "\(what) is declared in the main menu, where it can fire")
+        }
+        check(!claims("j"), "a key nothing claims is left alone, so it can reach the note")
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1241,6 +1393,7 @@ enum SelfTest {
         checkMarkdownEditing()
         checkPastedCode()
         checkProgressTick()
+        checkShortcuts()
         checkCodeCopy()
         checkCodeFormatting()
         checkChromeDegradation()
@@ -1253,6 +1406,7 @@ enum SelfTest {
         print("\n\u{001B}[1mSaving\u{001B}[0m")
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
+        await checkZoomWithNoteOpen(deck: deck)
         await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 
         let saved = (zoom: Settings.zoom, tab: Settings.tabScale, card: Settings.cardScale)

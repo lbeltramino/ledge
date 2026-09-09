@@ -215,6 +215,13 @@ final class DeckController {
         if open != nil { tearDownCard() }
         applyLayout(animated: false)
         if let open { buildCard(for: open); applyLayout(animated: false) }
+
+        // A note pulled off onto the desk is still one of this deck's notes.
+        // It was left at whatever size it was built at, which is why the note
+        // you were actually looking at was the one that ignored the setting.
+        for (id, float) in floating {
+            float.resizeToSettings(body: bodies[id] ?? float.body)
+        }
     }
 
     var notesFolder: URL { AppDelegate.notesFolder }
@@ -1234,6 +1241,13 @@ final class DeckController {
         preview(records[position - 1].id)
         beginEditing(records[position - 1].id)
     }
+
+    func debugCardFrame() -> NSRect? { card?.frame }
+    func beginEditingForTesting(_ id: String) { beginEditing(id) }
+    func setGeometryForTesting(id: String, width: Double?, height: Double?) async throws {
+        try await store.setGeometry(id: id, width: width, height: height)
+    }
+    func debugCardFontSize() -> CGFloat? { card?.textView.font?.pointSize }
 
     var recordsForTesting: [NoteRecord] { records }
     /// The tab views themselves, so a check can ask whether they are the same

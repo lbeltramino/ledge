@@ -286,6 +286,25 @@ final class NoteCardView: NSView {
         isDetached ? Metrics.Card.padding : Metrics.Card.padding + Metrics.Card.overhang
     }
 
+    /// Re-reads the size settings into a card that is already on screen.
+    ///
+    /// The deck rebuilds its own card when the setting changes; a note on the
+    /// desk has no one to rebuild it, and rebuilding it would take the caret
+    /// and the window with it.
+    func applySizeSettings() {
+        titleField.font = .systemFont(ofSize: Metrics.Card.titleSize, weight: .semibold)
+        let font = Typography.noteBody(size: Metrics.Card.bodySize)
+        textView.font = font
+        highlighter?.baseFont = font
+        if let storage = textView.textStorage {
+            storage.addAttribute(.font, value: font,
+                                 range: NSRange(location: 0, length: storage.length))
+            highlighter?.highlight(storage)
+        }
+        needsLayout = true
+        needsDisplay = true
+    }
+
     func applyColors() {
         let dark = isDark
         layer?.backgroundColor = Palette.paper(color, dark: dark, tint: jitter.paperTint).cgColor
