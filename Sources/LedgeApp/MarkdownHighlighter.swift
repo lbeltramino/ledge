@@ -135,7 +135,7 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         // ```fenced blocks``` — the whole run becomes one panel, fences
         // included, rather than three separately coloured lines. Declared before
         // the inline rules so it claims its range first.
-        rule("^(```|~~~)[^\n]*\n([\\s\\S]*?)^\\1[ \t]*$") { storage, match, this in
+        rule("^(```|~~~)([^\n]*)\n([\\s\\S]*?)^\\1[ \t]*$") { storage, match, this in
             let whole = match.range
             storage.addAttribute(.font, value: this.mono(), range: whole)
             storage.addAttribute(.backgroundColor,
@@ -146,13 +146,19 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             paragraph.tailIndent = -10
             storage.addAttribute(.paragraphStyle, value: paragraph, range: whole)
             storage.addAttribute(.foregroundColor, value: this.ink.withAlphaComponent(0.88),
-                                 range: match.range(at: 2))
+                                 range: match.range(at: 3))
 
-            let body = match.range(at: 2)
+            let body = match.range(at: 3)
             this.fade(storage, NSRange(location: whole.location,
                                        length: max(0, body.location - whole.location)), 0.30)
             this.fade(storage, NSRange(location: body.upperBound,
                                        length: max(0, whole.upperBound - body.upperBound)), 0.30)
+
+            // ```yaml, ```hcl, ```go — the tag on the fence, which until now was
+            // parsed and thrown away.
+            let tag = (storage.string as NSString).substring(with: match.range(at: 2))
+                .trimmingCharacters(in: .whitespaces).lowercased()
+            this.paintCode(storage, body: body, language: tag)
         }
 
         // An indented code block: four spaces or a tab after a blank line.
@@ -210,6 +216,42 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
                                  range: match.range)
             if let link = URL(string: (storage.string as NSString).substring(with: match.range)) {
                 storage.addAttribute(.link, value: link, range: match.range)
+            }
+        }
+    }
+
+    /// Colours the inside of a fenced block according to its language.
+    ///
+    /// Two hues and four weights, both taken from the note itself: structure in
+    /// ink, values in the accent, comments faded back. A syntax theme with its
+    /// own palette would fight the paper — and there are eleven paper colours.
+    private func paintCode(_ storage: NSTextStorage, body: NSRange, language: String) {
+        guard body.length > 0, Code.grammar(for: language) != nil else { return }
+        let source = (storage.string as NSString).substring(with: body)
+        let bold = NSFont.monospacedSystemFont(ofSize: mono().pointSize, weight: .semibold)
+
+        for token in Code.tokens(in: source, language: language) {
+            let range = NSRange(location: body.location + token.range.location,
+                                length: token.range.length)
+            guard range.upperBound <= storage.length else { continue }
+            switch token.role {
+            case .comment:
+                storage.addAttribute(.foregroundColor, value: ink.withAlphaComponent(0.40),
+                                     range: range)
+                storage.addAttribute(.obliqueness, value: 0.14, range: range)
+            case .string:
+                storage.addAttribute(.foregroundColor, value: accent.withAlphaComponent(0.90),
+                                     range: range)
+            case .number:
+                storage.addAttribute(.foregroundColor, value: accent.withAlphaComponent(0.72),
+                                     range: range)
+            case .keyword:
+                storage.addAttribute(.foregroundColor, value: ink, range: range)
+                storage.addAttribute(.font, value: bold, range: range)
+            case .key:
+                storage.addAttribute(.foregroundColor, value: ink.withAlphaComponent(0.92),
+                                     range: range)
+                storage.addAttribute(.font, value: bold, range: range)
             }
         }
     }

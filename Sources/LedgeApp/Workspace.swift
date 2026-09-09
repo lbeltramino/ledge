@@ -211,6 +211,14 @@ final class Workspace {
             NSSound.beep()
             return
         }
+        // Code arrives fenced and named. Pasting a manifest is the whole point
+        // of this shortcut, and a manifest read as Markdown is a page of
+        // headings and bullets that no longer looks like what you copied.
+        if let found = Code.detect(text) {
+            (primaryDeck ?? decks.first)?.newNote(title: found.title ?? "",
+                                                  body: Code.fenced(text, language: found.language))
+            return
+        }
         (primaryDeck ?? decks.first)?.newNote(body: text)
     }
 

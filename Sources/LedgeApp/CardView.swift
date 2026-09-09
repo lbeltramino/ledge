@@ -121,14 +121,13 @@ final class NoteCardView: NSView {
 
 
         textView.isRichText = false
+        textView.configureForNotes()
         textView.allowsUndo = true
         textView.isEditable = true
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 0, height: 0)
         textView.font = Typography.noteBody(size: Metrics.Card.bodySize)
         textView.string = body
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
         let dark = isDark
         let markdown = MarkdownHighlighter(
             baseFont: Typography.noteBody(size: Metrics.Card.bodySize),
@@ -143,6 +142,13 @@ final class NoteCardView: NSView {
         highlighter = markdown
         textView.onChange = { [weak self] in self?.onEdit?(self?.textView.string ?? "") }
         textView.onFind = { [weak self] in self?.beginFind() }
+        textView.onSuggestedTitle = { [weak self] suggested in
+            // Only when the note has no name yet: a snippet pasted into a note
+            // you already named must not rename it.
+            guard let self, self.title.isEmpty else { return }
+            self.title = suggested
+            self.onTitle?(suggested)
+        }
         textView.onStepFind = { [weak self] delta in self?.stepFind(delta) }
         textView.onBeginEditing = { [weak self] in
             self?.setEditing(true)
@@ -598,6 +604,8 @@ final class NoteTextView: NSTextView {
     var onEscape: (() -> Void)?
     /// A `[[link]]` was followed.
     var onOpenLink: ((String) -> Void)?
+    /// A pasted snippet was fenced, and suggests this name for the note.
+    var onSuggestedTitle: ((String) -> Void)?
     /// ⌘F, and ⌘G / ⇧⌘G once it is open.
     var onFind: (() -> Void)?
     var onStepFind: ((Int) -> Void)?
@@ -695,9 +703,43 @@ final class NoteTextView: NSTextView {
         super.insertText(string, replacementRange: replacementRange)
     }
 
-    /// Pasting a URL over a selection links it rather than replacing it.
+    /// None of AppKit's helpful rewriting.
+    ///
+    /// Quote and dash substitution were already off; text replacement and
+    /// autocorrect follow a system preference, so they were on for anyone who
+    /// had them on. All four rewrite what you typed, and a command that has
+    /// been rewritten is a bug you find in production.
+    ///
+    /// A function rather than an initialiser: NSTextView has two designated
+    /// ones, and overriding them to set four flags costs more than it saves.
+    func configureForNotes() {
+        isAutomaticQuoteSubstitutionEnabled = false
+        isAutomaticDashSubstitutionEnabled = false
+        isAutomaticTextReplacementEnabled = false
+        isAutomaticSpellingCorrectionEnabled = false
+    }
+
+    /// Nothing in a code block is a spelling mistake.
+    ///
+    /// The checker is worth having in prose and useless over identifiers, and
+    /// AppKit asks before marking each range — so the answer for a range inside
+    /// a fence is simply no.
+    override func setSpellingState(_ value: Int, range: NSRange) {
+        if value != 0, let storage = textStorage,
+           MarkdownEditing.enclosingFence(in: storage.string as NSString, at: range) != nil {
+            return
+        }
+        super.setSpellingState(value, range: range)
+    }
+
+    /// Pasting a URL over a selection links it; pasting source code fences it.
     override func paste(_ sender: Any?) {
         if MarkdownEditing.pasteLink(self) { return }
+        let code = MarkdownEditing.pasteCode(self)
+        if code.did {
+            if let title = code.title { onSuggestedTitle?(title) }
+            return
+        }
         super.paste(sender)
     }
 

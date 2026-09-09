@@ -50,6 +50,12 @@ SQLite index beside it is a cache you can delete at any moment.
   steps back so what is left to do is what stands out. Enter continues the list,
   Tab nests it, Shift-Tab takes it back out, and numbered lists renumber
   themselves.
+- **Paste code and it stays code.** A manifest, a Terraform block, a shell
+  script or a `package.json` arrives fenced, tagged with its language and
+  coloured — instead of the page of headings and bullets that Markdown makes of
+  `# comment` and `- name:`. The note takes its name from the snippet:
+  `Deployment/api`, `aws_s3_bucket.logs`, `kubectl rollout status`. Pasting
+  prose is still pasting prose.
 - **The small things.** Paste a URL over some words and they become the link
   text. Type a bracket or a quote with something selected and it wraps rather
   than replaces. `⌥↑` and `⌥↓` move the line you are on, renumbering the list
@@ -185,7 +191,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 114 unit tests
+swift run ledge-tests                               # 146 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -334,6 +340,22 @@ between notes, and links out. For code, all three of Markdown's forms: inline
 `` ` ``, fenced ``` ``` ``` and `~~~`, and four-space indented blocks — which is
 what you get from pasting a terminal. A nested list item also starts with four
 spaces and is deliberately not treated as code.
+
+## Code
+
+Fenced blocks are recognised and coloured in **HCL/Terraform, YAML, JSON,
+JavaScript, TypeScript, Python, Go, Bash, Dockerfile, SQL, TOML, Makefile,
+Groovy/Jenkinsfile and XML**. The language is detected from what you pasted —
+you do not have to tag the fence — and the note is named after the snippet.
+
+The colouring uses the note's own two colours rather than a syntax theme:
+structure in ink, values in the accent, comments faded back. Eleven paper
+colours and a theme of its own would be a fight.
+
+Inside a block, spell checking is off — nothing in a shell command is a
+spelling mistake — and so are quote substitution, dash substitution, text
+replacement and autocorrect, everywhere. A command that has been silently
+rewritten is a bug you find in production.
 
 `ledge --diagnose` prints which forms are recognised by running them, rather
 than by consulting a list that can go stale.

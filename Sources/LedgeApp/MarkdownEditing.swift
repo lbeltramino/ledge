@@ -101,7 +101,7 @@ enum MarkdownEditing {
     }
 
     /// The fenced block containing `selection`, if there is one.
-    private static func enclosingFence(in text: NSString,
+    static func enclosingFence(in text: NSString,
                                        at selection: NSRange) -> (whole: NSRange, body: NSRange)? {
         guard let regex = try? NSRegularExpression(pattern: "^```[^\n]*\n([\\s\\S]*?)^```[ \t]*$",
                                                    options: [.anchorsMatchLines,
@@ -300,6 +300,40 @@ enum MarkdownEditing {
         textView.setSelectedRange(NSRange(location: selection.location + (markdown as NSString).length,
                                           length: 0))
         return true
+    }
+
+    /// Pasting source code fences it, so a manifest arrives looking like a
+    /// manifest instead of a page of headings and bullets.
+    ///
+    /// Returns the title the snippet suggests, when it has one. `did == false`
+    /// means this was an ordinary paste and nothing was done.
+    static func pasteCode(_ textView: NSTextView,
+                          from pasteboard: NSPasteboard = .general) -> (did: Bool, title: String?) {
+        guard let storage = textView.textStorage,
+              let pasted = pasteboard.string(forType: .string),
+              pasted.contains("\n") else { return (false, nil) }
+
+        let selection = textView.selectedRange()
+        let text = storage.string as NSString
+
+        // Already inside a block? Then it is code arriving into code, and a
+        // second fence would close the first one.
+        if enclosingFence(in: text, at: selection) != nil { return (false, nil) }
+        guard let found = Code.detect(pasted) else { return (false, nil) }
+
+        // A fence has to start its own line, and be followed by one.
+        var block = Code.fenced(pasted, language: found.language)
+        let atLineStart = selection.location == 0
+            || text.substring(with: NSRange(location: selection.location - 1, length: 1)) == "\n"
+        if !atLineStart { block = "\n" + block }
+        let atLineEnd = selection.upperBound >= text.length
+            || text.substring(with: NSRange(location: selection.upperBound, length: 1)) == "\n"
+        if !atLineEnd { block += "\n" }
+
+        replace(textView, range: selection, with: block)
+        textView.setSelectedRange(NSRange(location: selection.location + (block as NSString).length,
+                                          length: 0))
+        return (true, found.title)
     }
 
     /// Typing a bracket or a quote with something selected puts it around the

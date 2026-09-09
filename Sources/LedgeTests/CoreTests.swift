@@ -498,5 +498,274 @@ enum CoreTests {
             c.expect(ids.allSatisfy { ULID.isValid($0) }, "an id failed validation")
             c.equal(Set(ids).count, ids.count, "collision in 10k ids")
         }
+
+        Runner.suite("Pasted code")
+
+        // A corpus rather than one example each: detection that only works on
+        // the snippet it was written against is detection that will fence your
+        // prose the first time you paste a paragraph.
+        let snippets: [(String, String, String)] = [
+            ("hcl", """
+            resource "aws_s3_bucket" "logs" {
+              bucket = "acme-logs"
+              tags = {
+                Environment = "prod"
+              }
+            }
+            """, "aws_s3_bucket.logs"),
+            ("hcl", """
+            module "vpc" {
+              source  = "terraform-aws-modules/vpc/aws"
+              version = "5.0.0"
+              cidr    = "10.0.0.0/16"
+            }
+            """, "module.vpc"),
+            ("yaml", """
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: api
+            spec:
+              replicas: 3
+            """, "Deployment/api"),
+            ("yaml", """
+            # docker-compose
+            services:
+              web:
+                image: nginx:1.25
+                ports:
+                  - "80:80"
+            """, "services"),
+            ("json", """
+            {
+              "name": "api-gateway",
+              "version": "1.4.0",
+              "scripts": { "start": "node index.js" }
+            }
+            """, "api-gateway"),
+            ("javascript", """
+            const express = require("express");
+            const app = express();
+            app.get("/healthz", (req, res) => res.send("ok"));
+            """, "express"),
+            ("typescript", """
+            export interface Config {
+              region: string;
+              retries: number;
+            }
+
+            export function load(env: string): Config {
+              return { region: env, retries: 3 };
+            }
+            """, "Config"),
+            ("python", """
+            import boto3
+
+            def sync_buckets(source, target):
+                s3 = boto3.client("s3")
+                return s3.list_objects_v2(Bucket=source)
+            """, "sync_buckets"),
+            ("go", """
+            package main
+
+            import "fmt"
+
+            func main() {
+                fmt.Println("ok")
+            }
+            """, "main.main"),
+            ("bash", """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            kubectl rollout status deployment/api --timeout=120s
+            """, "kubectl rollout status"),
+            ("bash", """
+            kubectl get pods -o jsonpath='{.items[*].metadata.name}'
+            helm upgrade --install api ./chart
+            """, "kubectl get pods"),
+            ("dockerfile", """
+            FROM golang:1.22-alpine
+            WORKDIR /src
+            COPY . .
+            RUN go build -o /bin/api ./cmd/api
+            """, "Dockerfile · golang:1.22-alpine"),
+            ("sql", """
+            CREATE TABLE deployments (
+              id uuid PRIMARY KEY,
+              service text NOT NULL
+            );
+            """, "create deployments"),
+            ("makefile", """
+            build:
+            \tgo build ./...
+
+            test:
+            \tgo test ./...
+            """, "make build"),
+            ("groovy", """
+            pipeline {
+              agent any
+              stages {
+                stage('build') {
+                  steps { sh 'make build' }
+                }
+              }
+            }
+            """, "stage build"),
+            ("toml", """
+            [tool.poetry]
+            name = "platform"
+            version = "0.1.0"
+            """, "tool.poetry"),
+            ("xml", """
+            <project>
+              <groupId>com.acme</groupId>
+            </project>
+            """, "<project>"),
+        ]
+
+        for (language, snippet, expectedTitle) in snippets {
+            await Runner.test("recognises \(language): \(expectedTitle)") { c in
+                let found = Code.detect(snippet)
+                c.equal(found?.language, language,
+                        "detected \(found?.language ?? "nothing")")
+                c.equal(found?.title, expectedTitle, "title was \(found?.title ?? "nothing")")
+            }
+        }
+
+        // The other half, and the one that matters more: pasting writing must
+        // not fence it. A false positive turns a note you were writing into a
+        // grey box; a false negative just leaves you with ⌘E.
+        let prose = [
+            "Reunión con el equipo de plataforma: quedamos en migrar el cluster el martes.",
+            """
+            Notes from the incident review
+
+            The rollout went out at 14:20 and the error rate climbed for eleven
+            minutes before anyone noticed. We agreed on three follow-ups.
+            """,
+            """
+            - comprar café
+            - reservar la sala
+            - mandar la agenda
+            """,
+            """
+            # Semana 12
+
+            Pendiente: revisar el presupuesto y hablar con finanzas.
+            """,
+            """
+            To do: escribir el postmortem
+            Owner: yo
+            """,
+            "https://example.com/a/very/long/link?with=params",
+        ]
+
+        for (index, text) in prose.enumerated() {
+            await Runner.test("leaves prose alone (\(index + 1))") { c in
+                c.expect(Code.detect(text) == nil,
+                         "fenced prose as \(Code.detect(text)?.language ?? "code"): \(text.prefix(40))")
+            }
+        }
+
+        await Runner.test("fences code that itself contains a fence") { c in
+            let readme = "```\nsome code\n```"
+            let fenced = Code.fenced(readme, language: "markdown")
+            c.expect(fenced.hasPrefix("````markdown\n"),
+                     "the outer fence has to be longer than the inner one: \(fenced.prefix(20))")
+            c.expect(fenced.hasSuffix("\n````"), "and closed with the same length")
+        }
+
+        await Runner.test("an unknown language is still recognised as code") { c in
+            let rust = """
+            fn main() {
+                let config = load_config();
+                println!("{}", config.region);
+            }
+            """
+            let found = Code.detect(rust)
+            c.expect(found != nil, "should be fenced even with no language tag")
+            c.equal(found?.language, nil, "and claim no language rather than guess wrong")
+        }
+
+        await Runner.test("colours the pieces of a YAML block") { c in
+            let yaml = "# comment\nname: api\nreplicas: 3\n"
+            let tokens = Code.tokens(in: yaml, language: "yaml")
+            func role(of word: String) -> Code.Role? {
+                guard let range = yaml.range(of: word) else { return nil }
+                let location = yaml.distance(from: yaml.startIndex, to: range.lowerBound)
+                return tokens.first { NSLocationInRange(location, $0.range) }?.role
+            }
+            c.equal(role(of: "# comment"), .comment)
+            c.equal(role(of: "name"), .key)
+            c.equal(role(of: "replicas"), .key)
+            c.equal(role(of: "3"), .number)
+        }
+
+        await Runner.test("a keyword inside a string is not a keyword") { c in
+            let go = "s := \"package main\"\n"
+            let tokens = Code.tokens(in: go, language: "go")
+            let keywords = tokens.filter { $0.role == .keyword }
+            c.equal(keywords.count, 0,
+                    "the quoted words were coloured as code: \(keywords.count) keywords")
+            c.equal(tokens.filter { $0.role == .string }.count, 1, "the string is one token")
+        }
+
+        await Runner.test("a quote inside a comment does not open a string") { c in
+            let sh = "# don't do this\necho ok\n"
+            let tokens = Code.tokens(in: sh, language: "bash")
+            c.equal(tokens.first?.role, .comment)
+            c.expect(!tokens.contains { $0.role == .string },
+                     "the apostrophe started a string that swallowed the line")
+        }
+
+        await Runner.test("tokens never overlap") { c in
+            let ts = """
+            // build the client
+            import { Client } from "@acme/sdk";
+            const client = new Client({ retries: 3 });
+            """
+            let tokens = Code.tokens(in: ts, language: "typescript")
+            c.expect(!tokens.isEmpty, "nothing was recognised at all")
+            var previous = NSRange(location: -1, length: 0)
+            var overlaps = 0
+            for token in tokens {
+                if NSIntersectionRange(previous, token.range).length > 0 { overlaps += 1 }
+                previous = token.range
+            }
+            c.equal(overlaps, 0, "overlapping tokens paint over each other")
+        }
+
+        await Runner.test("SQL keywords are recognised in any case") { c in
+            let upper = Code.tokens(in: "SELECT id FROM users", language: "sql")
+            let lower = Code.tokens(in: "select id from users", language: "sql")
+            c.equal(upper.filter { $0.role == .keyword }.count, 2, "SELECT and FROM")
+            c.equal(lower.count, upper.count, "lowercase SQL is the same SQL")
+        }
+
+        await Runner.test("every language we claim to support has a grammar") { c in
+            for language in ["yaml", "json", "hcl", "bash", "python", "go",
+                             "javascript", "typescript", "dockerfile", "sql",
+                             "toml", "makefile", "groovy", "xml"] {
+                c.expect(Code.grammar(for: language) != nil, "no grammar for \(language)")
+                let tokens = Code.tokens(in: "x = 1\n# note\n", language: language)
+                _ = tokens        // must not trap on text that is not that language
+            }
+            c.expect(Code.grammar(for: "brainfuck") == nil, "an unknown language has no grammar")
+            c.equal(Code.tokens(in: "anything", language: nil).count, 0,
+                    "an untagged block is left plain")
+        }
+
+        await Runner.test("detection and grammar agree on every language") { c in
+            // A language the detector can produce but the painter cannot colour
+            // would be a fence tag that does nothing.
+            for (_, snippet, _) in snippets {
+                guard let found = Code.detect(snippet), let language = found.language else { continue }
+                c.expect(Code.grammar(for: language) != nil,
+                         "detected \(language), which has no grammar")
+                c.expect(!Code.tokens(in: snippet, language: language).isEmpty,
+                         "\(language) produced no tokens at all")
+            }
+        }
     }
 }

@@ -74,6 +74,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         content.addSubview(titleField)
 
         textView.isRichText = false
+        textView.configureForNotes()
         textView.isEditable = true
         textView.isSelectable = true
         textView.allowsUndo = true
@@ -81,8 +82,6 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.textColor = ink
         textView.insertionPointColor = ink
         textView.textContainerInset = NSSize(width: 0, height: 6)
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
         textView.isContinuousSpellCheckingEnabled = true
         textView.font = Typography.noteBody(size: 20)
         textView.string = body
@@ -131,6 +130,12 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
                                     current: current)
         }
         textView.onFind = { [weak self] in self?.beginFind() }
+        textView.onSuggestedTitle = { [weak self] suggested in
+            guard let self, self.titleField.stringValue.isEmpty else { return }
+            self.titleField.stringValue = suggested
+            self.window.title = suggested
+            self.onTitle?(suggested)
+        }
         textView.onStepFind = { [weak self] delta in self?.stepFind(delta) }
 
         layout()

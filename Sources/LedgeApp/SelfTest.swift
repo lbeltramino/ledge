@@ -603,6 +603,118 @@ enum SelfTest {
         board.clearContents()
     }
 
+    /// Pasting source code: the whole point is that it happens by itself, so
+    /// what is checked here is the paste, not the functions under it.
+    static func checkPastedCode() {
+        func note(_ text: String, selection: NSRange) -> NoteTextView {
+            let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+            view.configureForNotes()
+            view.string = text
+            view.setSelectedRange(selection)
+            return view
+        }
+        let board = NSPasteboard(name: NSPasteboard.Name("ledge.selftest.code"))
+        func put(_ text: String) {
+            board.clearContents()
+            board.setString(text, forType: .string)
+        }
+
+        let manifest = """
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: api
+        """
+        put(manifest)
+
+        let empty = note("", selection: NSRange(location: 0, length: 0))
+        let pasted = MarkdownEditing.pasteCode(empty, from: board)
+        check(pasted.did, "a manifest pasted into a note is fenced")
+        check(empty.string.hasPrefix("```yaml\n"),
+              "…with its language on the fence: \(empty.string.prefix(12).debugDescription)")
+        check(empty.string.hasSuffix("\n```"), "…and closed")
+        check(pasted.title == "Deployment/api",
+              "…and it names the note: \(pasted.title ?? "nothing")")
+
+        // The fence has to start a line of its own, or it is not a fence.
+        let midLine = note("see this: ", selection: NSRange(location: 10, length: 0))
+        _ = MarkdownEditing.pasteCode(midLine, from: board)
+        check(midLine.string.contains("\n```yaml\n"),
+              "a fence pasted mid-line gets a line of its own: \(midLine.string.prefix(20).debugDescription)")
+
+        // Pasting code into code must not close the block it lands in.
+        let inside = note("```yaml\nexisting: true\n```", selection: NSRange(location: 22, length: 0))
+        let nested = MarkdownEditing.pasteCode(inside, from: board)
+        check(!nested.did, "pasting into a block leaves it alone — a second fence would end the first")
+
+        // And the half that matters more.
+        put("Quedamos en migrar el cluster el martes, después del deploy.")
+        let prose = note("", selection: NSRange(location: 0, length: 0))
+        check(!MarkdownEditing.pasteCode(prose, from: board).did,
+              "pasting a sentence is an ordinary paste")
+        check(prose.string.isEmpty, "and it changed nothing")
+
+        put("una sola línea de texto")
+        let single = note("", selection: NSRange(location: 0, length: 0))
+        check(!MarkdownEditing.pasteCode(single, from: board).did,
+              "one line is never worth a code block")
+
+        board.clearContents()
+
+        // Nothing in a block is a spelling mistake.
+        let checked = note("kubectl\n\n```bash\nkubectl get pods\n```", selection: NSRange(location: 0, length: 0))
+        let prose_ = (checked.string as NSString).range(of: "kubectl")
+        let code_ = (checked.string as NSString).range(of: "kubectl get")
+        checked.setSpellingState(NSAttributedString.SpellingState.spelling.rawValue, range: prose_)
+        checked.setSpellingState(NSAttributedString.SpellingState.spelling.rawValue, range: code_)
+        // Spelling marks are temporary attributes on the layout manager, not
+        // attributes of the text — reading the storage finds nothing either way.
+        let marked = { (r: NSRange) in
+            checked.layoutManager?.temporaryAttribute(.spellingState, atCharacterIndex: r.location,
+                                                      effectiveRange: nil) != nil
+        }
+        check(marked(prose_), "a misspelling in prose is still marked")
+        check(!marked(code_), "the same word inside a code block is not")
+
+        // The substitutions that would rewrite what you pasted.
+        check(!checked.isAutomaticTextReplacementEnabled && !checked.isAutomaticSpellingCorrectionEnabled
+              && !checked.isAutomaticQuoteSubstitutionEnabled && !checked.isAutomaticDashSubstitutionEnabled,
+              "a text view that rewrites what you type cannot hold a shell command")
+
+        // The colouring, read back off the attributes rather than asserted.
+        let source = "```yaml\nname: api\n# note\n```"
+        let highlighter = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14),
+                                              ink: .black, accent: .blue)
+        let storage = NSTextStorage(string: source)
+        highlighter.highlight(storage)
+        func colour(of needle: String) -> NSColor? {
+            let range = (source as NSString).range(of: needle)
+            guard range.location != NSNotFound else { return nil }
+            return storage.attribute(.foregroundColor, at: range.location,
+                                     effectiveRange: nil) as? NSColor
+        }
+        func weight(of needle: String) -> NSFont.Weight? {
+            let range = (source as NSString).range(of: needle)
+            guard range.location != NSNotFound,
+                  let font = storage.attribute(.font, at: range.location,
+                                               effectiveRange: nil) as? NSFont
+            else { return nil }
+            let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any]
+            return (traits?[.weight] as? NSNumber).map { NSFont.Weight($0.doubleValue) }
+        }
+
+        let key = colour(of: "name")
+        let value = colour(of: "api")
+        let comment = colour(of: "# note")
+        check(key != nil && value != nil && comment != nil, "the block was not coloured at all")
+        check(key != value, "a YAML key and its value are the same colour — nothing was painted")
+        check(comment != key, "the comment is not set apart from the keys")
+        check((weight(of: "name") ?? .regular) > (weight(of: "api") ?? .regular),
+              "keys should carry more weight than values")
+        check((comment?.alphaComponent ?? 1) < (key?.alphaComponent ?? 0),
+              "the comment should be the faintest thing in the block")
+    }
+
     /// The editor writes through the same debounced path as the cards. This
     /// drives it end to end and then reads the file back off disk.
     static func checkSaving(deck: DeckController, folder: URL) async {
@@ -803,6 +915,7 @@ enum SelfTest {
         checkScopedHighlighting()
         checkFind()
         checkMarkdownEditing()
+        checkPastedCode()
         checkCodeFormatting()
         checkChromeDegradation()
         checkPressAndSettle()
