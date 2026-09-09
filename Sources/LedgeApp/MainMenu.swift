@@ -74,15 +74,25 @@ enum MainMenu {
 
         let viewItem = NSMenuItem()
         let view = NSMenu(title: "View")
-        // ⌘+ is typed as ⌘⇧= on most layouts, so the event arrives carrying
-        // shift and a "+" declared as plain ⌘ never matches it. Both spellings
-        // are claimed, which is what every app that gets this right does.
-        add(view, "Bigger", #selector(AppDelegate.zoomIn(_:)), "+", [.command, .shift])
-        let alsoBigger = NSMenuItem(title: "Bigger", action: #selector(AppDelegate.zoomIn(_:)),
-                                    keyEquivalent: "=")
-        alsoBigger.keyEquivalentModifierMask = [.command]
-        alsoBigger.isHidden = true
-        view.addItem(alsoBigger)
+        // ⌘+ depends on the keyboard, and getting this wrong is invisible until
+        // someone with a different one tries it.
+        //
+        //   US:      + is ⇧= — the event carries shift, and "=" underneath
+        //   Spanish: + is its own unshifted key, and ⇧ gives *
+        //
+        // A single declaration serves one of those and silently fails the other,
+        // which is exactly what happened: an item declaring "+" under ⌘⇧ works
+        // in New York and does nothing in Buenos Aires. So all three spellings
+        // are claimed, and only one of them can ever match a given press.
+        add(view, "Bigger", #selector(AppDelegate.zoomIn(_:)), "+", [.command])
+        for (key, modifiers) in [("+", NSEvent.ModifierFlags([.command, .shift])),
+                                 ("=", NSEvent.ModifierFlags([.command]))] {
+            let also = NSMenuItem(title: "Bigger", action: #selector(AppDelegate.zoomIn(_:)),
+                                  keyEquivalent: key)
+            also.keyEquivalentModifierMask = modifiers
+            also.isHidden = true
+            view.addItem(also)
+        }
         add(view, "Smaller", #selector(AppDelegate.zoomOut(_:)), "-")
         add(view, "Actual Size", #selector(AppDelegate.zoomReset(_:)), "0")
         view.addItem(.separator())

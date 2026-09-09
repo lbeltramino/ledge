@@ -1050,6 +1050,69 @@ enum SelfTest {
         Settings.zoom = 1.0
     }
 
+    /// ⌘+ on keyboards that are not this one.
+    ///
+    /// The previous version of this check synthesised the US spelling, passed,
+    /// and shipped a ⌘+ that did nothing on a Spanish keyboard. Reading the
+    /// event instead of declaring a key equivalent is what makes the layouts
+    /// below answerable at all.
+    static func checkZoomKeys() {
+        func event(_ characters: String, _ ignoring: String,
+                   _ modifiers: NSEvent.ModifierFlags, code: UInt16 = 0) -> NSEvent? {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                             timestamp: 0, windowNumber: 0, context: nil, characters: characters,
+                             charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: code)
+        }
+
+        let bigger: [(String, String, NSEvent.ModifierFlags, String)] = [
+            ("+", "=", [.command, .shift], "US — ⌘⇧="),
+            ("+", "+", [.command], "Spanish — + is its own key"),
+            ("=", "=", [.command], "US — ⌘= with no shift"),
+            ("+", "*", [.command], "a layout where ⇧ gives * and + is unshifted"),
+            ("＋", "+", [.command], "an odd layout, as long as one of the two says +"),
+        ]
+        for (characters, ignoring, modifiers, layout) in bigger {
+            guard let event = event(characters, ignoring, modifiers) else { continue }
+            check(ZoomKeys.command(for: event) == .bigger, "⌘+ makes things bigger on \(layout)")
+        }
+
+        for (characters, layout) in [("-", "the usual minus"), ("_", "a layout that reports _")] {
+            guard let event = event(characters, characters, [.command]) else { continue }
+            check(ZoomKeys.command(for: event) == .smaller, "⌘- makes things smaller on \(layout)")
+        }
+        if let event = event("0", "0", [.command]) {
+            check(ZoomKeys.command(for: event) == .actualSize, "⌘0 goes back to normal")
+        }
+        // The keypad, where the characters are right but the position is not.
+        if let event = event("+", "+", [.command, .numericPad]) {
+            check(ZoomKeys.command(for: event) == .bigger, "the keypad + counts too")
+        }
+
+        // And what must be left alone.
+        for (characters, modifiers, what) in [
+            ("+", NSEvent.ModifierFlags([.command, .option]), "⌥⌘+ belongs to something else"),
+            ("+", NSEvent.ModifierFlags([]), "a plain + is text, not a shortcut"),
+            ("b", NSEvent.ModifierFlags([.command]), "⌘B is bold"),
+            ("1", NSEvent.ModifierFlags([.command]), "⌘1 opens the first note"),
+        ] {
+            guard let event = event(characters, characters, modifiers) else { continue }
+            check(ZoomKeys.command(for: event) == nil, what)
+        }
+
+        // End to end, through the same function the monitor calls.
+        let saved = (zoom: Settings.zoom, tab: Settings.tabScale,
+                     card: Settings.cardScale, length: Settings.tabMaxLength)
+        defer {
+            Settings.zoom = saved.zoom; Settings.tabScale = saved.tab
+            Settings.cardScale = saved.card; Settings.tabMaxLength = saved.length
+        }
+        Settings.zoom = 1.0
+        if let spanish = event("+", "+", [.command]) {
+            check(ZoomKeys.handle(spanish), "the monitor takes the event")
+            check(Settings.zoom > 1.0, "…and the deck is bigger: \(Settings.zoom)")
+        }
+    }
+
     /// The keys, pressed rather than declared.
     ///
     /// A menu item is a claim that a key does something. The status menu made
@@ -1082,12 +1145,18 @@ enum SelfTest {
             return menu.performKeyEquivalent(with: event)
         }
 
-        Settings.zoom = 1.0
-        // ⌘+ is typed as ⌘⇧= on most layouts: the event says "+" with shift held.
-        check(press("+", "=", [.command, .shift]),
-              "⌘+ has to be claimed by the menu — this is the one that never worked")
-        check(Settings.zoom > 1.0, "…and make things bigger: zoom is \(Settings.zoom)")
-        check(press("=", "="), "⌘= is the same key on a layout that does not need shift")
+        // Every way a keyboard can send ⌘+. Checking only the one this machine
+        // has is how the last version shipped a ⌘+ that worked here and did
+        // nothing on a Spanish keyboard, where + is not a shifted key at all.
+        for (characters, ignoring, modifiers, layout) in [
+            ("+", "=", NSEvent.ModifierFlags([.command, .shift]), "US, ⌘⇧="),
+            ("+", "+", NSEvent.ModifierFlags([.command]), "Spanish, + unshifted"),
+            ("=", "=", NSEvent.ModifierFlags([.command]), "US, ⌘= without shift"),
+        ] {
+            Settings.zoom = 1.0
+            check(press(characters, ignoring, modifiers), "⌘+ is claimed on \(layout)")
+            check(Settings.zoom > 1.0, "…and makes things bigger on \(layout): \(Settings.zoom)")
+        }
 
         Settings.zoom = 1.45
         check(press("-", "-"), "⌘- is claimed")
@@ -1393,6 +1462,7 @@ enum SelfTest {
         checkMarkdownEditing()
         checkPastedCode()
         checkProgressTick()
+        checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
         checkCodeFormatting()

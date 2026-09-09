@@ -139,6 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem = StatusItemController(workspace: workspace)
             registerHotkeys(workspace)
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                // Before the decks and before the menu: the size keys are read
+                // off the event rather than declared, because which character a
+                // keyboard sends for ⌘+ is not something a menu item can be
+                // told. See ZoomKeys.
+                if ZoomKeys.handle(event) { return nil }
                 for deck in workspace.decks where deck.handleKey(event) { return nil }
                 return event
             }
