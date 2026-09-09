@@ -49,7 +49,9 @@ SQLite index beside it is a cache you can delete at any moment.
 - **Checklists.** `- [ ]` is a task. Click the box to tick it, and a finished one
   steps back so what is left to do is what stands out. Enter continues the list,
   Tab nests it, Shift-Tab takes it back out, and numbered lists renumber
-  themselves.
+  themselves. `- [/]` is one in progress: half a tick is drawn where the slash
+  is, and its text stays at full strength while finished tasks recede, so on any
+  note exactly one line leans forward.
 - **Paste code and it stays code.** A manifest, a Terraform block, a shell
   script or a `package.json` arrives fenced, tagged with its language and
   coloured — instead of the page of headings and bullets that Markdown makes of
@@ -60,7 +62,8 @@ SQLite index beside it is a cache you can delete at any moment.
   inside the app, lets a script or an agent create a note, add checklist items,
   tick them off and append what it found. A note on a feed carries a small mark
   on its tab — hollow while you are up to date, filled when there is something
-  you have not seen. Nothing pops up, nothing steals focus.
+  you have not seen. Nothing pops up, nothing steals focus, and you can keep
+  typing in the note while it writes: a save is a merge, not an overwrite.
 - **Take the code back out.** Hover a code block and a small mark appears at its
   top right; click it and the block is on your clipboard without its fences,
   ready to paste into a terminal. `⌘⇧C` does the same for the block the caret is
@@ -166,13 +169,19 @@ Measured on an idle Mac with five notes, by `--diagnose` and by macOS itself:
 
 | | |
 |---|---|
-| Memory | **12 MB** — the `phys_footprint` Activity Monitor shows |
+| Memory | **16 MB** — the `phys_footprint` Activity Monitor shows |
 | CPU, idle | **0.0%** across ten one-second samples |
 | Threads | 3 |
-| Highlighting | **0.1 ms** per keystroke, at 20 lines or at 1000 |
+| Highlighting | **under 0.1 ms** per keystroke, at 20 lines or at 1000 |
 
 Resident size reads around 68 MB, and almost all of that is shared AppKit pages
 every Mac app maps. The number that costs you something is the footprint.
+
+It was 12 MB when this table was first written and is 16 MB now — the difference
+is the code added since, and it is here rather than quietly corrected because a
+number in a README is a claim, and a claim that only ever moves in the flattering
+direction is not being measured. Run `--diagnose` and see what your own machine
+says.
 
 Nothing polls. The deck sleeps until the pointer reaches the edge, the folder is
 watched by FSEvents rather than scanned, notes are written 250 ms after you stop
@@ -349,6 +358,8 @@ change for that to work.
 | `⌘1`…`⌘9` | Open the nth note on the deck |
 | `⌘,` | Settings |
 | `⌘⇧L` `⌘⇧1…3` | List, headings |
+| `⌘⇧.` | Quote the selected lines |
+| ⌥-click a `[ ]` | Mark that task in progress, or take it back out |
 
 ## Markdown it understands
 
@@ -394,6 +405,29 @@ machine, in preferences rather than in the file: written to the note it would
 show the same dot on your other Mac, and clearing it would be a write, which
 would wake the watcher, which would refresh, which would clear it again.
 
+Everything the command does:
+
+| | |
+|---|---|
+| `ledge new <title>` | `--feed NAME` `--strip NAME` `--color C` `--body TEXT`; prints the id |
+| `ledge append <note> <text…>` | a block at the end |
+| `ledge task add <note> <text…>` | an unticked task, beside the others |
+| `ledge task start <note> <text…>` | mark it in progress — `[/]` |
+| `ledge task check <note> <text…>` | tick it |
+| `ledge task uncheck <note> <text…>` | untick it |
+| `ledge set <note>` | `--title` `--color` `--feed` `--archive` `--activate` |
+| `ledge get <note> [--json]` | the text, or id/title/tasks/state |
+| `ledge list [--feed NAME] [--json]` | with `[done/total]` and what is writing |
+| `ledge folder` | where the notes live |
+
+`<note>` is an id, or enough of a title to be unambiguous — an ambiguous name is
+refused rather than guessed at. Text may also arrive on stdin. `--folder PATH`
+or `$LEDGE_FOLDER` picks the folder; otherwise it uses the one the app is using,
+which it reads from the app's own preferences.
+
+You can keep typing in a note while this writes to it. See **Sync conflicts**
+for what happens when you both touch the same line.
+
 `skills/ledge/SKILL.md` in this repo is a Claude Code skill that teaches an
 agent the above. Copy it to `~/.claude/skills/` to have it available everywhere.
 
@@ -436,8 +470,16 @@ Put the folder in iCloud Drive and two machines will eventually disagree. Ledge
 notices by **frontmatter id**, not by filename, so it holds whatever iCloud
 decides to call the copy. Both files are always kept: the one edited later keeps
 the note's identity, and the other becomes an ordinary note titled
-`(conflicted copy)` and tagged `conflict`. Nothing is merged for you and nothing
-is thrown away.
+`(conflicted copy)` and tagged `conflict`. Two machines' copies are never merged
+for you, and nothing is thrown away.
+
+Two writers on **one** machine are a different matter and are merged, because
+that case has an answer: you typing in a note while `ledge` writes to the same
+file. A save is a three-way merge between the text as the file last held it,
+the text on screen, and the text on disk now — see `Merge` in `LedgeCore`. Edits
+that touch different lines both land; edits to the same line keep both versions,
+since a note can carry the duplication until you tidy it and conflict markers in
+a sticky note cannot.
 
 ## Updates
 
