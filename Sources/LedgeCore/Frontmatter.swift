@@ -17,6 +17,14 @@ public enum Frontmatter {
     /// A note's body never carries trailing newlines: the file always ends with
     /// exactly one, so without this a note is not equal to itself after a
     /// round-trip and every save rewrites a file that did not change.
+    /// The body as it will come back off disk.
+    ///
+    /// Serialising ends the file with exactly one newline and parsing takes it
+    /// off again, so a body that goes in with trailing newlines does not come
+    /// back the same. Anything that remembers "what I last wrote" has to
+    /// remember this, or it will believe someone else edited the file.
+    public static func normalizedBody(_ body: String) -> String { trimmed(body) }
+
     static func trimmed(_ body: String) -> String {
         var b = body
         while b.hasSuffix("\n") || b.hasSuffix("\r") { b.removeLast() }

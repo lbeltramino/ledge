@@ -294,6 +294,12 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
     /// Re-applies the rules over `range`, which must start and end on line
     /// boundaries — `^` and `$` are matched against the range's edges.
     func highlight(_ storage: NSTextStorage, in range: NSRange) {
+        // The range was worked out when the edit happened; this runs a turn of
+        // the run loop later, and by then more keys may have been pressed. A
+        // range that outlived its text is not a small mistake — setAttributes
+        // past the end throws, and an uncaught NSException takes the app with
+        // it. Four backspaces in quick succession were enough.
+        let range = NSIntersectionRange(range, NSRange(location: 0, length: storage.length))
         guard range.length > 0 else { return }
 
         storage.beginEditing()

@@ -900,6 +900,36 @@ enum SelfTest {
 
     /// The half tick on a task in progress. Read off the attributes and then
     /// off the pixels, because neither one alone says it was drawn.
+    /// The highlighter is handed a range that no longer exists.
+    ///
+    /// It highlights a turn of the run loop after the edit that caused it, so
+    /// by then more keys may have been pressed. Setting attributes past the end
+    /// of the text throws an NSException, which is not a caught error in Swift:
+    /// it takes the whole app down. Four quick backspaces did it.
+    ///
+    /// If this ever comes back, this check does not print a failure — the
+    /// process dies here and the rest of the suite never runs, which is its own
+    /// kind of loud.
+    static func checkStaleHighlightRange() {
+        let highlighter = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14),
+                                              ink: .black, accent: .blue)
+        let storage = NSTextStorage(string: "una línea\notra línea")
+        highlighter.highlight(storage, in: NSRange(location: 0, length: storage.length + 200))
+        highlighter.highlight(storage, in: NSRange(location: storage.length + 10, length: 5))
+        highlighter.highlight(storage, in: NSRange(location: storage.length, length: 0))
+        check(storage.string == "una línea\notra línea",
+              "a range that outlived its text must be clipped, not obeyed")
+
+        // And the real path: a burst of edits, each one leaving a range behind.
+        let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        view.configureForNotes()
+        view.string = "una línea que se va a borrar"
+        view.textStorage?.delegate = highlighter
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        for _ in 0..<12 { view.deleteBackward(nil) }
+        check(view.string.count < 28, "the deletions happened: \(view.string.debugDescription)")
+    }
+
     static func checkProgressTick() {
         let source = "- [ ] todo\n- [/] en curso\n- [x] hecho"
         let highlighter = MarkdownHighlighter(baseFont: .systemFont(ofSize: 14),
@@ -1183,6 +1213,71 @@ enum SelfTest {
         check(!claims("j"), "a key nothing claims is left alone, so it can reach the note")
     }
 
+    /// Typing, one keystroke at a time, with the note saving between them.
+    ///
+    /// The merge that lets an agent write to an open note turned every save
+    /// into a three-way merge — including against the note's own previous save.
+    /// When the baseline was even slightly wrong, that merge saw two writers
+    /// where there was one and kept both versions: the line you were typing
+    /// appeared again on the line below.
+    static func checkTypingDoesNotDuplicate(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let record = deck.recordsForTesting.first else {
+            check(false, "no note to type in"); return
+        }
+        let url = folder.appendingPathComponent(record.filename)
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(record.id)
+        deck.expand(record.id)
+        guard deck.debugCardBody() != nil else { check(false, "no card"); return }
+
+        // The shape that actually breaks. Typing at the end of the note never
+        // did — the first version of this check appended and passed with the
+        // bug still in.
+        //
+        //   press Enter at the end, and the note is saved ending in a newline
+        //   the file will not keep. The baseline now says one thing and the file
+        //   says another, so the next edit to a line *above* looks like two
+        //   people changing it, and both versions are kept.
+        let stamp = Int(Date().timeIntervalSince1970)
+        let sentence = "una línea \(stamp)"
+        deck.debugTypeIntoCard("\n" + sentence)
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(500))
+
+        deck.debugTypeIntoCard("\n")            // Enter: the body now ends in one
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(500))
+
+        // Back up into the sentence and keep writing.
+        let caret = ((deck.debugCardBody() ?? "") as NSString).range(of: sentence)
+        deck.debugTypeIntoCard(" y más", at: caret.upperBound)
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(700))
+
+        let onDisk = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        check(onDisk.contains(sentence + " y más"),
+              "the sentence should be on disk in one piece: \(onDisk.suffix(90).debugDescription)")
+        let occurrences = onDisk.components(separatedBy: sentence).count - 1
+        check(occurrences == 1,
+              "typing must not leave a copy of the line behind — found \(occurrences): "
+              + "\(onDisk.suffix(90).debugDescription)")
+
+        // And deleting, which produced a line holding everything but the
+        // character that was removed.
+        deck.debugDeleteBackwardInCard(4)
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(600))
+        let afterDelete = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        check(afterDelete.components(separatedBy: sentence).count - 1 == 1,
+              "deleting must not either: \(afterDelete.suffix(120))")
+        check(!afterDelete.contains(sentence + " y más"),
+              "and the deletion actually happened")
+        check(deck.debugCardBody().map { afterDelete.contains($0.trimmingCharacters(in: .newlines)) } == true,
+              "the card and the file still agree")
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1461,6 +1556,7 @@ enum SelfTest {
         checkFind()
         checkMarkdownEditing()
         checkPastedCode()
+        checkStaleHighlightRange()
         checkProgressTick()
         checkZoomKeys()
         checkShortcuts()
@@ -1476,6 +1572,7 @@ enum SelfTest {
         print("\n\u{001B}[1mSaving\u{001B}[0m")
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
+        await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
         await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 

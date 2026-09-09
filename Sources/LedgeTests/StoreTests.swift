@@ -578,6 +578,23 @@ enum StoreTests {
             c.equal(try await reopened.search("PRD").count, 1, "search did not come back")
         }
 
+        await Runner.test("what the store hands back is what you saved") { c in
+            // The merge in the deck uses "the text as last written" as its
+            // baseline. If a save quietly changes the text, that baseline is a
+            // lie on the very next keystroke, and the merge sees two writers
+            // where there is one.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            for body in ["hola", "hola\n", "hola\n\n", "hola  ", "- [ ] uno\n", "línea\nlínea 2\n"] {
+                var note = try await store.create(title: "T", body: "")
+                note.body = body
+                let saved = try await store.save(note)
+                let loaded = try await store.load(id: note.id)
+                c.equal(loaded.body, saved.body,
+                        "round trip changed \(body.debugDescription) into \(loaded.body.debugDescription)")
+            }
+        }
+
         Runner.suite("A note arriving from outside")
 
         await Runner.test("the watcher notices a file that did not exist") { c in

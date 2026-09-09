@@ -92,6 +92,10 @@ public actor NoteStore {
     public func save(_ note: Note, touch: Bool = true) throws -> Note {
         var note = note
         if touch { note.updated = Frontmatter.normalized(Date()) }
+        // What comes back off disk, not what was handed in: a caller that keeps
+        // the returned note as "the text on disk" must not be given a version
+        // that reading the file would never produce.
+        note.body = Frontmatter.normalizedBody(note.body)
 
         let existing = try index.record(id: note.id)
         let filename = try filename(for: note, existing: existing)

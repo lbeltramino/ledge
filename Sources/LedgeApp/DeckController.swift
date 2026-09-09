@@ -958,12 +958,17 @@ final class DeckController {
                 bodies[id] = merged.text
                 propagate(merged: merged, from: body, of: id)
             }
-            baselines[id] = merged.text
             if naming, note.title.isEmpty {
                 let firstLine = body.split(separator: "\n").first.map(String.init) ?? ""
                 note.title = String(firstLine.trimmingCharacters(in: .whitespaces).prefix(60))
             }
-            _ = try await store.save(note)
+            // The baseline is what the file now holds, taken from the save
+            // itself. Taking it from what we handed in was the bug: a body
+            // ending in a newline came back without one, so the next keystroke
+            // saw a file that disagreed with the baseline, decided somebody else
+            // had edited the note, and kept both versions of the line.
+            let saved = try await store.save(note)
+            baselines[id] = saved.body
             records = (try? await store.deck(strip: strip.isPrimary ? "" : strip.id,
                                              collectingUnassigned: strip.isPrimary,
                                              knownStrips: knownStrips)) ?? records
@@ -1415,6 +1420,19 @@ extension DeckController {
     }
 
     /// Types into the deck's card exactly as a person would.
+    func debugTypeIntoCard(_ text: String, at location: Int) {
+        guard let card else { return }
+        card.window?.makeFirstResponder(card.textView)
+        card.textView.setSelectedRange(NSRange(location: location, length: 0))
+        card.textView.insertText(text, replacementRange: card.textView.selectedRange())
+    }
+
+    func debugDeleteBackwardInCard(_ times: Int) {
+        guard let card else { return }
+        card.window?.makeFirstResponder(card.textView)
+        for _ in 0..<times { card.textView.deleteBackward(nil) }
+    }
+
     func debugTypeIntoCard(_ text: String) {
         guard let card else { return }
         card.window?.makeFirstResponder(card.textView)
