@@ -83,6 +83,25 @@ SQLite index beside it is a cache you can delete at any moment.
 - **Capture what you copied.** `⌥⌘V` turns the clipboard into a note.
 - **Reachable from anything.** `ledge://new?title=…&text=…`, `ledge://open?title=…`
   and `ledge://search?q=…`, so a Shortcut or a script can put things here.
+- **Archived, never deleted.** Putting a note away keeps its colour, its dates
+  and its tags, and it stays searchable — `⌥⌘L` is the archive, and anything in
+  it comes back the way it left. Deleting is a separate, deliberate act with a
+  confirmation.
+- **Make it yours.** Five papers. Two hands to write in — a casual one that
+  looks handwritten, or New York if you want to read rather than admire. Tab
+  size, note size and overall zoom are separate settings, because a 13-inch
+  laptop and a 49-inch display do not want the same deck. Pin a strip and its
+  tabs stay out instead of folding away. Drag a note bigger and it stays that
+  size, just that note.
+- **Everything is in the menu bar.** The icon is where the notes folder is
+  chosen, the sizes are set, floating notes are called back, and every window is
+  reachable — there is no Dock icon and no preferences window to hunt for.
+- **No Accessibility access.** The global shortcuts work from inside any app
+  without it, because they are registered as real hotkeys rather than by
+  watching everything you type — the permission most launchers ask for, and the
+  one that lets an app read every keystroke you make. macOS will ask once for
+  access to your Documents folder, the way it does for any app that keeps files
+  there, and that is the only prompt you will see.
 - **Export.** Markdown, plain text, a single file, or a `.ledge` archive that
   imports back with colours, states, tags and dates intact.
 - **Your folder, wherever you want it.** Move it into iCloud Drive and it syncs;
