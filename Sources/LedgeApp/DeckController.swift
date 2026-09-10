@@ -624,19 +624,22 @@ final class DeckController {
 
         if state.isFannedOrBeyond {
             if case .editing = state { return }
-            // A point inside the open note is not a hover on whatever is behind
-            // it. The card grows out of its tab and covers the tabs around it,
-            // so deciding from the tab rectangles alone made the note you were
-            // reading open the one beside it — which moved the card, which put
-            // the pointer over the first one again. Two notes trading places
-            // while your hand holds still.
-            if let card, card.frame.contains(point) { return }
-
             // Which tab is under the pointer is decided here, from one tracking
             // area on the root, so relayout under a stationary pointer can never
             // strand the hover.
-            if let tab = tabs.last(where: { $0.frame.insetBy(dx: 0, dy: -1).contains(point) }) {
-                tabHovered(tab)
+            //
+            // Only tabs you can actually see. The open note's own tab is hidden
+            // — the card is that tab, extended — and a point over the body of
+            // the card is a point over the note you are reading, not a hover on
+            // whatever its rectangle happens to overlap.
+            //
+            // The tabs are drawn *above* the card, so a visible tab lying over
+            // it is still a tab you are pointing at. Ignoring the whole card
+            // rectangle, which is what this did first, meant you had to walk
+            // almost to the far end of the next tab before it would answer.
+            let under = tabs.last { !$0.isHidden && $0.frame.insetBy(dx: 0, dy: -1).contains(point) }
+            if let under {
+                tabHovered(under)
             }
             return
         }

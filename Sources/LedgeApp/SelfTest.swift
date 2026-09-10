@@ -1411,16 +1411,18 @@ enum SelfTest {
             + String(format: "%.1f pt", first.element.1.minY - first.element.0.minY)
     }
 
-    /// The pointer inside an open note must not open its neighbour.
+    /// What counts as pointing at a tab while a note is open.
     ///
-    /// Which tab is under the pointer was decided from the tab rectangles
-    /// alone, and an open card is drawn *over* the stack — it grows out of its
-    /// tab and covers the ones around it. So moving the pointer inside the note
-    /// you are reading lands inside a neighbouring tab's rectangle, that note
-    /// opens, the card jumps to grow out of *its* tab, and the pointer is now
-    /// over the first one again. That is the flicker: two notes trading places
-    /// while the pointer holds still.
-    static func checkPointerInsideCardIsNotAHover(deck: DeckController) async {
+    /// Two mistakes, one in each direction, and the checks below are the two
+    /// halves of the line between them.
+    ///
+    /// The tabs are drawn above the open card. So a visible tab lying over the
+    /// card is still a tab you are pointing at, and hovering it must work —
+    /// ignoring the card's whole rectangle meant you had to walk almost to the
+    /// far end of the next tab before the deck would answer. But the body of
+    /// the card, where no tab is drawn, is the note you are reading, and a
+    /// point there must not hover whatever the rectangles say is underneath.
+    static func checkPointerAgainstAnOpenCard(deck: DeckController) async {
         await deck.refresh()
         let ids = deck.recordsForTesting.map(\.id)
         guard ids.count >= 2 else { check(false, "need two notes"); return }
@@ -1429,31 +1431,36 @@ enum SelfTest {
         deck.previewForTesting(ids[0])
         guard let card = deck.debugCardFrame() else { check(false, "no card"); return }
 
-        // A point inside the card that is also inside some other tab's frame.
-        let others = zip(deck.recordsForTesting, deck.debugTabFramesForTesting)
+        let visible = zip(deck.recordsForTesting, deck.debugTabFramesForTesting)
             .filter { $0.0.id != ids[0] }
-        guard let covered = others.first(where: { $0.1.intersects(card) }) else {
-            check(false, "no tab is covered by the card on this screen — nothing to check")
-            return
-        }
-        let overlap = covered.1.intersection(card)
-        let point = NSPoint(x: overlap.midX, y: overlap.midY)
 
-        deck.debugPointerInside(point)
-        try? await Task.sleep(for: .milliseconds(700))
-        check(deck.openNoteID == ids[0],
-              "the pointer inside an open note must not open the tab underneath it — "
-              + "it opened \(deck.openNoteID.map { $0 == covered.0.id ? "the neighbour" : "something else" } ?? "nothing")")
-
-        // And the tab that is genuinely exposed still works, or this would be a
-        // fix that breaks hovering altogether.
-        guard let exposed = others.first(where: { !$0.1.intersects(card) }) else {
-            deck.closeNote(); return
+        // ---- the half that was reported: moving to the next tab must answer
+        // where you first touch it, not at its far end.
+        guard let neighbour = visible.first(where: { $0.1.intersects(card) }) ?? visible.first else {
+            check(false, "no neighbouring tab"); return
         }
-        deck.debugPointerInside(NSPoint(x: exposed.1.midX, y: exposed.1.midY))
+        let near = NSPoint(x: neighbour.1.midX, y: neighbour.1.minY + neighbour.1.height * 0.12)
+        deck.debugPointerInside(near)
         try? await Task.sleep(for: .milliseconds(700))
-        check(deck.openNoteID == exposed.0.id,
-              "a tab you can actually see still opens on hover")
+        check(deck.openNoteID == neighbour.0.id,
+              "the near end of the next tab opens it — you should not have to travel "
+              + "its whole length because the card happens to lie under it")
+
+        // ---- the other half: the body of the card is not a tab.
+        deck.previewForTesting(ids[0])
+        guard let card = deck.debugCardFrame() else { check(false, "no card"); return }
+        let bodyX = card.minX + card.width * 0.25          // well clear of the tab column
+        let onBody = NSPoint(x: bodyX, y: card.midY)
+        let coveringTab = deck.debugTabFramesForTesting.contains { $0.contains(onBody) }
+        if coveringTab {
+            check(false, "could not find a point on the card that no tab covers")
+        } else {
+            let before = deck.openNoteID
+            deck.debugPointerInside(onBody)
+            try? await Task.sleep(for: .milliseconds(700))
+            check(deck.openNoteID == before,
+                  "a point on the note you are reading must not open anything else")
+        }
         deck.closeNote()
     }
 
@@ -1755,7 +1762,7 @@ enum SelfTest {
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
         await checkHoverDoesNotMoveTheStrip(deck: deck)
-        await checkPointerInsideCardIsNotAHover(deck: deck)
+        await checkPointerAgainstAnOpenCard(deck: deck)
         await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 
         let saved = (zoom: Settings.zoom, tab: Settings.tabScale, card: Settings.cardScale)
