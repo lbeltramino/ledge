@@ -17,6 +17,16 @@ import Foundation
 /// fight — the visible overlap drifts outside its range. Protrusion is the axis
 /// that is genuinely free.
 public struct Jitter: Sendable, Equatable {
+
+    /// How far a tab may poke out past its neighbours, in points.
+    ///
+    /// This is what makes a stack read as paper rather than as a segmented
+    /// control, so it is deliberately large. Named here because the geometry
+    /// checks assert against it: it used to be a literal in this file and a
+    /// second literal in the check, and the second one does not move when you
+    /// change the first.
+    public static let maxProtrusion: Double = 12
+
     public let tabRotation: Double     // degrees, tab against the edge
     public let tabProtrusion: Double   // points this tab pokes out past its neighbours
     public let tabOverlap: Double      // points this tab bites into the one above
@@ -29,7 +39,7 @@ public struct Jitter: Sendable, Equatable {
     public init(id: String) {
         var rng = SplitMix64(seed: Jitter.seed(id))
         tabRotation   = rng.symmetric(0.6)
-        tabProtrusion = rng.range(0, 2.5)
+        tabProtrusion = rng.range(0, Jitter.maxProtrusion)
         tabOverlap    = rng.range(2.0, 5.0)
         cardRotation  = rng.symmetric(1.4)
         cardOffsetX   = rng.symmetric(2.0)

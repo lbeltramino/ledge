@@ -34,14 +34,16 @@ enum Palette {
     /// A tab's label is written in a deep version of the note's own hue, not in
     /// neutral ink. It is what stops the deck reading as coloured plastic with
     /// black type on it.
+    /// One slate for every paper.
+    ///
+    /// It used to be a saturated version of each colour, which made a tab read
+    /// as a coloured chip. Sampling the reference the deck is drawn after gives
+    /// ink of almost no chroma — #6A7C89 on blue, #8B7D46 on butter — grey that
+    /// has merely been breathed on by the paper under it. This is that, dark
+    /// enough to stay legible: the reference's own ink measures 2.5–3.2:1
+    /// against its paper, and 4.5:1 is where text stops being a decoration.
     static func labelInk(_ color: NoteColor) -> NSColor {
-        switch color {
-        case .blue:     return .srgb(0x1B4B78)
-        case .green:    return .srgb(0x1C5836)
-        case .lavender: return .srgb(0x46326F)
-        case .butter:   return .srgb(0x6A4C10)
-        case .coral:    return .srgb(0x78302A)
-        }
+        .srgb(0x4C4C56)
     }
 
     /// The strip down a card's leading edge: the paper, a shade deeper, so the

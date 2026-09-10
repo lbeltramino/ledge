@@ -10,13 +10,11 @@ enum VerticalLabel {
 
     /// A typewriter face, not the UI sans. The labels are part of the paper.
     static func font(size: CGFloat) -> NSFont {
-        NSFont(name: "AmericanTypewriter-Bold", size: size)
-            ?? NSFont(name: "AmericanTypewriter", size: size)
-            ?? .monospacedSystemFont(ofSize: size, weight: .semibold)
+        .systemFont(ofSize: size, weight: .semibold)
     }
 
     static func attributes(size: CGFloat, color: NSColor) -> [NSAttributedString.Key: Any] {
-        [.font: font(size: size), .foregroundColor: color, .kern: size * 0.08]
+        [.font: font(size: size), .foregroundColor: color, .kern: size * 0.15]
     }
 
     /// Fits `text` into `available` points of run length, with an ellipsis when

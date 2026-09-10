@@ -214,7 +214,8 @@ enum CoreTests {
                 c.expect(abs(j.cardRotation) <= 1.4, "card rotation \(j.cardRotation)")
                 c.expect(abs(j.tabRotation) <= 0.6, "tab rotation \(j.tabRotation)")
                 c.expect(j.tabOverlap >= 2 && j.tabOverlap <= 5, "overlap \(j.tabOverlap)")
-                c.expect(j.tabProtrusion >= 0 && j.tabProtrusion <= 2.5, "protrusion \(j.tabProtrusion)")
+                c.expect(j.tabProtrusion >= 0 && j.tabProtrusion <= Jitter.maxProtrusion,
+                         "protrusion \(j.tabProtrusion)")
                 c.expect(j.shadowScale >= 0.85 && j.shadowScale <= 1.15, "shadow \(j.shadowScale)")
             }
         }
