@@ -74,6 +74,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? Data(Frontmatter.serialize(note).utf8)
                 .write(to: folder.appendingPathComponent("\(title).md"))
         }
+
+        // A crowded deck on demand. The fixtures are five notes, so every check
+        // about how the stack is laid out has only ever seen a deck that fits —
+        // which is how a deck of two hundred notes could put most of them, and
+        // the plus button with them, past the bottom of the screen without a
+        // single check noticing.
+        let extra = ProcessInfo.processInfo.environment["LEDGE_SELFTEST_NOTES"]
+            .flatMap(Int.init) ?? 0
+        for i in 0..<extra {
+            var note = Note(title: "Crowd \(i)", color: NoteColor.allCases[i % 5],
+                            rank: String(format: "b%04d", i))
+            note.body = "- one\n- two"
+            try? Data(Frontmatter.serialize(note).utf8)
+                .write(to: folder.appendingPathComponent("Crowd \(i).md"))
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
