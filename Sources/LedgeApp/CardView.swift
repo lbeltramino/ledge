@@ -193,6 +193,7 @@ final class NoteCardView: NSView {
         findBar.onClose = { [weak self] in self?.endFind() }
         addSubview(findBar)
 
+        textView.highlighterPen = MarkerStroke.colour(for: record.color, dark: isDark)
         textView.findColour = { [weak self] current in
             guard let self else { return .systemBlue.withAlphaComponent(0.3) }
             return MarkerStroke.findColour(for: color, dark: isDark, current: current)
@@ -321,6 +322,7 @@ final class NoteCardView: NSView {
         titleField.textColor = ink
         textView.textColor = ink.withAlphaComponent(0.92)
         textView.codeCopy.ink = ink
+        textView.highlighterPen = MarkerStroke.colour(for: color, dark: dark)
         textView.insertionPointColor = ink
     }
 
@@ -756,7 +758,52 @@ final class NoteTextView: NSTextView {
 
         codeCopy.onCopy = { [weak self] in self?.copyHoveredBlock() }
         addSubview(codeCopy)
+
+        highlightBar.onClick = { [weak self] in
+            guard let self else { return }
+            MarkdownEditing.wrap(self, with: "==")
+            self.updateHighlightBar()
+        }
+        addSubview(highlightBar)
     }
+
+    // MARK: - the marker, offered on a selection
+
+    let highlightBar = HighlightBar()
+
+    /// Selecting words is what asks for it; collapsing the selection is what
+    /// takes it away. Shown on the way *out* of a drag, not during it, or it
+    /// would chase the pointer across the sentence you are still choosing.
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity,
+                                    stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        if stillSelecting { highlightBar.isHidden = true } else { updateHighlightBar() }
+    }
+
+    func updateHighlightBar() {
+        let selection = selectedRange()
+        guard selection.length > 0, !string.isEmpty else {
+            highlightBar.isHidden = true
+            return
+        }
+        guard let box = rects(for: selection).first else {
+            highlightBar.isHidden = true
+            return
+        }
+
+        let size = HighlightBar.size
+        var origin = NSPoint(x: box.midX - size.width / 2, y: box.minY - size.height - 4)
+        // Off the top of the note: sit under the selection instead.
+        if origin.y < 2 { origin.y = box.maxY + 4 }
+        origin.x = max(2, min(origin.x, bounds.width - size.width - 2))
+        highlightBar.setFrameOrigin(origin)
+        highlightBar.pen = highlighterPen
+        highlightBar.seed = strokeSeed
+        highlightBar.isHidden = false
+    }
+
+    /// The colour this note's marker writes in. Set alongside the others.
+    var highlighterPen: NSColor = .systemYellow
 
     // MARK: - copying a code block
 

@@ -95,6 +95,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.font = Typography.noteBody(size: Metrics.Editor.bodySize)
         textView.string = body
         highlighter.highlight = MarkerStroke.colour(for: record.color, dark: dark)
+        textView.highlighterPen = MarkerStroke.colour(for: record.color, dark: dark)
         textView.strokeSeed = record.id
         textView.textStorage?.delegate = highlighter
         if let storage = textView.textStorage { highlighter.highlight(storage) }
@@ -287,6 +288,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         highlighter.accent = Palette.tab(record.color)
             .blended(withFraction: 0.35, of: ink) ?? ink
         highlighter.highlight = MarkerStroke.colour(for: record.color, dark: dark)
+        textView.highlighterPen = MarkerStroke.colour(for: record.color, dark: dark)
         if let storage = textView.textStorage { highlighter.highlight(storage) }
     }
 

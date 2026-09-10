@@ -74,7 +74,9 @@ SQLite index beside it is a cache you can delete at any moment.
   behind you.
 - **A highlighter.** `==like this==`, drawn as a marker swipe rather than a
   coloured rectangle — it overshoots, wobbles and presses harder where it
-  started. Yellow, or pink on a yellow note.
+  started. Yellow, or pink on a yellow note. Select words and the pen appears
+  over them: pressing it writes the `==`, so a highlight made with the mouse and
+  one typed by hand are the same file. `⌘⇧H` does the same from the keyboard.
 - **Find in a note.** `⌘F`, then `⌘G` to step through. Matches are struck in the
   same marker, in a pen that is neither the highlighter nor the paper, with the
   one you are on pressed harder.

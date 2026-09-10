@@ -1464,6 +1464,67 @@ enum SelfTest {
         deck.closeNote()
     }
 
+    /// The marker offered on a selection.
+    ///
+    /// ⌘⇧H has wrapped a selection in `==` since the highlighter was built, and
+    /// there was no way to find that out by using the app. What is checked here
+    /// is that the affordance produces exactly what the shortcut does — the same
+    /// characters in the file — and that reaching for it does not cost you the
+    /// selection it acts on.
+    static func checkHighlightBar() {
+        func note(_ text: String, selection: NSRange) -> NoteTextView {
+            let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+            view.configureForNotes()
+            view.string = text
+            view.setSelectedRange(selection)
+            return view
+        }
+
+        let view = note("resaltá estas palabras por favor", selection: NSRange(location: 0, length: 0))
+        check(view.highlightBar.isHidden, "with nothing selected there is nothing to offer")
+
+        let words = (view.string as NSString).range(of: "estas palabras")
+        view.setSelectedRange(words)
+        check(!view.highlightBar.isHidden, "selecting words offers the marker")
+
+        // It must sit over the note, near the words, and inside the view.
+        let bar = view.highlightBar.frame
+        check(bar.minX >= 0 && bar.maxX <= view.bounds.width,
+              "the marker stays inside the note: \(bar)")
+
+        // Pressing it writes the same characters ⌘⇧H writes.
+        view.highlightBar.onClick?()
+        check(view.string == "resaltá ==estas palabras== por favor",
+              "the marker writes the markup, not a colour: \(view.string.debugDescription)")
+
+        let shortcut = note("resaltá estas palabras por favor", selection: words)
+        MarkdownEditing.wrap(shortcut, with: "==")
+        check(view.string == shortcut.string,
+              "…exactly what ⌘⇧H produces, or a note would depend on how it was made")
+
+        // And it takes it off again, which is what the shortcut does.
+        view.highlightBar.onClick?()
+        check(view.string == "resaltá estas palabras por favor",
+              "pressing it again lifts the highlight: \(view.string.debugDescription)")
+
+        // The selection has to survive the press, or you could not do it twice.
+        check(view.selectedRange().length > 0, "the words stay selected after using it")
+
+        // A click on it must not become a click in the text.
+        check(!view.highlightBar.acceptsFirstResponder,
+              "the marker must never take focus — that would drop the selection")
+
+        // What it draws is the note's own pen, so the button and the result agree.
+        view.setSelectedRange(words)
+        view.highlighterPen = .systemPink
+        view.updateHighlightBar()
+        check(view.highlightBar.pen == .systemPink, "the swipe on the button is the note's own colour")
+
+        // Collapsing the selection puts it away.
+        view.setSelectedRange(NSRange(location: 3, length: 0))
+        check(view.highlightBar.isHidden, "putting the caret down takes it away again")
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1744,6 +1805,7 @@ enum SelfTest {
         checkPastedCode()
         checkStaleHighlightRange()
         checkProgressTick()
+        checkHighlightBar()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
