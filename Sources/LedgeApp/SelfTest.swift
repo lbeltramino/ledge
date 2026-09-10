@@ -2170,7 +2170,7 @@ enum SelfTest {
         check(fan.tabs.count > 1, "the demo folder has a deck to fan")
         check(fan.tabs.allSatisfy { mirrored ? abs($0.minX) < 0.5 : abs($0.maxX - fan.panel.width) < 0.5 },
               "every tab is flush with the screen edge")
-        check(fan.tabs.allSatisfy { $0.width >= Metrics.Tab.width && $0.width <= Metrics.Tab.width + Metrics.z(CGFloat(Jitter.maxProtrusion)) + 0.5 },
+        check(fan.tabs.allSatisfy { $0.width >= Metrics.Tab.width && $0.width <= Metrics.Tab.width + Metrics.t(CGFloat(Jitter.maxProtrusion)) + 0.5 },
               "tabs are \(Int(Metrics.Tab.width)) pt wide, plus their own protrusion")
         let lengths = fan.tabs.map(\.height)
         let floor = Metrics.Tab.width * 0.9

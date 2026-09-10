@@ -477,15 +477,33 @@ final class DeckController {
 
         // The stack, laid along the edge, each tab as long as its own title.
         let heights = tabHeights()
-        var along = fanned
-            ? max(Metrics.panelPadding,
-                  ((horizontal ? bounds.width : bounds.height) - stackContentHeight) / 2)
-            : Metrics.panelPadding
+        // Where the stack sits is anchored to the screen, not to the panel.
+        //
+        // The panel's length depends on the note that is open — its card has to
+        // fit — and both the length and the position are clamped to the display.
+        // Centring the stack inside a panel that is itself centred cancels out
+        // only while neither clamp bites; the moment one does, the strip slides
+        // as you move between notes of different sizes. It was a rounding error
+        // until the labels grew and the stack got tall enough for the clamps to
+        // matter, and then it was 64 pt.
+        var along: CGFloat = Metrics.panelPadding
+        if fanned {
+            let area = strip.placementFrame
+            let wanted = horizontal
+                ? (area.midX - stackContentHeight / 2) - panel.frame.minX
+                : panel.frame.maxY - (area.midY + stackContentHeight / 2)
+            let room = (horizontal ? bounds.width : bounds.height) - stackContentHeight
+            along = max(Metrics.panelPadding,
+                        min(wanted, max(Metrics.panelPadding, room - Metrics.panelPadding)))
+        }
 
         for (i, tab) in tabs.enumerated() {
             let length = i < heights.count ? heights[i] : Metrics.Tab.minHeight
             if i > 0 { along -= min(CGFloat(tab.jitter.tabOverlap), length * 0.2) }
-            let poke = CGFloat(tab.jitter.tabProtrusion)
+            // Scaled like everything else. It was raw, which nobody noticed
+            // while the range was 2.5 pt; at 12 pt a small deck would poke out
+            // proportionally half again as far as a large one.
+            let poke = Metrics.t(CGFloat(tab.jitter.tabProtrusion))
             let depth = Metrics.Tab.width + poke
 
             tab.mirrored = mirrored

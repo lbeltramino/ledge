@@ -8,6 +8,13 @@ final class PlusButton: NSView {
 
     override var isFlipped: Bool { true }
 
+    init() {
+        super.init(frame: .zero)
+        shadow = DeckControlStyle.shadow()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
     var isInteractive = false {
         didSet {
             setAccessibilityElement(isInteractive)
@@ -35,11 +42,9 @@ final class PlusButton: NSView {
     override func mouseDown(with event: NSEvent) { guard isInteractive else { return }; flashPress(); onClick?() }
 
     override func draw(_ dirtyRect: NSRect) {
-        let circle = NSBezierPath(ovalIn: bounds)
-        NSColor(white: 1, alpha: hovering ? 0.94 : 0.80).setFill()
-        circle.fill()
+        DeckControlStyle.disc(in: bounds, hovering: hovering)
 
-        let ink = NSColor(white: 0.22, alpha: 1)
+        let ink = DeckControlStyle.ink
         ink.setStroke()
         let arm: CGFloat = bounds.width * 0.24
         let path = NSBezierPath()

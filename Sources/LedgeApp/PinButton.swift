@@ -29,6 +29,13 @@ final class PinButton: NSView {
 
     override var isFlipped: Bool { true }
 
+    init() {
+        super.init(frame: .zero)
+        shadow = DeckControlStyle.shadow()
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         isInteractive ? super.hitTest(point) : nil
     }
@@ -69,10 +76,9 @@ final class PinButton: NSView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(white: 1, alpha: hovering || isPinned ? 0.94 : 0.80).setFill()
-        NSBezierPath(ovalIn: bounds).fill()
+        DeckControlStyle.disc(in: bounds, hovering: hovering || isPinned)
 
-        let ink = NSColor(white: 0.22, alpha: isPinned ? 1 : 0.62)
+        let ink = DeckControlStyle.ink.withAlphaComponent(isPinned ? 1 : 0.62)
         ink.setStroke()
         ink.setFill()
 
