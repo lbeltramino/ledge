@@ -1346,6 +1346,117 @@ enum SelfTest {
         deck.closeNote()
     }
 
+    /// Hovering a tab must not move the strip.
+    ///
+    /// Reported as tabs flickering when the pointer crosses between two of
+    /// them. The flicker is the symptom of this: if opening a note shifts the
+    /// stack, the tab under the pointer slides out from under it, the pointer
+    /// lands on its neighbour, that one opens, the stack shifts back — and the
+    /// two of them trade places for as long as you hold still.
+    static func checkHoverDoesNotMoveTheStrip(deck: DeckController) async {
+        await deck.refresh()
+        let ids = deck.recordsForTesting.map(\.id)
+        guard ids.count >= 2 else { check(false, "need two notes"); return }
+
+        deck.fanOut(takingFocus: false)
+        let fanned = deck.debugTabScreenFrames()
+        check(!fanned.isEmpty, "no tabs to look at")
+
+        deck.previewForTesting(ids[0])
+        let firstOpen = deck.debugTabScreenFrames()
+        check(fanned == firstOpen,
+              "opening a note must leave every tab exactly where it was: "
+              + "\(describe(fanned, firstOpen))")
+
+        deck.previewForTesting(ids[1])
+        let secondOpen = deck.debugTabScreenFrames()
+        check(firstOpen == secondOpen,
+              "and moving to the next note must not move them either — this is the "
+              + "flicker: \(describe(firstOpen, secondOpen))")
+
+        // The case that makes it worst: a note dragged to a size of its own, so
+        // the panel has to be a different length for it than for its neighbour.
+        // One note dragged as tall as the screen allows, its neighbour left
+        // small. That is what makes the panel a different length for each, and
+        // the panel is what the stack is positioned inside.
+        try? await deck.setGeometryForTesting(id: ids[0], width: 520, height: 4000)
+        try? await deck.setGeometryForTesting(id: ids[1], width: 320, height: 240)
+        await deck.refresh()
+        deck.previewForTesting(ids[1])
+        let beforeBig = deck.debugTabScreenFrames()
+        deck.previewForTesting(ids[0])
+        let afterBig = deck.debugTabScreenFrames()
+        // A tolerance here, not equality, and the reason is worth writing down:
+        // there is a sub-pixel drift left when the two notes are wildly
+        // different sizes, from rounding in the factor that shrinks tabs to fit
+        // the screen. It is under a point, it is not what anyone reported, and
+        // an attempt to anchor the stack to the screen instead made it worse —
+        // so it is measured and left alone rather than chased.
+        let drift = zip(beforeBig, afterBig).map { abs($0.minY - $1.minY) }.max() ?? 0
+        check(drift <= 1.5,
+              "opening notes of different sizes must not shift the strip visibly: "
+              + String(format: "moved %.1f pt", drift))
+        for id in ids.prefix(2) {
+            try? await deck.setGeometryForTesting(id: id, width: nil, height: nil)
+        }
+        await deck.refresh()
+        deck.closeNote()
+    }
+
+    private static func describe(_ a: [NSRect], _ b: [NSRect]) -> String {
+        guard a.count == b.count else { return "\(a.count) tabs became \(b.count)" }
+        let moved = zip(a, b).enumerated().filter { $0.element.0 != $0.element.1 }
+        guard let first = moved.first else { return "nothing moved" }
+        return "\(moved.count) of \(a.count) moved, first by "
+            + String(format: "%.1f pt", first.element.1.minY - first.element.0.minY)
+    }
+
+    /// The pointer inside an open note must not open its neighbour.
+    ///
+    /// Which tab is under the pointer was decided from the tab rectangles
+    /// alone, and an open card is drawn *over* the stack — it grows out of its
+    /// tab and covers the ones around it. So moving the pointer inside the note
+    /// you are reading lands inside a neighbouring tab's rectangle, that note
+    /// opens, the card jumps to grow out of *its* tab, and the pointer is now
+    /// over the first one again. That is the flicker: two notes trading places
+    /// while the pointer holds still.
+    static func checkPointerInsideCardIsNotAHover(deck: DeckController) async {
+        await deck.refresh()
+        let ids = deck.recordsForTesting.map(\.id)
+        guard ids.count >= 2 else { check(false, "need two notes"); return }
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(ids[0])
+        guard let card = deck.debugCardFrame() else { check(false, "no card"); return }
+
+        // A point inside the card that is also inside some other tab's frame.
+        let others = zip(deck.recordsForTesting, deck.debugTabFramesForTesting)
+            .filter { $0.0.id != ids[0] }
+        guard let covered = others.first(where: { $0.1.intersects(card) }) else {
+            check(false, "no tab is covered by the card on this screen — nothing to check")
+            return
+        }
+        let overlap = covered.1.intersection(card)
+        let point = NSPoint(x: overlap.midX, y: overlap.midY)
+
+        deck.debugPointerInside(point)
+        try? await Task.sleep(for: .milliseconds(700))
+        check(deck.openNoteID == ids[0],
+              "the pointer inside an open note must not open the tab underneath it — "
+              + "it opened \(deck.openNoteID.map { $0 == covered.0.id ? "the neighbour" : "something else" } ?? "nothing")")
+
+        // And the tab that is genuinely exposed still works, or this would be a
+        // fix that breaks hovering altogether.
+        guard let exposed = others.first(where: { !$0.1.intersects(card) }) else {
+            deck.closeNote(); return
+        }
+        deck.debugPointerInside(NSPoint(x: exposed.1.midX, y: exposed.1.midY))
+        try? await Task.sleep(for: .milliseconds(700))
+        check(deck.openNoteID == exposed.0.id,
+              "a tab you can actually see still opens on hover")
+        deck.closeNote()
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1643,6 +1754,8 @@ enum SelfTest {
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
+        await checkHoverDoesNotMoveTheStrip(deck: deck)
+        await checkPointerInsideCardIsNotAHover(deck: deck)
         await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 
         let saved = (zoom: Settings.zoom, tab: Settings.tabScale, card: Settings.cardScale)

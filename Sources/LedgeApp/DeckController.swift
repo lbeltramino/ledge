@@ -606,6 +606,14 @@ final class DeckController {
 
         if state.isFannedOrBeyond {
             if case .editing = state { return }
+            // A point inside the open note is not a hover on whatever is behind
+            // it. The card grows out of its tab and covers the tabs around it,
+            // so deciding from the tab rectangles alone made the note you were
+            // reading open the one beside it — which moved the card, which put
+            // the pointer over the first one again. Two notes trading places
+            // while your hand holds still.
+            if let card, card.frame.contains(point) { return }
+
             // Which tab is under the pointer is decided here, from one tracking
             // area on the root, so relayout under a stationary pointer can never
             // strand the hover.
@@ -1252,6 +1260,7 @@ final class DeckController {
     var panelFrame: NSRect { panel.frame }
     var pillFrame: NSRect { pill.frame }
     var tabFrames: [NSRect] { tabs.map(\.frame) }
+    var debugTabFramesForTesting: [NSRect] { tabs.map(\.frame) }
     var tabRotations: [Double] { tabs.map(\.jitter.tabRotation) }
     var tabAlphas: [Double] { tabs.map { Double($0.layer?.opacity ?? 0) } }
     var plusFrame: NSRect { plusButton.frame }
@@ -1274,6 +1283,13 @@ final class DeckController {
 
     func loadForTesting(id: String) async throws -> Note { try await store.load(id: id) }
     var hasPendingSaveForTesting: Bool { pendingSaveID != nil }
+    /// Where the tabs actually are on screen — the only frame of reference in
+    /// which "the strip moved" means anything.
+    func debugTabScreenFrames() -> [NSRect] {
+        tabs.map { panel.convertToScreen(root.convert($0.frame, to: nil)) }
+    }
+
+    func debugPointerInside(_ point: NSPoint) { pointerInside(point) }
     func debugCardFrame() -> NSRect? { card?.frame }
     func beginEditingForTesting(_ id: String) { beginEditing(id) }
     func setGeometryForTesting(id: String, width: Double?, height: Double?) async throws {
