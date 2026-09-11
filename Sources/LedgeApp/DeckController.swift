@@ -1004,6 +1004,7 @@ final class DeckController {
         view.resizeHandle.onResize = { [weak self] delta in self?.resizeCard(by: delta) }
         view.resizeHandle.onFinished = { [weak self] in self?.commitCardSize(id) }
         view.onColor = { [weak self] color in self?.recolor(id, to: color) }
+        view.onFace = { [weak self] face in self?.setFace(id, to: face) }
         view.onArchive = { [weak self] in self?.archive(id) }
         view.onDelete = { [weak self] in self?.confirmDelete(id) }
         view.onStripDrag = { [weak self] in
@@ -1354,6 +1355,23 @@ final class DeckController {
             records = (try? await store.deck(strip: stripTag,
                                              collectingUnassigned: strip.isPrimary,
                                              knownStrips: knownStrips)) ?? records
+        }
+    }
+
+    /// The hand a note asks to be written in. Rebuilds the card rather than
+    /// repainting it: the font is measured into every line, so there is nothing
+    /// to nudge — the note has to be laid out again.
+    private func setFace(_ id: String, to face: NoteFace?) {
+        Task {
+            guard var note = try? await store.load(id: id) else { return }
+            note.face = face
+            _ = try? await store.save(note)
+            await refresh()
+            if state.noteID == id {
+                tearDownCard()
+                buildCard(for: id)
+                applyLayout(animated: false)
+            }
         }
     }
 

@@ -11,12 +11,19 @@ final class NoteChromeBar: NSView {
     var onDelete: (() -> Void)?
     var onArchive: (() -> Void)?
     var onClose: (() -> Void)?
+    /// The note asked to be written in a particular hand, or to stop asking.
+    var onFace: ((NoteFace?) -> Void)?
 
     private let deleteButton = ChromeButton(title: "Delete", destructive: true)
     private let archiveButton = ChromeButton(title: "Archive")
     private let closeButton = ChromeButton(title: "Close")
 
     private var swatchRects: [(NoteColor, NSRect)] = []
+    private var faceRects: [(NoteFace, NSRect)] = []
+    private var hoveredFace: NoteFace?
+
+    /// The hand this note asks for, if it asks for one. Nil follows the app.
+    var face: NoteFace? { didSet { needsDisplay = true } }
     private var hoveredSwatch: NoteColor?
     private var tracking: NSTrackingArea?
 
@@ -65,13 +72,21 @@ final class NoteChromeBar: NSView {
         // other and the row twitch on every layout.
         let buttons = [deleteButton, archiveButton, closeButton]
             .reduce(CGFloat(0)) { $0 + $1.unscaledWidth + 4 }
-        return ceil(swatches + buttons + 6)
+        // The two hands sit beside the colours and cost width like everything
+        // else. Left out of this, they would be laid out over the buttons on a
+        // narrow card — the row's whole job is that nothing overlaps.
+        let faces = CGFloat(NoteFace.allCases.count) * (swatch * 1.5 + gap)
+        return ceil(swatches + faces + buttons + 6)
     }
 
     /// The narrowest this row can be drawn without its controls colliding.
     /// The card refuses to be narrower than this, which is why Delete no longer
     /// lands on top of the colour swatches.
     var minimumWidth: CGFloat { naturalWidth }
+
+    var debugFaceRects: [NSRect] { faceRects.map(\.1) }
+    var debugSwatchRects: [NSRect] { swatchRects.map(\.1) }
+    var debugButtonRects: [NSRect] { [deleteButton, archiveButton, closeButton].map(\.frame) }
 
     init(color: NoteColor) {
         self.color = color
@@ -133,6 +148,7 @@ final class NoteChromeBar: NSView {
         }
 
         swatchRects = []
+        faceRects = []
         guard showsSwatches else { return }
         var swatchX: CGFloat = 0
         for candidate in NoteColor.allCases {
@@ -141,12 +157,25 @@ final class NoteChromeBar: NSView {
                                                   width: swatchSize, height: swatchSize)))
             swatchX += swatchSize + swatchGap
         }
+
+        // The hands, after the colours, with a little air between the two
+        // groups so they read as two decisions and not one row of seven.
+        swatchX += swatchGap * 0.6
+        let faceWidth = swatchSize * 1.5
+        for candidate in NoteFace.allCases {
+            faceRects.append((candidate, NSRect(x: swatchX,
+                                                y: (bounds.height - swatchSize * 1.4) / 2,
+                                                width: faceWidth, height: swatchSize * 1.4)))
+            swatchX += faceWidth + swatchGap * 0.5
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let found = swatchRects.first { $0.1.insetBy(dx: -3, dy: -3).contains(point) }?.0
         if found != hoveredSwatch { hoveredSwatch = found; needsDisplay = true }
+        let hand = faceRects.first { $0.1.insetBy(dx: -2, dy: -2).contains(point) }?.0
+        if hand != hoveredFace { hoveredFace = hand; needsDisplay = true }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -156,6 +185,17 @@ final class NoteChromeBar: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+
+        if let hand = faceRects.first(where: { $0.1.insetBy(dx: -2, dy: -2).contains(point) })?.0 {
+            // Pressing the hand this note already asks for takes the request
+            // away again, so two buttons cover three answers: this one, the
+            // other one, and whatever the app is set to.
+            let wanted: NoteFace? = face == hand ? nil : hand
+            face = wanted
+            onFace?(wanted)
+            return
+        }
+
         guard let picked = swatchRects.first(where: { $0.1.insetBy(dx: -3, dy: -3).contains(point) })?.0
         else { return }
         // Not flashPress() on the whole row: the feedback for picking a colour
@@ -185,6 +225,39 @@ final class NoteChromeBar: NSView {
             let edge = NSBezierPath(ovalIn: inner)
             edge.lineWidth = 1
             edge.stroke()
+        }
+        drawFaces()
+    }
+
+    /// Two hands, each shown in its own: the button is a sample of what it
+    /// does, which needs no label and no legend.
+    private func drawFaces() {
+        let ink = Palette.labelInk(color)
+        for (candidate, rect) in faceRects {
+            let asked = face == candidate
+            if asked || hoveredFace == candidate {
+                ink.withAlphaComponent(asked ? 0.12 : 0.07).setFill()
+                NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+            }
+            if asked {
+                ink.withAlphaComponent(0.40).setStroke()
+                let ring = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                                        xRadius: 4, yRadius: 4)
+                ring.lineWidth = 1
+                ring.stroke()
+            }
+            let size = rect.height * 0.72
+            let font = Typography.noteBody(size: candidate == .casual ? size * 1.15 : size,
+                                           face: candidate)
+            let sample = "Aa" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: ink.withAlphaComponent(asked ? 0.90 : 0.50),
+            ]
+            let measured = sample.size(withAttributes: attributes)
+            sample.draw(at: NSPoint(x: rect.midX - measured.width / 2,
+                                    y: rect.midY - measured.height / 2),
+                        withAttributes: attributes)
         }
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import LedgeCore
 
 /// Handwriting is the default note face. It is not decoration: with the jitter,
 /// it is what stops a note reading as a rounded rectangle with text in it.
@@ -10,15 +11,35 @@ import AppKit
 @MainActor
 enum Typography {
 
+    /// The app's two hands. `NoteFace` in LedgeCore is the same pair, written
+    /// into a note that asks for one of its own — one enum for the file, one
+    /// for the drawing, and this maps between them.
     enum Face: String {
         case casual   // Caveat, bundled
         case legible  // New York, ships with macOS
+
+        init(_ face: NoteFace) {
+            self = face == .casual ? .casual : .legible
+        }
+
+        var asNoteFace: NoteFace { self == .casual ? .casual : .legible }
     }
 
     static var noteFace: Face { Settings.noteFace }
 
+    /// The hand a particular note is written in: its own if it asked for one,
+    /// otherwise whatever the app is set to.
+    static func noteBody(size: CGFloat = 17, face: NoteFace?) -> NSFont {
+        guard let face else { return noteBody(size: size) }
+        return body(size: size, face: Face(face))
+    }
+
     static func noteBody(size: CGFloat = 17) -> NSFont {
-        switch effectiveFace {
+        body(size: size, face: effectiveFace)
+    }
+
+    private static func body(size: CGFloat, face: Face) -> NSFont {
+        switch face {
         case .casual:
             return NSFont(name: "Caveat", size: size)
                 ?? NSFont(name: "Bradley Hand", size: size * 0.94)

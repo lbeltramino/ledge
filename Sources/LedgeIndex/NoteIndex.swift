@@ -7,7 +7,7 @@ import LedgeCore
 /// Therefore: **no migrations, ever.** A schema mismatch deletes the file and
 /// rebuilds. A derived cache that needs migration logic has stopped being one.
 public final class NoteIndex {
-    public static let schemaVersion = 3
+    public static let schemaVersion = 4
     public static let filename = ".index.sqlite3"
 
     private var db: Connection
@@ -90,6 +90,7 @@ public final class NoteIndex {
           tags     TEXT NOT NULL,
           strip    TEXT NOT NULL DEFAULT '',
           feed     TEXT NOT NULL DEFAULT '',
+          face     TEXT NOT NULL DEFAULT '',
           snippet  TEXT NOT NULL,
           created  TEXT NOT NULL,
           updated  TEXT NOT NULL,
@@ -131,20 +132,21 @@ public final class NoteIndex {
     private func writeRow(_ r: NoteRecord, body: String) throws {
         let tagsJSON = (try? String(data: JSONEncoder().encode(r.tags), encoding: .utf8)) ?? "[]"
         try db.run("""
-        INSERT INTO notes (id, filename, title, color, state, rank, tags, strip, feed, snippet,
+        INSERT INTO notes (id, filename, title, color, state, rank, tags, strip, feed, face, snippet,
                            created, updated, mtime, size, hash, width, height)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
           filename = excluded.filename, title = excluded.title, color = excluded.color,
           state = excluded.state, rank = excluded.rank, tags = excluded.tags,
-          strip = excluded.strip, feed = excluded.feed, snippet = excluded.snippet, created = excluded.created, updated = excluded.updated,
+          strip = excluded.strip, feed = excluded.feed, face = excluded.face,
+          snippet = excluded.snippet, created = excluded.created, updated = excluded.updated,
           mtime = excluded.mtime, size = excluded.size, hash = excluded.hash,
           width = COALESCE(excluded.width, notes.width),
           height = COALESCE(excluded.height, notes.height)
         """, [
             .text(r.id), .text(r.filename), .text(r.title), .text(r.color.rawValue),
             .text(r.state.rawValue), .text(r.rank), .text(tagsJSON ?? "[]"),
-            .text(r.strip), .text(r.feed), .text(r.snippet),
+            .text(r.strip), .text(r.feed), .text(r.face?.rawValue ?? ""), .text(r.snippet),
             .text(Frontmatter.string(from: r.created)), .text(Frontmatter.string(from: r.updated)),
             .double(r.mtime), .int(Int64(r.size)), .text(r.hash),
             .double(r.width), .double(r.height)
@@ -306,7 +308,7 @@ public final class NoteIndex {
 
     static let columns = """
     notes.id, notes.filename, notes.title, notes.color, notes.state, notes.rank, notes.tags, \
-    notes.strip, notes.feed, notes.snippet, notes.created, notes.updated, notes.mtime, notes.size, \
+    notes.strip, notes.feed, notes.face, notes.snippet, notes.created, notes.updated, notes.mtime, notes.size, \
     notes.hash, notes.width, notes.height
     """
 
@@ -322,14 +324,15 @@ public final class NoteIndex {
             tags: tags,
             strip: row.text(7),
             feed: row.text(8),
-            snippet: row.text(9),
-            created: Frontmatter.date(from: row.text(10)) ?? Date(),
-            updated: Frontmatter.date(from: row.text(11)) ?? Date(),
-            mtime: row.double(12),
-            size: row.int(13),
-            hash: row.text(14),
-            width: row.optionalDouble(15),
-            height: row.optionalDouble(16)
+            face: NoteFace(rawValue: row.text(9)),
+            snippet: row.text(10),
+            created: Frontmatter.date(from: row.text(11)) ?? Date(),
+            updated: Frontmatter.date(from: row.text(12)) ?? Date(),
+            mtime: row.double(13),
+            size: row.int(14),
+            hash: row.text(15),
+            width: row.optionalDouble(16),
+            height: row.optionalDouble(17)
         )
     }
 }

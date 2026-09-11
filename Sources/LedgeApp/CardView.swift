@@ -56,6 +56,7 @@ final class NoteCardView: NSView {
     private var isFinding = false
 
     var onColor: ((NoteColor) -> Void)?
+    var onFace: ((NoteFace?) -> Void)?
     var onDelete: (() -> Void)?
     var onArchive: (() -> Void)?
     var onBeginEditing: (() -> Void)?
@@ -128,11 +129,11 @@ final class NoteCardView: NSView {
         textView.isEditable = true
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 0, height: 0)
-        textView.font = Typography.noteBody(size: Metrics.Card.bodySize)
+        textView.font = Typography.noteBody(size: Metrics.Card.bodySize, face: record.face)
         textView.string = body
         let dark = isDark
         let markdown = MarkdownHighlighter(
-            baseFont: Typography.noteBody(size: Metrics.Card.bodySize),
+            baseFont: Typography.noteBody(size: Metrics.Card.bodySize, face: record.face),
             ink: Palette.ink(dark: dark),
             accent: Palette.tab(color).blended(withFraction: 0.4, of: Palette.ink(dark: dark))
                 ?? Palette.ink(dark: dark)
@@ -193,6 +194,8 @@ final class NoteCardView: NSView {
         chrome.onDelete = { [weak self] in self?.onDelete?() }
         chrome.onArchive = { [weak self] in self?.onArchive?() }
         chrome.onClose = { [weak self] in self?.onClose?() }
+        chrome.face = record.face
+        chrome.onFace = { [weak self] face in self?.onFace?(face) }
         addSubview(chrome)
         addSubview(resizeHandle)
         resizeHandle.alphaValue = 0
@@ -317,7 +320,7 @@ final class NoteCardView: NSView {
     /// and the window with it.
     func applySizeSettings() {
         titleField.font = .systemFont(ofSize: Metrics.Card.titleSize, weight: .semibold)
-        let font = Typography.noteBody(size: Metrics.Card.bodySize)
+        let font = Typography.noteBody(size: Metrics.Card.bodySize, face: record.face)
         textView.font = font
         highlighter?.baseFont = font
         if let storage = textView.textStorage {
@@ -400,6 +403,10 @@ final class NoteCardView: NSView {
         textView.scrollRangeToVisible(item.line)
         textView.showFindIndicator(for: item.line)
     }
+
+    var debugFaceRects: [NSRect] { chrome.debugFaceRects.map { chrome.convert($0, to: self) } }
+    var debugSwatchRects: [NSRect] { chrome.debugSwatchRects.map { chrome.convert($0, to: self) } }
+    var debugChromeButtonRects: [NSRect] { chrome.debugButtonRects.map { chrome.convert($0, to: self) } }
 
     var debugOutlineOffered: Bool { !outlineButton.isHidden }
     var debugOutlineButtonFrame: NSRect { outlineButton.frame }

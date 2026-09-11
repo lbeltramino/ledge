@@ -2022,6 +2022,75 @@ enum SelfTest {
         await deck.refresh()
     }
 
+    /// The two hands, beside the colours.
+    static func checkFaceButtons() {
+        let record = NoteRecord(note: Note(title: "Prueba"), filename: "f.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: "texto")
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+        card.layoutSubtreeIfNeeded()
+
+        let faces = card.debugFaceRects
+        check(faces.count == NoteFace.allCases.count,
+              "one button per hand: \(faces.count)")
+        check(faces.allSatisfy { $0.width > 6 && $0.height > 6 }, "each big enough to press")
+
+        // Beside the colours, not on top of them, and clear of the buttons —
+        // which is the whole job of this row.
+        let swatches = card.debugSwatchRects
+        check(!swatches.isEmpty, "the colours are there to sit beside")
+        if let lastSwatch = swatches.map(\.maxX).max(), let firstFace = faces.map(\.minX).min() {
+            check(firstFace >= lastSwatch - 0.5,
+                  String(format: "the hands come after the colours (%.0f then %.0f)",
+                         lastSwatch, firstFace))
+        }
+        check(!faces.contains { face in swatches.contains { $0.intersects(face) } },
+              "and overlap none of them")
+        if let controls = card.debugChromeButtonRects.map(\.minX).min(),
+           let lastFace = faces.map(\.maxX).max() {
+            check(lastFace <= controls + 0.5,
+                  String(format: "and stop before Delete/Archive/Close (%.0f, they start at %.0f)",
+                         lastFace, controls))
+        }
+
+        // The reason the width had to be recomputed: a card can be dragged
+        // narrow, and the row may not let its parts collide.
+        let minimum = card.minimumWidth
+        let narrow = NoteCardView(record: record, body: "texto")
+        narrow.frame = NSRect(x: 0, y: 0, width: minimum, height: 300)
+        narrow.layoutSubtreeIfNeeded()
+        let tight = narrow.debugFaceRects
+        let tightSwatches = narrow.debugSwatchRects
+        if !tight.isEmpty, !tightSwatches.isEmpty {
+            check(!tight.contains { face in tightSwatches.contains { $0.intersects(face) } },
+                  "at the card's minimum width nothing overlaps either")
+            if let lastFace = tight.map(\.maxX).max(),
+               let controls = narrow.debugChromeButtonRects.map(\.minX).min() {
+                check(lastFace <= controls + 0.5,
+                      String(format: "…including the hands and the buttons (%.0f vs %.0f)",
+                             lastFace, controls))
+            }
+        }
+
+        // What the note ends up written in.
+        let asked = NoteRecord(note: Note(title: "Prueba", face: .legible), filename: "f.md",
+                               mtime: 0, size: 0, hash: "")
+        let legible = NoteCardView(record: asked, body: "texto")
+        legible.frame = card.frame
+        legible.layoutSubtreeIfNeeded()
+        let casualRecord = NoteRecord(note: Note(title: "Prueba", face: .casual), filename: "f.md",
+                                      mtime: 0, size: 0, hash: "")
+        let casual = NoteCardView(record: casualRecord, body: "texto")
+        casual.frame = card.frame
+        casual.layoutSubtreeIfNeeded()
+        check(legible.textView.font?.fontName != casual.textView.font?.fontName,
+              "a note that asks for a hand is written in it: "
+              + "\(legible.textView.font?.fontName ?? "?") vs \(casual.textView.font?.fontName ?? "?")")
+        check(Typography.noteBody(size: 17, face: nil).fontName
+                == Typography.noteBody(size: 17).fontName,
+              "and a note that asks for nothing follows the app")
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -2304,6 +2373,7 @@ enum SelfTest {
         checkProgressTick()
         checkHighlightBar()
         checkDrawnTables()
+        checkFaceButtons()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
