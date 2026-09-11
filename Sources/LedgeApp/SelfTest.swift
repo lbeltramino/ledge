@@ -1936,6 +1936,53 @@ enum SelfTest {
         }
     }
 
+    /// Coming back to a note you were reading.
+    ///
+    /// A card is torn down and rebuilt whenever you open a different note, so
+    /// the place you had reached went with it — reported on a long note read at
+    /// line eighty and returned to at line one.
+    static func checkReadingPositionIsKept(deck: DeckController) async {
+        await deck.refresh()
+        let ids = deck.recordsForTesting.map(\.id)
+        guard ids.count >= 2 else { check(false, "need two notes"); return }
+
+        // A note long enough to have somewhere to come back to.
+        let long = (1...90).map { "línea número \($0) de una nota larga" }.joined(separator: "\n")
+        deck.debugEdit(id: ids[0], body: long)
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(700))
+        await deck.refresh()
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(ids[0])
+        deck.debugScrollCard(to: 600)
+        let left = deck.debugCardScroll ?? 0
+        check(left > 100,
+              String(format: "the note is long enough to scroll (stopped at %.0f)", left))
+
+        // Away to another note, and back.
+        deck.previewForTesting(ids[1])
+        check((deck.debugCardScroll ?? -1) == 0, "a different note opens at its own beginning")
+        deck.previewForTesting(ids[0])
+        try? await Task.sleep(for: .milliseconds(300))
+        let back = deck.debugCardScroll ?? 0
+        check(abs(back - left) < 2,
+              String(format: "coming back puts you where you were (%.0f, was %.0f)", back, left))
+
+        // And a note that got shorter while you were away does not open on
+        // blank paper below its own end.
+        deck.debugEdit(id: ids[0], body: "ahora es corta")
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(700))
+        deck.previewForTesting(ids[1])
+        deck.previewForTesting(ids[0])
+        try? await Task.sleep(for: .milliseconds(300))
+        check((deck.debugCardScroll ?? 0) < 2,
+              String(format: "a note that shrank opens at its top rather than past its end (%.0f)",
+                     deck.debugCardScroll ?? 0))
+        deck.closeNote()
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -2321,6 +2368,7 @@ enum SelfTest {
             await checkBottomStrip(deck: deck, screen: screen)
         // Last: it makes notes, and every check above reads the first one.
         await checkOutlineAndDrops(deck: deck)
+        await checkReadingPositionIsKept(deck: deck)
             deck.strip = StripConfig.primary()
         }
 

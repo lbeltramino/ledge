@@ -413,6 +413,27 @@ final class NoteCardView: NSView {
     /// list and its hit testing move together.
     func debugOutlineHit(at point: NSPoint) -> Int? { outline.indexOfRow(at: point) }
 
+    // MARK: - where you were reading
+
+    /// How far down the note is scrolled, and putting it back.
+    ///
+    /// A card is torn down and rebuilt every time you open a different note, so
+    /// without this, coming back to a long one starts you at the first line
+    /// again — which on a note you were reading at line eighty is the same as
+    /// losing your place.
+    var scrollPosition: CGFloat {
+        get { scroll.contentView.bounds.origin.y }
+        set {
+            // Laid out first, or there is nothing to scroll yet and the offset
+            // is thrown away. A note that shrank while you were away needs no
+            // clamping of its own: the clip view refuses to scroll past its own
+            // content, which a check confirms by shortening one.
+            layoutSubtreeIfNeeded()
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: newValue))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+    }
+
     func beginFind() {
         isFinding = true
         findBar.isHidden = false

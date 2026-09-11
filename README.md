@@ -82,6 +82,10 @@ SQLite index beside it is a cache you can delete at any moment.
   started. Yellow, or pink on a yellow note. Select words and the pen appears
   over them: pressing it writes the `==`, so a highlight made with the mouse and
   one typed by hand are the same file. `⌘⇧H` does the same from the keyboard.
+- **It keeps your place.** Switch to another note and back and you are where
+  you were reading, not at the first line — which on a long note is the same
+  thing as having lost it. For the session: a fresh launch opens a note at its
+  beginning.
 - **Tables, drawn.** A Markdown table is rendered while you are reading it —
   ruled, aligned, the header set apart — and the note still says pipes and
   dashes. It is locked: a click is not an edit. Press the padlock and it becomes

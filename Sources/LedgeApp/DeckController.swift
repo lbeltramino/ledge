@@ -58,6 +58,11 @@ final class DeckController {
     /// The file hash each cached body was read from, so a note that changed on
     /// disk can be told from one that did not without reading every file.
     private var fileHashes: [String: String] = [:]
+    /// Where you were reading each note, so switching between two long ones
+    /// does not put you back at the first line of both. Kept for the session
+    /// only: on a fresh launch a note opens at its beginning, which is what you
+    /// would expect after closing the app.
+    private var readingPositions: [String: CGFloat] = [:]
     /// The tabs live inside this, so a stack longer than the strip is cut at
     /// the viewport rather than at the edge of the screen.
     private let stackClip = StackClip()
@@ -1001,9 +1006,16 @@ final class DeckController {
         }
         root.addSubview(view, positioned: .below, relativeTo: nil)
         card = view
+        // Put it back where you were. After the layout, because until the note
+        // has been laid out there is nothing to scroll and the offset is
+        // clamped to zero.
+        if let was = readingPositions[id], was > 0 {
+            DispatchQueue.main.async { [weak view] in view?.scrollPosition = was }
+        }
     }
 
     private func tearDownCard() {
+        if let card { readingPositions[card.record.id] = card.scrollPosition }
         card?.removeFromSuperview()
         card = nil
     }
@@ -1439,6 +1451,8 @@ final class DeckController {
     func debugPointerInside(_ point: NSPoint) { pointerInside(point) }
     func debugDrop(_ text: String) { workspace.newNote(fromCaptured: text, on: self) }
     func debugCardFrame() -> NSRect? { card?.frame }
+    var debugCardScroll: CGFloat? { card?.scrollPosition }
+    func debugScrollCard(to offset: CGFloat) { card?.scrollPosition = offset }
     func beginEditingForTesting(_ id: String) { beginEditing(id) }
     func setGeometryForTesting(id: String, width: Double?, height: Double?) async throws {
         try await store.setGeometry(id: id, width: width, height: height)
