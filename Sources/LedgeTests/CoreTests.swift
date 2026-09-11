@@ -578,6 +578,27 @@ enum CoreTests {
                      "an empty feed does not clutter every file in the folder")
         }
 
+        await Runner.test("the hand a note asks for travels with the file") { c in
+            var note = Note(title: "Runbook", body: "x")
+            note.face = .legible
+            let text = Frontmatter.serialize(note)
+            c.expect(text.contains("face: legible"), "not in the frontmatter: \(text)")
+            let back = Frontmatter.parse(text, fallbackTitle: "", fallbackID: note.id)
+            c.equal(back.face, .legible, "and it survives the round trip")
+
+            let plain = Note(title: "x")
+            c.expect(!Frontmatter.serialize(plain).contains("face:"),
+                     "a note that asks for nothing says nothing")
+            c.equal(Frontmatter.parse(Frontmatter.serialize(plain),
+                                      fallbackTitle: "", fallbackID: ULID.generate()).face, nil,
+                    "and reads back as following the app")
+
+            // `face` has to be a key the parser knows, or it would be handed
+            // back as body text and written twice on the next save.
+            let body = Frontmatter.parse(text, fallbackTitle: "", fallbackID: note.id).body
+            c.expect(!body.contains("face:"), "the key does not leak into the body: \(body)")
+        }
+
         Runner.suite("The ledge command")
 
         // Runs the binary itself rather than the functions under it: the

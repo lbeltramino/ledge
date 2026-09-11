@@ -84,7 +84,7 @@ final class NoteChromeBar: NSView {
     /// lands on top of the colour swatches.
     var minimumWidth: CGFloat { naturalWidth }
 
-    var debugFaceRects: [NSRect] { faceRects.map(\.1) }
+    var debugFaceRects: [(NoteFace, NSRect)] { faceRects }
     var debugSwatchRects: [NSRect] { swatchRects.map(\.1) }
     var debugButtonRects: [NSRect] { [deleteButton, archiveButton, closeButton].map(\.frame) }
 
@@ -184,8 +184,13 @@ final class NoteChromeBar: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        press(at: convert(event.locationInWindow, from: nil))
+    }
 
+    /// A press, in this view's own coordinates. Split out from `mouseDown` so a
+    /// check can press a button where it is drawn, rather than assert about the
+    /// rectangles and hope the hit-testing agrees with them.
+    func press(at point: NSPoint) {
         if let hand = faceRects.first(where: { $0.1.insetBy(dx: -2, dy: -2).contains(point) })?.0 {
             // Pressing the hand this note already asks for takes the request
             // away again, so two buttons cover three answers: this one, the

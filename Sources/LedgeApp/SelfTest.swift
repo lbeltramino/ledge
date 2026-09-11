@@ -2099,6 +2099,20 @@ enum SelfTest {
         check(Typography.noteBody(size: 17, face: nil).fontName
                 == Typography.noteBody(size: 17).fontName,
               "and a note that asks for nothing follows the app")
+
+        // Pressed where they are drawn, not where the rectangles claim: the
+        // hit-testing has to agree with the drawing, and a check that asserts
+        // about rectangles alone would not notice if it stopped.
+        var pressed: [NoteFace?] = []
+        let pressable = NoteCardView(record: record, body: "texto")
+        pressable.frame = card.frame
+        pressable.layoutSubtreeIfNeeded()
+        pressable.onFace = { pressed.append($0) }
+        pressable.debugPressFace(.legible)
+        pressable.debugPressFace(.legible)
+        pressable.debugPressFace(.casual)
+        check(pressed == [NoteFace.legible, nil, NoteFace.casual],
+              "pressing a hand asks for it, pressing it again stops asking: \(pressed)")
     }
 
     /// Notes something else is writing to.

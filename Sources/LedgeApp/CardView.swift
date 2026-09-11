@@ -404,7 +404,12 @@ final class NoteCardView: NSView {
         textView.showFindIndicator(for: item.line)
     }
 
-    var debugFaceRects: [NSRect] { chrome.debugFaceRects.map { chrome.convert($0, to: self) } }
+    func debugPressFace(_ face: NoteFace) {
+        guard let rect = chrome.debugFaceRects.first(where: { $0.0 == face })?.1 else { return }
+        chrome.press(at: NSPoint(x: rect.midX, y: rect.midY))
+    }
+
+    var debugFaceRects: [NSRect] { chrome.debugFaceRects.map { chrome.convert($0.1, to: self) } }
     var debugSwatchRects: [NSRect] { chrome.debugSwatchRects.map { chrome.convert($0, to: self) } }
     var debugChromeButtonRects: [NSRect] { chrome.debugButtonRects.map { chrome.convert($0, to: self) } }
 
