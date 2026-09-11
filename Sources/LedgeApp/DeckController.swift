@@ -240,7 +240,14 @@ final class DeckController {
             return tab
         }
         if let id = state.noteID, !records.contains(where: { $0.id == id }) {
+            // The note that was open has left this deck — archived from
+            // somewhere else, moved to another strip, or taken away with the
+            // display its strip lived on. Its card has to go with it: dropping
+            // the state and leaving the card on screen makes a note that
+            // nothing can close, because everything that closes one asks the
+            // state first, and the state now says there is nothing open.
             state = records.isEmpty ? .rest : .fanned
+            tearDownCard()
         }
     }
 
@@ -1024,10 +1031,13 @@ final class DeckController {
     /// edge, ready for the next one. This is the common exit; collapsing all the
     /// way to a stripe is the second press.
     func closeNote() {
-        guard state.noteID != nil else { return }
+        // On the card, not on the state. They are meant to agree, and when they
+        // did not there was no way at all to put a note away short of quitting.
+        // Whatever puts them out of step next time, this still works.
+        guard state.noteID != nil || card != nil else { return }
         commitPendingSave()
         endEditingIfNeeded()
-        state = .fanned
+        if state.noteID != nil { state = .fanned }
         tearDownCard()
         applyLayout(animated: true)
     }
@@ -1441,6 +1451,13 @@ final class DeckController {
     }
 
     func loadForTesting(id: String) async throws -> Note { try await store.load(id: id) }
+    /// Archives a note the way something outside the deck would — the All Notes
+    /// window, or `ledge set --archive`.
+    func archiveElsewhereForTesting(id: String) async throws {
+        _ = try await store.archive(id: id)
+    }
+    var debugHasCard: Bool { card != nil }
+    func restoreForTesting(id: String) async throws { _ = try await store.restore(id: id) }
     var hasPendingSaveForTesting: Bool { pendingSaveID != nil }
     /// Where the tabs actually are on screen — the only frame of reference in
     /// which "the strip moved" means anything.

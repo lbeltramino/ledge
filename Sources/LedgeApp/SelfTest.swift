@@ -1983,6 +1983,45 @@ enum SelfTest {
         deck.closeNote()
     }
 
+    /// A note you cannot put away.
+    ///
+    /// Reported after switching monitors with a note open: neither Close nor
+    /// the strip would fold it back, and only quitting cleared it. The shape of
+    /// it is that the deck's state says no note is open while the card is still
+    /// on screen — and everything that closes one asks the state first.
+    ///
+    /// Reproduced through the path that certainly does it: the open note leaves
+    /// the deck's records, which is what happens when something else archives
+    /// it, moves it to another strip, or when the strip it lived on goes away
+    /// with a display.
+    static func checkAnOpenNoteCanAlwaysBeClosed(deck: DeckController) async {
+        await deck.refresh()
+        guard let record = deck.recordsForTesting.first else { check(false, "no note"); return }
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(record.id)
+        check(deck.debugHasCard, "the note is open")
+
+        // It goes away underneath you.
+        try? await deck.archiveElsewhereForTesting(id: record.id)
+        await deck.refresh()
+
+        check(!deck.debugHasCard,
+              "a note that left the deck takes its card with it, rather than leaving one "
+              + "on screen that nothing can close")
+
+        // And whatever else may put the two out of step in future, closing has
+        // to act on what is on screen rather than on what the state believes.
+        if let other = deck.recordsForTesting.first?.id {
+            deck.previewForTesting(other)
+            deck.closeNote()
+            check(!deck.debugHasCard, "Close closes it")
+        }
+
+        try? await deck.restoreForTesting(id: record.id)
+        await deck.refresh()
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -2369,6 +2408,7 @@ enum SelfTest {
         // Last: it makes notes, and every check above reads the first one.
         await checkOutlineAndDrops(deck: deck)
         await checkReadingPositionIsKept(deck: deck)
+        await checkAnOpenNoteCanAlwaysBeClosed(deck: deck)
             deck.strip = StripConfig.primary()
         }
 
