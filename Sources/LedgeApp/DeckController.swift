@@ -403,10 +403,15 @@ final class DeckController {
         // screen is not a bigger note, it is one you cannot read.
         //
         // Two fifths of the display was sized for prose in a sticky note. A
-        // table of three columns of sentences needs more than that before it
-        // starts scrolling sideways, and a note you have dragged wider should
-        // be allowed to stay there.
-        let ceiling = (screen?.visibleFrame.width ?? 1440) * 0.62
+        // table of three columns of sentences wants more than that before it
+        // starts scrolling sideways — but not half the display, which is a rule
+        // the geometry checks enforce and which is the difference between a
+        // sticky note and a window. Just under half, and a wide table scrolls.
+        //
+        // 0.62 shipped in a build for a few minutes and CI caught it: the local
+        // run never reached the ceiling, because reaching it takes a note
+        // dragged wider than any of the fixtures are.
+        let ceiling = (screen?.visibleFrame.width ?? 1440) * 0.48
         return min(max(floor, min(wanted, ceiling)), ceiling)
     }
 
