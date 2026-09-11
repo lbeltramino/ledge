@@ -2022,6 +2022,14 @@ enum SelfTest {
         await deck.refresh()
     }
 
+    /// Does any rectangle in this row sit on top of another?
+    private static func overlapping(_ rects: [NSRect]) -> Bool {
+        for i in rects.indices {
+            for j in rects.indices where j > i && rects[i].intersects(rects[j]) { return true }
+        }
+        return false
+    }
+
     /// The two hands, beside the colours.
     static func checkFaceButtons() {
         let record = NoteRecord(note: Note(title: "Prueba"), filename: "f.md",
@@ -2046,6 +2054,7 @@ enum SelfTest {
         }
         check(!faces.contains { face in swatches.contains { $0.intersects(face) } },
               "and overlap none of them")
+        check(!overlapping(faces), "nor each other")
         if let controls = card.debugChromeButtonRects.map(\.minX).min(),
            let lastFace = faces.map(\.maxX).max() {
             check(lastFace <= controls + 0.5,
@@ -2062,7 +2071,8 @@ enum SelfTest {
         let tight = narrow.debugFaceRects
         let tightSwatches = narrow.debugSwatchRects
         if !tight.isEmpty, !tightSwatches.isEmpty {
-            check(!tight.contains { face in tightSwatches.contains { $0.intersects(face) } },
+            check(!tight.contains { face in tightSwatches.contains { $0.intersects(face) } }
+                    && !overlapping(tight),
                   "at the card's minimum width nothing overlaps either")
             if let lastFace = tight.map(\.maxX).max(),
                let controls = narrow.debugChromeButtonRects.map(\.minX).min() {
