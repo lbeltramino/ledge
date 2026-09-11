@@ -1749,6 +1749,193 @@ enum SelfTest {
               + "\(deck.recordsForTesting.map(\.title).prefix(4))")
     }
 
+    /// A table, drawn over the text that defines it.
+    ///
+    /// The file has to keep saying pipes and dashes: whatever is on screen, the
+    /// note is still Markdown, and a table made here has to be the same file as
+    /// one typed by hand or written by the command.
+    static func checkDrawnTables() {
+        let note = """
+        Antes de la tabla.
+
+        | Concepto | Primitiva IDP | Notas de implementación |
+        |---|---|---|
+        | Servicio **Bedrock Inference** | `service_specification` tipo `dependency` | dimensiones y acciones |
+        | Link **Invoke** | `link_specification` con `assignable_to` | el único vínculo que el dev ve |
+
+        Después de la tabla.
+        """
+        let record = NoteRecord(note: Note(title: "Con tabla"), filename: "t.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 460)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        check(view.string == note, "drawing a table changes not one character of the note")
+        check(view.debugTableCount == 1, "one table, one drawing: \(view.debugTableCount)")
+
+        guard let drawn = view.debugTableView else { check(false, "no table view"); return }
+        check(drawn.contentSize.height > 0 && drawn.contentSize.width > 0,
+              "the drawing has a size")
+
+        // Where it lands, which is the half that matters and the half the first
+        // version of these checks left out: the attributes were right, the
+        // drawing had a size, and 81% of a real document went invisible with
+        // nothing over it.
+        let frame = drawn.frame
+        check(frame.width > 40 && frame.height > 20,
+              String(format: "the drawing has a frame, not a point (%.0f×%.0f)",
+                     frame.width, frame.height))
+        check(abs(frame.height - drawn.contentSize.height) < 3,
+              String(format: "as tall as what it draws (%.0f vs %.0f)",
+                     frame.height, drawn.contentSize.height))
+        check(frame.minY >= 0 && frame.minY < view.bounds.height,
+              String(format: "and somewhere you can see (y = %.0f in %.0f)",
+                     frame.minY, view.bounds.height))
+        check(!drawn.isHidden && drawn.superview === view, "…and on screen")
+
+        // The room is reserved by the text underneath, so the note lays out
+        // around the table rather than the table covering what follows.
+        guard let storage = view.textStorage,
+              let table = Tables.all(in: note).first else { check(false, "no table"); return }
+        let colour = storage.attribute(.foregroundColor, at: table.range.location,
+                                       effectiveRange: nil) as? NSColor
+        check(colour?.alphaComponent == 0,
+              "the pipes are invisible rather than deleted — they are still in the file")
+        let style = storage.attribute(.paragraphStyle, at: table.range.location,
+                                      effectiveRange: nil) as? NSParagraphStyle
+        let lines = CGFloat((note as NSString).substring(with: table.range)
+            .components(separatedBy: "\n").count)
+        let reserved = (style?.minimumLineHeight ?? 0) * lines
+        check(abs(reserved - drawn.contentSize.height) < 2,
+              String(format: "the hidden text reserves the drawing's height (%.0f vs %.0f)",
+                     reserved, drawn.contentSize.height))
+        check(style?.lineBreakMode == .byClipping,
+              "and does not wrap, or the count of lines stops matching the room taken")
+
+        // Locked: a click is not an edit.
+        check(!view.isTableUnlocked(table), "a table starts locked")
+        view.unlockTable(containing: table.range.location)
+        check(view.isTableUnlocked(table), "unlocking it says so")
+        check(view.debugTableCount == 0, "…and the drawing goes away, leaving the text")
+        if let storage = view.textStorage {
+            let after = storage.attribute(.foregroundColor, at: table.range.location,
+                                          effectiveRange: nil) as? NSColor
+            check((after?.alphaComponent ?? 0) > 0.5,
+                  "the pipes are visible again, which is the point of unlocking")
+        }
+        // …and there has to be a way back, or unlocking is a door that only
+        // opens: the padlock that closes a table is drawn on the drawing.
+        check(view.debugLockMarkVisible,
+              "an unlocked table shows the mark that puts it back")
+        let mark = view.debugLockMarkFrame
+        check(mark.width > 8 && mark.minY >= 0 && mark.maxX <= view.bounds.width + 1,
+              String(format: "…somewhere you can press it (%.0f, %.0f)", mark.minX, mark.minY))
+        view.debugPressLockMark()
+        check(view.debugTableCount == 1, "pressing it draws the table again")
+        check(!view.debugLockMarkVisible, "and the mark goes away with the raw text")
+
+        view.lockTables()
+        check(view.debugTableCount == 1, "and locking it draws it again")
+
+        // ---- a real document, rather than a table written to pass this
+        //
+        // Cut from the one this was built against: two tables of three columns
+        // of sentences, with bold and backticks in the cells, and prose around
+        // them. It is written out here rather than read from disk — a check
+        // that quietly skips itself when a file is missing is a check that does
+        // not run in CI, which is the only place it would have caught anything.
+        let real = """
+        # Bedrock en el IDP
+
+        - **Card**: PLATSD-1946 (Story) + subtareas
+        - **Estado**: borrador para discusión
+
+        ## 2. Mapeo del diseño a primitivas reales
+
+        | Concepto en la propuesta | Primitiva IDP | Notas de implementación |
+        |---|---|---|
+        | Servicio **Bedrock Inference** | `service_specification` tipo `dependency` | `dimensions`: `country` + `environment`. |
+        | Servicio **Guardrail Overlay** | `service_specification`, disponibilizado solo en seguridad | Sin links. Se referencia desde el form. |
+        | Link **Invoke** (Inference → Scope) | `link_specification` con `assignable_to: "scope"` | El único vínculo que el dev ve como tal. |
+
+        Texto entre las dos tablas, que tiene que seguir siendo visible.
+
+        ## 5. Propuesta de implementación
+
+        | Componente | Estrategia | Detalle |
+        |---|---|---|
+        | **Guardrail Overlay** | Estrategia 1 — Terraform Puro | TF crea `aws_bedrock_guardrail` + versión. |
+        | **Bedrock Inference** | Estrategia 7 — Multi-Stage | Stage 1: resolver la instancia por NP API. |
+
+        Y texto después.
+        """
+        do {
+            let big = NoteCardView(record: record, body: real)
+            big.frame = NSRect(x: 0, y: 0, width: 520, height: 620)
+            big.layoutSubtreeIfNeeded()
+            let text = big.textView
+
+            check(text.debugTableCount == 2,
+                  "both tables in the document are drawn: \(text.debugTableCount)")
+            check(text.debugTableFrames.allSatisfy { $0.width > 40 && $0.height > 20 },
+                  "each with a frame you could see: \(text.debugTableFrames.map { Int($0.width) })")
+
+            // The invariant the report was about: nothing is hidden without
+            // something drawn in its place.
+            let hidden = text.debugHiddenRuns.reduce(0) { $0 + $1.length }
+            let tabled = Tables.all(in: real).reduce(0) { $0 + $1.range.length }
+            check(hidden <= tabled,
+                  "only tables are made invisible — \(hidden) characters hidden, "
+                  + "\(tabled) of table")
+            let covered = text.debugHiddenRuns.allSatisfy { run in
+                Tables.all(in: real).contains { NSIntersectionRange($0.range, run).length > 0 }
+            }
+            check(covered, "and every hidden run belongs to a table that is drawn over it")
+        }
+
+        // A table wider than the note scrolls sideways rather than being cut.
+        let heads: String = (1...8).map { "Columna con un título largo \($0)" }.joined(separator: " | ")
+        let cells: String = (1...8).map { "celda \($0)" }.joined(separator: " | ")
+        let rule: String = "|" + String(repeating: "---|", count: 8)
+        let wide: String = "| " + heads + " |\n" + rule + "\n| " + cells + " |"
+        let wideCard = NoteCardView(record: record, body: wide)
+        wideCard.frame = NSRect(x: 0, y: 0, width: 320, height: 300)
+        wideCard.layoutSubtreeIfNeeded()
+        guard let wideView = wideCard.textView.debugTableView else {
+            check(false, "no wide table"); return
+        }
+        check(wideView.scrollRoom > 0,
+              String(format: "a table wider than the note has somewhere to scroll (%.0f pt)",
+                     wideView.scrollRoom))
+        // At the start: more to the right, nothing to the left. The gesture
+        // works — two fingers sideways, or shift and the wheel — but nobody
+        // would guess it was there without the edge saying so.
+        check(wideView.showsMoreToTheRight && !wideView.showsMoreToTheLeft,
+              "a table with more to the right says so at its edge, and says nothing "
+              + "at the edge it starts from")
+
+        wideView.debugScroll(by: -100_000)
+        check(abs(wideView.scrollOffset - wideView.scrollRoom) < 0.5,
+              "and it stops at the far edge rather than running off")
+        check(wideView.showsMoreToTheLeft && !wideView.showsMoreToTheRight,
+              "at the far end the cue is on the other side")
+
+        wideView.debugScroll(by: 100_000)
+        check(wideView.scrollOffset < 0.5, "and comes back to the first column")
+
+        // A table that fits says nothing, because there is nowhere to go.
+        let narrowCard = NoteCardView(record: record, body: "| a | b |\n|---|---|\n| 1 | 2 |")
+        narrowCard.frame = NSRect(x: 0, y: 0, width: 460, height: 240)
+        narrowCard.layoutSubtreeIfNeeded()
+        if let narrow = narrowCard.textView.debugTableView {
+            check(narrow.scrollRoom == 0 && !narrow.showsMoreToTheRight,
+                  String(format: "a table that fits shows no cue (%.0f pt of room)",
+                         narrow.scrollRoom))
+        }
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -2030,6 +2217,7 @@ enum SelfTest {
         checkStaleHighlightRange()
         checkProgressTick()
         checkHighlightBar()
+        checkDrawnTables()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

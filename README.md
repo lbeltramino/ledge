@@ -82,6 +82,11 @@ SQLite index beside it is a cache you can delete at any moment.
   started. Yellow, or pink on a yellow note. Select words and the pen appears
   over them: pressing it writes the `==`, so a highlight made with the mouse and
   one typed by hand are the same file. `⌘⇧H` does the same from the keyboard.
+- **Tables, drawn.** A Markdown table is rendered while you are reading it —
+  ruled, aligned, the header set apart — and the note still says pipes and
+  dashes. It is locked: a click is not an edit. Press the padlock and it becomes
+  the text that defines it, with an open padlock to put it back. One wider than
+  the note scrolls sideways, and the edge fades to say so.
 - **The headings, as somewhere to jump.** A note with two headings or more
   offers a small index beside the button that opens the editor: the outline,
   indented by level, click one and you are there. A long one scrolls under the
@@ -258,7 +263,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 187 unit tests
+swift run ledge-tests                               # 195 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -482,6 +487,29 @@ agent the above. Copy it to `~/.claude/skills/` to have it available everywhere.
 
 If you installed with Homebrew, `ledge` is already on your PATH. Otherwise it is
 at `/Applications/Ledge.app/Contents/MacOS/ledge-cli`.
+
+## Tables
+
+Written as Markdown and drawn as a table. The characters in the file are never
+touched: the text is made invisible and given a line height that reserves
+exactly the room the drawing needs, and the table is a view laid over it. So a
+table made here, one typed by hand, and one written by `ledge` are the same
+file — and they are the same file on GitHub too.
+
+A drawn table is **locked**. Clicking it does nothing, because a click that
+reached the text would put the caret in the middle of the pipes it is hiding.
+The padlock at its top right unlocks it, which simply takes the drawing away
+and lets the Markdown show through; an open padlock over the raw text puts it
+back.
+
+Wider than the note, it scrolls sideways — two fingers on a trackpad, or shift
+and the wheel — and whichever edge has more table beyond it fades, because a
+gesture nobody can see is not a feature. The other answer is to make the note
+wider: a note can now be dragged to most of the display, which is enough for
+three columns of sentences.
+
+Cell contents are rendered for **bold** and `code`, which is what tables in
+notes are written with. Anything more elaborate stays as it was typed.
 
 ## Code
 

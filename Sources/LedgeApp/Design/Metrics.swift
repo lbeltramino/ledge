@@ -68,7 +68,9 @@ enum Metrics {
         static var height: CGFloat { c(340) }
         static var minWidth: CGFloat { c(240) }
         static var minHeight: CGFloat { c(170) }
-        static var maxWidth: CGFloat { c(760) }
+        /// How wide you may drag a note. Raised for tables, which are the
+        /// one thing in a note that is wider than a sentence.
+        static var maxWidth: CGFloat { c(1100) }
         static var maxHeight: CGFloat { c(900) }
         static var cornerRadius: CGFloat { c(10) }
         static var padding: CGFloat { c(16) }

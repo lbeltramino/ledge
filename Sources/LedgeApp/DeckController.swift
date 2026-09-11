@@ -401,7 +401,12 @@ final class DeckController {
         // The screen has the last word. On a display too small to give the card
         // its natural width, the controls shrink to fit — a card wider than the
         // screen is not a bigger note, it is one you cannot read.
-        let ceiling = (screen?.visibleFrame.width ?? 1440) * 0.42
+        //
+        // Two fifths of the display was sized for prose in a sticky note. A
+        // table of three columns of sentences needs more than that before it
+        // starts scrolling sideways, and a note you have dragged wider should
+        // be allowed to stay there.
+        let ceiling = (screen?.visibleFrame.width ?? 1440) * 0.62
         return min(max(floor, min(wanted, ceiling)), ceiling)
     }
 

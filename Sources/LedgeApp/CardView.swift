@@ -145,6 +145,7 @@ final class NoteCardView: NSView {
         textView.onChange = { [weak self] in
             guard let self else { return }
             self.refreshOutlineAffordance()
+            self.textView.refreshTables()
             self.onEdit?(self.textView.string)
         }
         textView.onFind = { [weak self] in self?.beginFind() }
@@ -207,6 +208,12 @@ final class NoteCardView: NSView {
         findBar.onClose = { [weak self] in self?.endFind() }
         addSubview(findBar)
         refreshOutlineAffordance()
+        textView.tablePaper = Palette.paper(record.color, dark: isDark, tint: jitter.paperTint)
+        textView.tableInk = Palette.ink(dark: isDark)
+        textView.onUnlockTable = { [weak self] location in
+            self?.textView.unlockTable(containing: location)
+        }
+        textView.refreshTables()
 
         textView.highlighterPen = MarkerStroke.colour(for: record.color, dark: isDark)
         textView.findColour = { [weak self] current in
@@ -339,6 +346,9 @@ final class NoteCardView: NSView {
         textView.textColor = ink.withAlphaComponent(0.92)
         textView.codeCopy.ink = ink
         textView.highlighterPen = MarkerStroke.colour(for: color, dark: dark)
+        textView.tablePaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
+        textView.tableInk = ink
+        textView.refreshTables()
         textView.insertionPointColor = ink
     }
 
@@ -576,6 +586,8 @@ final class NoteCardView: NSView {
                                 height: max(content.height, textView.frame.height))
         textView.textContainer?.containerSize = NSSize(width: content.width,
                                                        height: .greatestFiniteMagnitude)
+        // Now that the text has a width, the tables can be measured against it.
+        textView.tablesDidLayout()
     }
 
     /// Clicking anywhere on the paper puts the caret in the note, the way a
@@ -890,6 +902,187 @@ final class NoteTextView: NSTextView {
 
     /// The colour this note's marker writes in. Set alongside the others.
     var highlighterPen: NSColor = .systemYellow
+
+    // MARK: - tables, drawn
+
+    /// One view per table, kept by the table's starting line so they survive a
+    /// keystroke somewhere else in the note.
+    private var tableViews: [Int: TableView] = [:]
+    /// Where the table you unlocked starts. Held as a location rather than a
+    /// range because the text moves as you edit it, and what has to stay
+    /// unlocked is the table, not a span of characters.
+    private var unlockedTableAt: Int?
+
+    /// Shown over a table you unlocked, to put it back.
+    private lazy var tableLock: TableLockMark = {
+        let mark = TableLockMark()
+        mark.onLock = { [weak self] in self?.lockTables() }
+        addSubview(mark)
+        return mark
+    }()
+
+    var tablePaper: NSColor = .white
+    var tableInk: NSColor = .black
+
+    /// True when this table is showing its pipes because you asked it to.
+    func isTableUnlocked(_ table: Tables.Table) -> Bool {
+        guard let unlockedTableAt else { return false }
+        return NSLocationInRange(unlockedTableAt, table.range)
+            || unlockedTableAt == table.range.location
+    }
+
+    func unlockTable(containing location: Int) {
+        unlockedTableAt = location
+        refreshTables()
+    }
+
+    func lockTables() {
+        unlockedTableAt = nil
+        refreshTables()
+    }
+
+    /// Lays a drawn table over each one that is locked, and hides the text it
+    /// is drawn from — invisible, and with a line height that reserves exactly
+    /// the room the drawing needs. The characters stay in the note: this is a
+    /// view on paper, not an edit.
+    /// The width the tables were last measured against, so a relayout that did
+    /// not change it does not re-measure — and one that did, does.
+    private var tableWidth: CGFloat = 0
+
+    func refreshTables() {
+        guard let storage = textStorage, let container = textContainer,
+              container.size.width > 1 else { return }
+        let tables = Tables.all(in: string)
+        let available = max(80, container.size.width - 4)
+        tableWidth = container.size.width
+        var seen: Set<Int> = []
+
+        // A table that is no longer drawn has to get its ordinary rendering
+        // back. Nothing else would take the invisible ink off it: this view put
+        // it there, and only re-running the highlighter over the range restores
+        // what the note would otherwise look like.
+        let highlighter = storage.delegate as? MarkdownHighlighter
+        var unlocked: Tables.Table?
+        for table in tables where isTableUnlocked(table) {
+            highlighter?.highlight(storage, in: table.range)
+            unlocked = table
+        }
+
+        // The way back. Without it, unlocking is a door that only opens: the
+        // padlock that closes a table is drawn *on* the drawing, and unlocking
+        // takes the drawing away.
+        if let unlocked {
+            tableLock.ink = tableInk
+            tableLock.paper = tablePaper
+            tableLock.isHidden = false
+            positionLock(over: unlocked)
+        } else {
+            tableLock.isHidden = true
+        }
+
+        for table in tables where !isTableUnlocked(table) {
+            seen.insert(table.range.location)
+            let view = tableViews[table.range.location] ?? {
+                let fresh = TableView()
+                fresh.onUnlock = { [weak self] in
+                    self?.onUnlockTable?(table.range.location)
+                }
+                addSubview(fresh)
+                tableViews[table.range.location] = fresh
+                return fresh
+            }()
+            view.onUnlock = { [weak self] in self?.onUnlockTable?(table.range.location) }
+            view.configure(table, font: font ?? .systemFont(ofSize: 13),
+                           ink: tableInk, paper: tablePaper, available: available)
+
+            // Reserve the room. The lines are clipped rather than wrapped so
+            // their count is the count of lines in the note, which is what makes
+            // the arithmetic below exact.
+            let lines = max(1, (string as NSString).substring(with: table.range)
+                .components(separatedBy: "\n").count)
+            let lineHeight = max(1, view.contentSize.height / CGFloat(lines))
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = lineHeight
+            paragraph.maximumLineHeight = lineHeight
+            paragraph.lineBreakMode = .byClipping
+            storage.addAttributes([.paragraphStyle: paragraph,
+                                   .foregroundColor: NSColor.clear],
+                                  range: table.range)
+        }
+
+        for (location, view) in tableViews where !seen.contains(location) {
+            view.removeFromSuperview()
+            tableViews.removeValue(forKey: location)
+        }
+        needsLayout = true
+        layoutTables()
+    }
+
+    /// Re-measures when the note has been given a different width, and puts the
+    /// drawings back over their text. Called from the card's own layout, which
+    /// is the first moment the text container has a size at all — measuring
+    /// before that gave every table a frame of zero width, and a note whose
+    /// text was invisible with nothing drawn over it.
+    func tablesDidLayout() {
+        guard let container = textContainer, container.size.width > 1 else { return }
+        if abs(container.size.width - tableWidth) > 0.5 {
+            refreshTables()
+        } else {
+            layoutTables()
+        }
+    }
+
+    /// Over the top-right of the raw table, where the closed padlock was.
+    private func positionLock(over table: Tables.Table) {
+        guard let manager = layoutManager, let container = textContainer,
+              container.size.width > 1 else { return }
+        manager.ensureLayout(for: container)
+        let glyphs = manager.glyphRange(forCharacterRange: table.range, actualCharacterRange: nil)
+        var box = manager.boundingRect(forGlyphRange: glyphs, in: container)
+        box.origin.x = textContainerOrigin.x
+        box.origin.y += textContainerOrigin.y
+        box.size.width = container.size.width
+        tableLock.setFrameOrigin(NSPoint(x: box.maxX - TableLockMark.size - 4, y: box.minY + 3))
+    }
+
+    /// Puts each drawn table over the text it stands for.
+    func layoutTables() {
+        guard let manager = layoutManager, let container = textContainer,
+              container.size.width > 1 else { return }
+        manager.ensureLayout(for: container)
+        for (location, view) in tableViews {
+            guard let table = Tables.all(in: string).first(where: { $0.range.location == location })
+            else { continue }
+            let glyphs = manager.glyphRange(forCharacterRange: table.range, actualCharacterRange: nil)
+            var box = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            box.origin.x = textContainerOrigin.x
+            box.origin.y += textContainerOrigin.y
+            box.size.width = container.size.width
+            view.frame = box
+        }
+    }
+
+    var onUnlockTable: ((Int) -> Void)?
+
+    var debugTableCount: Int { tableViews.count }
+    var debugTableView: TableView? { tableViews.values.first }
+    var debugTableFrames: [NSRect] { tableViews.values.map(\.frame) }
+    var debugLockMarkVisible: Bool { !tableLock.isHidden }
+    var debugLockMarkFrame: NSRect { tableLock.frame }
+    func debugPressLockMark() { tableLock.onLock?() }
+
+    /// Every run of text this view has made invisible. The invariant is that
+    /// each one has a drawing over it — text that is hidden with nothing in its
+    /// place is a note that looks empty, which is how this was reported.
+    var debugHiddenRuns: [NSRange] {
+        guard let storage = textStorage else { return [] }
+        var runs: [NSRange] = []
+        storage.enumerateAttribute(.foregroundColor,
+                                   in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            if let colour = value as? NSColor, colour.alphaComponent == 0 { runs.append(range) }
+        }
+        return runs
+    }
 
     // MARK: - copying a code block
 

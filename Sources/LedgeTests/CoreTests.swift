@@ -871,6 +871,80 @@ enum CoreTests {
             c.expect(Headings.worthShowing(in: "# uno\n## dos"), "dos ya son un índice")
         }
 
+        Runner.suite("Markdown tables")
+
+        // Cut from the document this was built against, pipes, backticks, bold
+        // and all — a table written by hand for people, not for a parser.
+        let real = """
+        ## 2. Mapeo
+
+        | Concepto en la propuesta | Primitiva IDP | Notas de implementación |
+        |---|---|---|
+        | Servicio **Bedrock Inference** | `service_specification` tipo `dependency` | `dimensions`: `country` + `environment`. |
+        | Link **Invoke** (Inference → Scope) | `link_specification` con `assignable_to: "scope"` | El único vínculo que el dev ve como tal. |
+
+        texto después
+        """
+
+        await Runner.test("finds a real table and its cells") { c in
+            let found = Tables.all(in: real)
+            c.equal(found.count, 1, "una tabla")
+            guard let table = found.first else { return }
+            c.equal(table.header, ["Concepto en la propuesta", "Primitiva IDP", "Notas de implementación"])
+            c.equal(table.rows.count, 2)
+            c.equal(table.rows[0][0], "Servicio **Bedrock Inference**",
+                    "the cell keeps its markup: \(table.rows[0][0])")
+            c.equal(table.rows[1][0], "Link **Invoke** (Inference → Scope)")
+        }
+
+        await Runner.test("the range covers the table and nothing else") { c in
+            guard let table = Tables.all(in: real).first else { c.expect(false, "no table"); return }
+            let text = (real as NSString).substring(with: table.range)
+            c.expect(text.hasPrefix("| Concepto"), "starts at the header: \(text.prefix(20))")
+            c.expect(text.hasSuffix("como tal. |"), "ends at the last row: …\(text.suffix(20))")
+            c.expect(!text.contains("texto después"), "and does not swallow what follows")
+            c.expect(!text.contains("## 2."), "nor what came before")
+        }
+
+        await Runner.test("two tables in one note stay two") { c in
+            let two = real + "\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+            c.equal(Tables.all(in: two).count, 2)
+        }
+
+        await Runner.test("alignment comes from the rule") { c in
+            let note = "| izq | centro | der |\n|:---|:---:|---:|\n| 1 | 2 | 3 |"
+            guard let table = Tables.all(in: note).first else { c.expect(false, "no table"); return }
+            c.equal(table.alignment, [.left, .centre, .right])
+        }
+
+        await Runner.test("prose with pipes in it is not a table") { c in
+            c.equal(Tables.all(in: "esto | aquello | lo otro\nsin regla debajo").count, 0,
+                    "the rule under the header is what makes it a table")
+            c.equal(Tables.all(in: "| solo un encabezado |\n|---|").count, 0,
+                    "a header and a rule with no rows is not worth drawing")
+            c.equal(Tables.all(in: "```\ncat a | grep b\ncat c | grep d\n```").count, 0,
+                    "a shell pipeline is not a table")
+        }
+
+        await Runner.test("an escaped pipe stays inside its cell") { c in
+            let note = "| comando | qué hace |\n|---|---|\n| `a \\| b` | pasa a por b |"
+            guard let table = Tables.all(in: note).first else { c.expect(false, "no table"); return }
+            c.equal(table.rows[0].count, 2, "two cells, not three: \(table.rows[0])")
+            c.equal(table.rows[0][0], "`a | b`")
+        }
+
+        await Runner.test("a short row is padded rather than dropped") { c in
+            let note = "| a | b | c |\n|---|---|---|\n| 1 |"
+            guard let table = Tables.all(in: note).first else { c.expect(false, "no table"); return }
+            c.equal(table.rows[0], ["1", "", ""], "a row written short still has the table's shape")
+        }
+
+        await Runner.test("the table under a point is the one you clicked") { c in
+            guard let table = Tables.all(in: real).first else { c.expect(false, "no table"); return }
+            c.expect(Tables.containing(table.range.location + 5, in: real) != nil, "inside")
+            c.expect(Tables.containing(0, in: real) == nil, "before it there is none")
+        }
+
         Runner.suite("ULID")
 
         await Runner.test("sorts by creation time") { c in
