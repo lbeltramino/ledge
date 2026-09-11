@@ -825,6 +825,52 @@ enum CoreTests {
                     "a marker we do not know is not a checkbox at all, so it cannot be ticked")
         }
 
+        Runner.suite("The headings in a note")
+
+        await Runner.test("finds them, with their level and their words") { c in
+            let note = "# Primero\n\ntexto\n\n## Segundo\n\n### Tercero"
+            let found = Headings.all(in: note)
+            c.equal(found.map(\.level), [1, 2, 3])
+            c.equal(found.map(\.text), ["Primero", "Segundo", "Tercero"])
+        }
+
+        await Runner.test("a tag is not a heading") { c in
+            c.equal(Headings.all(in: "#work y #otra cosa").count, 0,
+                    "the space after the hashes is what makes a heading")
+            c.equal(Headings.all(in: "# work").count, 1)
+        }
+
+        await Runner.test("comments inside a code block are not headings") { c in
+            let note = """
+            # De verdad
+
+            ```bash
+            # instalar
+            brew install foo
+            # y listo
+            ```
+
+            ## También de verdad
+            """
+            let found = Headings.all(in: note)
+            c.equal(found.map(\.text), ["De verdad", "También de verdad"],
+                    "got: \(found.map(\.text))")
+        }
+
+        await Runner.test("the line is where it is, so you can jump to it") { c in
+            let note = "texto\n## Un título\nmás"
+            guard let item = Headings.all(in: note).first else {
+                c.expect(false, "no lo encontró"); return
+            }
+            c.equal((note as NSString).substring(with: item.line), "## Un título")
+        }
+
+        await Runner.test("it is only worth offering with somewhere to jump") { c in
+            c.expect(!Headings.worthShowing(in: "sin títulos"), "nada que ofrecer")
+            c.expect(!Headings.worthShowing(in: "# uno solo"), "un solo título no es un índice")
+            c.expect(Headings.worthShowing(in: "# uno\n## dos"), "dos ya son un índice")
+        }
+
         Runner.suite("ULID")
 
         await Runner.test("sorts by creation time") { c in

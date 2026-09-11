@@ -1616,6 +1616,96 @@ enum SelfTest {
               + "not \(ids.count)")
     }
 
+    /// The index of a note, and dropping things on the edge.
+    static func checkOutlineAndDrops(deck: DeckController) async {
+        // ---- the index
+        let long = """
+        # Primero
+
+        algo
+
+        ## Segundo
+
+        ```bash
+        # esto es un comentario, no un título
+        echo hola
+        ```
+
+        ### Tercero
+        """
+        let record = NoteRecord(note: Note(title: "Largo"), filename: "l.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: long)
+        card.frame = NSRect(x: 0, y: 0, width: 320, height: 420)
+        card.layoutSubtreeIfNeeded()
+
+        check(card.debugOutlineOffered, "a note with headings offers its index")
+        let listed = Headings.all(in: long).map(\.text)
+        check(listed == ["Primero", "Segundo", "Tercero"],
+              "the index is the note's headings, and a comment in a code block is not "
+              + "one of them: \(listed)")
+
+        // Beside the button that opens the full editor, level with it and not
+        // overlapping it: two icons in a row, not a word next to a picture.
+        let icon = card.debugOutlineButtonFrame, expand = card.debugExpandButtonFrame
+        check(icon.maxX <= expand.minX + 0.5,
+              String(format: "the index icon sits before the expand icon (%.0f then %.0f)",
+                     icon.maxX, expand.minX))
+        check(abs(icon.midY - expand.midY) < 0.5, "level with it")
+        check(abs(icon.width - expand.width) < 0.5, "and the same size")
+        check(card.debugTitleFrame.maxX <= icon.minX + 0.5,
+              "the title stops before the icons rather than running under them")
+
+        let plain = NoteCardView(record: record, body: "una nota corriente\nsin títulos")
+        plain.frame = card.frame
+        plain.layoutSubtreeIfNeeded()
+        check(!plain.debugOutlineOffered,
+              "an ordinary note carries no extra chrome for an index it has no use for")
+
+        let one = NoteCardView(record: record, body: "# un solo título\ntexto")
+        one.frame = card.frame
+        one.layoutSubtreeIfNeeded()
+        check(!one.debugOutlineOffered, "one heading is not somewhere to jump between")
+        check(plain.debugTitleFrame.width > card.debugTitleFrame.width,
+              "and a note without an index gives that room back to its title")
+
+        // Opening it and picking a heading moves the caret there, and changes
+        // nothing: an index that edited the note would be a second writer.
+        let before = card.textView.string
+        card.debugOpenOutline()
+        check(card.debugOutlineVisible, "the index opens")
+        guard let third = Headings.all(in: long).last else { check(false, "no headings"); return }
+        card.debugPickOutline(third)
+        check(card.textView.string == before, "picking a heading writes nothing")
+        check(card.textView.selectedRange().location == third.line.location,
+              "…and puts the caret on it")
+        check(!card.debugOutlineVisible, "and the index closes behind you")
+
+        // ---- dropping on the edge
+        let board = NSPasteboard(name: NSPasteboard.Name("ledge.selftest.drop"))
+        board.clearContents()
+        board.setString("una selección arrastrada", forType: .string)
+        check(DeckRootView.droppable.contains(.string) && DeckRootView.droppable.contains(.fileURL),
+              "the strip takes a selection and a file")
+
+        let before2 = deck.recordsForTesting.count
+        deck.debugDrop("texto soltado en el borde \(Int(Date().timeIntervalSince1970))")
+        try? await Task.sleep(for: .milliseconds(900))
+        await deck.refresh()
+        check(deck.recordsForTesting.count == before2 + 1,
+              "dropping text on the edge makes a note")
+
+        // And it goes through the same reading as a paste, so a dropped
+        // manifest is fenced rather than turned into headings and bullets.
+        deck.debugDrop("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: caido")
+        try? await Task.sleep(for: .milliseconds(900))
+        await deck.refresh()
+        let dropped = deck.recordsForTesting.first { $0.title == "Deployment/caido" }
+        check(dropped != nil,
+              "a dropped manifest is read as code, like a pasted one: titles are "
+              + "\(deck.recordsForTesting.map(\.title).prefix(4))")
+    }
+
     /// Notes something else is writing to.
     ///
     /// The point of the whole feature is that this happens while you are doing
@@ -1998,6 +2088,8 @@ enum SelfTest {
         if let screen = NSScreen.screens.first {
             print("\n\u{001B}[1mDeck geometry — along the bottom edge\u{001B}[0m")
             await checkBottomStrip(deck: deck, screen: screen)
+        // Last: it makes notes, and every check above reads the first one.
+        await checkOutlineAndDrops(deck: deck)
             deck.strip = StripConfig.primary()
         }
 

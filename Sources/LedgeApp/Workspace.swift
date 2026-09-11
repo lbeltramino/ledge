@@ -235,15 +235,21 @@ final class Workspace {
             NSSound.beep()
             return
         }
-        // Code arrives fenced and named. Pasting a manifest is the whole point
-        // of this shortcut, and a manifest read as Markdown is a page of
-        // headings and bullets that no longer looks like what you copied.
+        newNote(fromCaptured: text)
+    }
+
+    /// Text arriving from outside: the clipboard, or dropped on the strip.
+    ///
+    /// Code arrives fenced and named. A manifest read as Markdown is a page of
+    /// headings and bullets that no longer looks like what you captured.
+    func newNote(fromCaptured text: String, on deck: DeckController? = nil) {
+        let target = deck ?? primaryDeck ?? decks.first
         if let found = Code.detect(text) {
-            (primaryDeck ?? decks.first)?.newNote(title: found.title ?? "",
-                                                  body: Code.fenced(text, language: found.language))
+            target?.newNote(title: found.title ?? "",
+                            body: Code.fenced(text, language: found.language))
             return
         }
-        (primaryDeck ?? decks.first)?.newNote(body: text)
+        target?.newNote(body: text)
     }
 
     /// Opens the note a `[[link]]` or a `ledge://` URL points at, creating it if

@@ -12,6 +12,8 @@ final class PillView: NSView {
         }
     }
     var onClick: (() -> Void)?
+    /// Something is being dragged over the edge and would land here.
+    var isDropTarget = false { didSet { needsDisplay = true } }
     /// True on a left-edge strip: the rounding is on the other side.
     var mirrored = false { didSet { needsDisplay = true } }
     var horizontal = false { didSet { needsDisplay = true } }
@@ -49,6 +51,19 @@ final class PillView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         PillView.render(colors: colors, in: bounds, mirrored: mirrored,
                         horizontal: horizontal, topDown: isFlipped)
+        guard isDropTarget else { return }
+        // A wash over the stripe while something is held above it. The deck
+        // fans out at the same moment, so this only has to say "here", not
+        // explain itself.
+        let radius = Metrics.Pill.cornerRadius
+        let glow = horizontal
+            ? NSBezierPath(roundedRect: bounds.offsetBy(dx: 0, dy: radius).insetBy(dx: 0, dy: -radius),
+                           xRadius: radius, yRadius: radius)
+            : NSBezierPath(roundedRect: bounds.offsetBy(dx: mirrored ? -radius : radius, dy: 0)
+                               .insetBy(dx: -radius, dy: 0),
+                           xRadius: radius, yRadius: radius)
+        NSColor(white: 1, alpha: 0.45).setFill()
+        glow.fill()
     }
 
     /// The drawing itself, so the offscreen renderer can call it directly rather

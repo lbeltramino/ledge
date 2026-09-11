@@ -13,6 +13,11 @@ final class DeckRootView: NSView {
     var liveRegion: NSRect = .zero { didSet { needsLayout = true } }
     var onPointerInside: ((NSPoint) -> Void)?
     var onPointerOutside: (() -> Void)?
+    /// Text or a file let go over the deck.
+    var onDrop: ((String) -> Void)?
+    /// The pointer is dragging something over it — worth showing.
+    var onDragHover: ((Bool) -> Void)?
+
     /// A flick along the edge, for a stack longer than the strip.
     var onScroll: ((CGFloat) -> Void)?
 
@@ -58,6 +63,49 @@ final class DeckRootView: NSView {
         }
         let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 10
         onScroll?(delta)
+    }
+
+    // MARK: - dropping things on the edge
+
+    /// What the strip will take. Plain text and a file that is text, which
+    /// between them cover a selection dragged out of any app and a note
+    /// dragged out of the Finder.
+    static let droppable: [NSPasteboard.PasteboardType] = [.string, .fileURL]
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard dropText(from: sender) != nil else { return [] }
+        onDragHover?(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropText(from: sender) == nil ? [] : .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { onDragHover?(false) }
+    override func draggingEnded(_ sender: NSDraggingInfo) { onDragHover?(false) }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        onDragHover?(false)
+        guard let text = dropText(from: sender) else { return false }
+        onDrop?(text)
+        return true
+    }
+
+    private func dropText(from sender: NSDraggingInfo) -> String? {
+        let board = sender.draggingPasteboard
+        if let text = board.string(forType: .string),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return text
+        }
+        // A file, if it is one we can read as text. A dropped image would make
+        // a note of mojibake, so it is refused rather than mangled.
+        guard let urls = board.readObjects(forClasses: [NSURL.self]) as? [URL],
+              let url = urls.first,
+              let contents = try? String(contentsOf: url, encoding: .utf8),
+              !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return contents
     }
 
     override func mouseEntered(with event: NSEvent) { report(event) }

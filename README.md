@@ -82,6 +82,16 @@ SQLite index beside it is a cache you can delete at any moment.
   started. Yellow, or pink on a yellow note. Select words and the pen appears
   over them: pressing it writes the `==`, so a highlight made with the mouse and
   one typed by hand are the same file. `⌘⇧H` does the same from the keyboard.
+- **The headings, as somewhere to jump.** A note with two headings or more
+  offers a small index beside the button that opens the editor: the outline,
+  indented by level, click one and you are there. Nothing is written into the
+  note — no `[TOC]`, no markers to go stale — and a `# comment` inside a code
+  block is a comment, not a heading.
+- **Drop things on the edge.** Drag a selection out of any app, or a text file
+  out of the Finder, and let it go over the strip: the deck comes out to meet it
+  and the stripe lights up. It arrives read the same way a paste is, so a
+  dropped manifest is fenced and named rather than turned into headings and
+  bullets.
 - **Find in a note.** `⌘F`, then `⌘G` to step through. Matches are struck in the
   same marker, in a pen that is neither the highlighter nor the paper, with the
   one you are on pressed harder.
@@ -247,7 +257,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 182 unit tests
+swift run ledge-tests                               # 187 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 

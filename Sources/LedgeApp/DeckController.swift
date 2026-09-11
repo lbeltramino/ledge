@@ -107,6 +107,12 @@ final class DeckController {
         root.onPointerInside = { [weak self] point in self?.pointerInside(point) }
         root.onPointerOutside = { [weak self] in self?.pointerOutside() }
         root.onScroll = { [weak self] delta in self?.scrollStack(by: delta) }
+        root.registerForDraggedTypes(DeckRootView.droppable)
+        root.onDrop = { [weak self] text in
+            guard let self else { return }
+            self.workspace.newNote(fromCaptured: text, on: self)
+        }
+        root.onDragHover = { [weak self] hovering in self?.showDropTarget(hovering) }
         plusButton.onClick = { [weak self] in self?.newNote() }
         pill.onClick = { [weak self] in self?.fanOut(takingFocus: false) }
         pinButton.onClick = { [weak self] in self?.togglePinned() }
@@ -675,6 +681,20 @@ final class DeckController {
         lastScroll = Date()
         stackOffset -= delta
         applyLayout(animated: false)
+    }
+
+    /// Something is being dragged over the edge. The deck comes out to meet it,
+    /// so you can see where it is going to land — and the pill lights up, which
+    /// is the only signal there is room for at rest.
+    private func showDropTarget(_ hovering: Bool) {
+        pill.isDropTarget = hovering
+        if hovering {
+            cancelCollapse()
+            if state == .rest { fanOut(takingFocus: false) }
+        }
+        // Nothing on the way out: the pointer leaving the deck already collapses
+        // it through the usual path, and forcing it here would fold the deck up
+        // underneath a drop the moment the pointer wandered.
     }
 
     private func pointerInside(_ point: NSPoint) {
@@ -1407,6 +1427,7 @@ final class DeckController {
     }
 
     func debugPointerInside(_ point: NSPoint) { pointerInside(point) }
+    func debugDrop(_ text: String) { workspace.newNote(fromCaptured: text, on: self) }
     func debugCardFrame() -> NSRect? { card?.frame }
     func beginEditingForTesting(_ id: String) { beginEditing(id) }
     func setGeometryForTesting(id: String, width: Double?, height: Double?) async throws {

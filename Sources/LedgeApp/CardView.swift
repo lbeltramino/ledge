@@ -48,9 +48,11 @@ final class NoteCardView: NSView {
     }
     private var stripDragOrigin: NSPoint?
     private let expandButton = ExpandButton()
+    private let outlineButton = OutlineButton()
     let resizeHandle = ResizeHandle()
     private lazy var chrome = NoteChromeBar(color: color)
     private lazy var findBar = FindBar()
+    private lazy var outline = OutlineBar()
     private var isFinding = false
 
     var onColor: ((NoteColor) -> Void)?
@@ -140,7 +142,11 @@ final class NoteCardView: NSView {
         textView.textStorage?.delegate = markdown
         if let storage = textView.textStorage { markdown.highlight(storage) }
         highlighter = markdown
-        textView.onChange = { [weak self] in self?.onEdit?(self?.textView.string ?? "") }
+        textView.onChange = { [weak self] in
+            guard let self else { return }
+            self.refreshOutlineAffordance()
+            self.onEdit?(self.textView.string)
+        }
         textView.onFind = { [weak self] in self?.beginFind() }
         textView.onSuggestedTitle = { [weak self] suggested in
             // Only when the note has no name yet: a snippet pasted into a note
@@ -178,6 +184,9 @@ final class NoteCardView: NSView {
 
         expandButton.onClick = { [weak self] in self?.onExpand?() }
         addSubview(expandButton)
+        outlineButton.onClick = { [weak self] in self?.toggleOutline() }
+        outlineButton.isHidden = true
+        addSubview(outlineButton)
 
         chrome.onColor = { [weak self] color in self?.onColor?(color) }
         chrome.onDelete = { [weak self] in self?.onDelete?() }
@@ -187,11 +196,17 @@ final class NoteCardView: NSView {
         addSubview(resizeHandle)
         resizeHandle.alphaValue = 0
 
+        outline.isHidden = true
+        outline.onPick = { [weak self] item in self?.jump(to: item) }
+        outline.onClose = { [weak self] in self?.hideOutline() }
+        addSubview(outline)
+
         findBar.isHidden = true
         findBar.onQuery = { [weak self] query in self?.runFind(query) }
         findBar.onStep = { [weak self] delta in self?.stepFind(delta) }
         findBar.onClose = { [weak self] in self?.endFind() }
         addSubview(findBar)
+        refreshOutlineAffordance()
 
         textView.highlighterPen = MarkerStroke.colour(for: record.color, dark: isDark)
         textView.findColour = { [weak self] current in
@@ -203,6 +218,7 @@ final class NoteCardView: NSView {
         // put five buttons in front of you.
         chrome.alphaValue = 0
         expandButton.alphaValue = 0
+        outlineButton.alphaValue = 0
 
         applyColors()
         applyLean()
@@ -336,6 +352,53 @@ final class NoteCardView: NSView {
     /// ⌘F inside a note. The matches are drawn with the same marker stroke as a
     /// highlight, in a different pen, so searching looks like the rest of the
     /// app rather than like a system find bar on a sticky note.
+    // MARK: - the headings, as somewhere to jump
+
+    /// Shown only when the note has somewhere to jump between, so an ordinary
+    /// sticky note carries no extra chrome.
+    func refreshOutlineAffordance() {
+        let worth = Headings.worthShowing(in: textView.string)
+        if outlineButton.isHidden != !worth {
+            outlineButton.isHidden = !worth
+            needsLayout = true
+        }
+        if !worth, !outline.isHidden { hideOutline() }
+    }
+
+    private func toggleOutline() {
+        outline.isHidden ? showOutline() : hideOutline()
+    }
+
+    private func showOutline() {
+        let found = Headings.all(in: textView.string)
+        guard !found.isEmpty else { return }
+        outline.show(found, paper: Palette.paper(color, dark: isDark, tint: jitter.paperTint),
+                     ink: Palette.ink(dark: isDark))
+        outline.isHidden = false
+        needsLayout = true
+    }
+
+    private func hideOutline() {
+        outline.isHidden = true
+        needsLayout = true
+    }
+
+    private func jump(to item: Headings.Item) {
+        hideOutline()
+        window?.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: item.line.location, length: 0))
+        textView.scrollRangeToVisible(item.line)
+        textView.showFindIndicator(for: item.line)
+    }
+
+    var debugOutlineOffered: Bool { !outlineButton.isHidden }
+    var debugOutlineButtonFrame: NSRect { outlineButton.frame }
+    var debugExpandButtonFrame: NSRect { expandButton.frame }
+    var debugTitleFrame: NSRect { titleField.frame }
+    var debugOutlineVisible: Bool { !outline.isHidden }
+    func debugOpenOutline() { showOutline() }
+    func debugPickOutline(_ item: Headings.Item) { jump(to: item) }
+
     func beginFind() {
         isFinding = true
         findBar.isHidden = false
@@ -390,10 +453,12 @@ final class NoteCardView: NSView {
     private func revealChrome(_ visible: Bool) {
         chrome.isInert = !visible
         expandButton.isInert = !visible
+        outlineButton.isInert = !visible
         resizeHandle.isInert = !visible
         let target: CGFloat = visible ? 1 : 0
 
-        for view in [chrome as NSView, expandButton as NSView, resizeHandle as NSView] {
+        for view in [chrome as NSView, expandButton as NSView, outlineButton as NSView,
+                     resizeHandle as NSView] {
             view.wantsLayer = true
             // An explicit layer animation rather than `animator()`, so the value
             // is true the instant it is set and the fade is only presentation.
@@ -463,8 +528,14 @@ final class NoteCardView: NSView {
         let expand = Metrics.Card.titleSize * 1.15
         expandButton.frame = NSRect(x: bounds.width - trailingInset - expand,
                                     y: above + pad + 1, width: expand, height: expand)
+        // Beside its neighbour, and only there when the note has headings —
+        // so the title keeps the room on a note that does not.
+        let outlineRoom = outlineButton.isHidden ? 0 : expand + 4
+        outlineButton.frame = NSRect(x: expandButton.frame.minX - outlineRoom,
+                                     y: above + pad + 1, width: expand, height: expand)
         titleField.frame = NSRect(x: left - 3, y: above + pad,
-                                  width: max(20, contentWidth - expand - 8), height: titleHeight)
+                                  width: max(20, contentWidth - expand - outlineRoom - 8),
+                                  height: titleHeight)
         chrome.frame = NSRect(x: left, y: bounds.height - pad - NoteChromeBar.height,
                               width: contentWidth, height: NoteChromeBar.height)
 
@@ -483,6 +554,17 @@ final class NoteCardView: NSView {
         scroll.frame = NSRect(x: left, y: top,
                               width: contentWidth,
                               height: max(0, bounds.height - top - pad - NoteChromeBar.height - 6))
+
+        // The index sits over the note, under whatever is above it, and is as
+        // tall as its own list. Over rather than beside: a sticky note has no
+        // room for a sidebar, and it is a thing you open, glance at and dismiss.
+        if !outline.isHidden {
+            let count = Headings.all(in: textView.string).count
+            let height = outline.height(for: count)
+            outline.frame = NSRect(x: left, y: top,
+                                   width: contentWidth,
+                                   height: min(height, max(0, scroll.frame.height - 8)))
+        }
         // Give the text view a real frame inside the clip view, and a container
         // as wide as it is.
         let content = scroll.contentSize
