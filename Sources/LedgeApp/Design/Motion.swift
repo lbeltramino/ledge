@@ -10,6 +10,10 @@ enum Motion {
     static let hoverDwell: TimeInterval = 0.080
     static let tabDwell: TimeInterval = 0.060
     static let leaveGrace: TimeInterval = 0.250
+    /// How long after the wheel stops before a tab under the pointer counts as
+    /// hovered again. Without it, a flick down a long deck opens every note it
+    /// drags past a stationary pointer.
+    static let scrollQuiet: TimeInterval = 0.300
 
     static let fanOutStagger: TimeInterval = 0.045
     static let fanInStagger: TimeInterval = 0.024

@@ -83,7 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let extra = ProcessInfo.processInfo.environment["LEDGE_SELFTEST_NOTES"]
             .flatMap(Int.init) ?? 0
         for i in 0..<extra {
-            var note = Note(title: "Crowd \(i)", color: NoteColor.allCases[i % 5],
+            // Titles of different lengths, like the five fixtures: several
+            // checks are about a tab being as long as its own words, and a
+            // crowd of identical titles cannot tell them anything.
+            let words = ["Crowd", "Crowd of people", "A rather longer title here",
+                         "Six", "Middling title"][i % 5]
+            var note = Note(title: "\(words) \(i)", color: NoteColor.allCases[i % 5],
                             rank: String(format: "b%04d", i))
             note.body = "- one\n- two"
             try? Data(Frontmatter.serialize(note).utf8)

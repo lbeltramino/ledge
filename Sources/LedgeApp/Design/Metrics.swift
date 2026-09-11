@@ -88,6 +88,15 @@ enum Metrics {
     enum Plus {
         static var size: CGFloat { t(26) }
         static var gap: CGFloat { t(12) }
+        /// Between the plus and the pin.
+        static var spacing: CGFloat { t(5) }
+
+        /// Everything the two controls occupy after the stack, gaps included.
+        ///
+        /// Named because the stack's viewport has to subtract exactly this much
+        /// and the layout has to lay out exactly this much; when they were two
+        /// separate sums the pin came out over the end of the panel.
+        static var run: CGFloat { gap + size * 2 + spacing }
     }
 
     /// Breathing room so a leaning tab and its shadow are never clipped.

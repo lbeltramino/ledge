@@ -31,6 +31,11 @@ SQLite index beside it is a cache you can delete at any moment.
   hover a tab and that note grows out of it at full size. Nothing takes focus
   until you deliberately click into a note to write — the app you were typing in
   stays exactly where it was.
+- **A deck longer than the screen.** Tabs keep the length their titles ask for
+  however many notes you have, and the stack scrolls under a window onto it —
+  the tab cut off at the end is how you know there is more. Opening a note off
+  the end brings its tab back into view. At rest the stripe shows a few dashes
+  rather than one per note, because nobody counts two hundred.
 - **Several strips.** One on a laptop, or four on a 49-inch display: left edge,
   right edge, and either side of the Dock. Drag a note from one to another.
 - **Strips that follow you.** Tell a strip to show with an app and it comes out

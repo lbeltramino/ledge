@@ -13,6 +13,8 @@ final class DeckRootView: NSView {
     var liveRegion: NSRect = .zero { didSet { needsLayout = true } }
     var onPointerInside: ((NSPoint) -> Void)?
     var onPointerOutside: (() -> Void)?
+    /// A flick along the edge, for a stack longer than the strip.
+    var onScroll: ((CGFloat) -> Void)?
 
     private var tracking: NSTrackingArea?
 
@@ -44,6 +46,18 @@ final class DeckRootView: NSView {
         } else {
             onPointerOutside?()
         }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        // Only over the deck itself. Everywhere else the panel is transparent
+        // and the scroll belongs to whatever is underneath.
+        guard liveRegion.contains(point) else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 10
+        onScroll?(delta)
     }
 
     override func mouseEntered(with event: NSEvent) { report(event) }

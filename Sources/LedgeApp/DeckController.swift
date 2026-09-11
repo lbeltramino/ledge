@@ -58,6 +58,15 @@ final class DeckController {
     /// The file hash each cached body was read from, so a note that changed on
     /// disk can be told from one that did not without reading every file.
     private var fileHashes: [String: String] = [:]
+    /// The tabs live inside this, so a stack longer than the strip is cut at
+    /// the viewport rather than at the edge of the screen.
+    private let stackClip = StackClip()
+    /// How far the stack has been pushed past the top of that viewport.
+    private var stackOffset: CGFloat = 0
+    /// When the wheel last moved. Hovering a tab opens it, and scrolling drags
+    /// tabs under a stationary pointer — without this, a flick down the deck
+    /// opens every note it passes.
+    private var lastScroll = Date.distantPast
     /// Shared across every strip: a note on the desk belongs to no edge.
     private var floating: [String: FloatingNote] {
         get { workspace.floating }
@@ -90,12 +99,14 @@ final class DeckController {
         self.workspace = workspace
         self.strip = strip
         panel.contentView = root
+        root.addSubview(stackClip)
         root.addSubview(pill)
         root.addSubview(plusButton)
         root.addSubview(pinButton)
 
         root.onPointerInside = { [weak self] point in self?.pointerInside(point) }
         root.onPointerOutside = { [weak self] in self?.pointerOutside() }
+        root.onScroll = { [weak self] delta in self?.scrollStack(by: delta) }
         plusButton.onClick = { [weak self] in self?.newNote() }
         pill.onClick = { [weak self] in self?.fanOut(takingFocus: false) }
         pinButton.onClick = { [weak self] in self?.togglePinned() }
@@ -348,17 +359,29 @@ final class DeckController {
         let overlaps = tabs.enumerated().map { index, tab in
             index == 0 ? 0 : min(CGFloat(tab.jitter.tabOverlap), natural[index] * 0.2)
         }
-        let total = natural.reduce(0, +) - overlaps.reduce(0, +)
+        _ = overlaps
+        // Every tab keeps the length its own title asks for, however many there
+        // are. They used to shrink together to fit the screen, which begins at
+        // seven notes and ends with 34 pt slivers you cannot read — and past
+        // twenty it did not even work, because the ones that still did not fit
+        // were simply laid out below the bottom of the display. The stack
+        // scrolls now, so there is nothing to fit.
+        return natural
+    }
 
-        // The stack gets at most a bit over half the display; the rest is the
-        // room a card needs to sit centred on the top or bottom tab.
+    /// How much of the edge the tabs are shown in. Beyond this you scroll.
+    ///
+    /// The rest of the strip is the room a card needs to sit centred on the top
+    /// or bottom tab without being shoved back into view.
+    private var stackViewport: CGFloat {
         let area = strip.placementFrame
-        let available = (horizontal ? area.width : area.height) * 0.55
-            - Metrics.Plus.gap - Metrics.Plus.size * 2
-        guard total > available, total > 0 else { return natural }
-        let factor = available / total
-        let floor = Metrics.Tab.width * 0.9
-        return natural.map { max(floor, $0 * factor) }
+        // The whole strip, less the room the plus and the pin need and the
+        // padding at both ends. It used to be 55% of the display, which was
+        // sized for a stack that compressed itself to fit; with every tab
+        // keeping its title's length, 55% does not hold four of them.
+        return (horizontal ? area.width : area.height)
+            - Metrics.panelPadding * 2
+            - Metrics.Plus.run
     }
 
     /// A note is a sticky note. Past a certain width it stops being one, however
@@ -475,27 +498,47 @@ final class DeckController {
                      width: Metrics.Pill.visibleWidth, height: pillLength)
         pill.alphaValue = fanned ? 0 : 1
 
-        // The stack, laid along the edge, each tab as long as its own title.
+        // The stack, laid along the edge, each tab as long as its own title,
+        // inside a viewport it can be longer than.
         let heights = tabHeights()
-        // Where the stack sits is anchored to the screen, not to the panel.
+        // Bounded by the screen *and* by the panel, which is often shorter, and
+        // in both cases with the controls' room taken out first. Measuring only
+        // against the screen is how the pin came out 55 pt past the end of the
+        // panel.
+        let panelRoom = (horizontal ? bounds.width : bounds.height)
+            - Metrics.panelPadding * 2 - Metrics.Plus.run
+        let viewport = max(0, min(tabStackHeight, stackViewport, panelRoom))
+
+        // Where the viewport sits is anchored to the screen, not to the panel.
         //
         // The panel's length depends on the note that is open — its card has to
         // fit — and both the length and the position are clamped to the display.
-        // Centring the stack inside a panel that is itself centred cancels out
-        // only while neither clamp bites; the moment one does, the strip slides
-        // as you move between notes of different sizes. It was a rounding error
-        // until the labels grew and the stack got tall enough for the clamps to
-        // matter, and then it was 64 pt.
-        var along: CGFloat = Metrics.panelPadding
+        // Centring inside a panel that is itself centred cancels out only while
+        // neither clamp bites; the moment one does, the strip slides as you move
+        // between notes of different sizes. It was a rounding error until the
+        // labels grew, and then it was 64 pt.
+        var start: CGFloat = Metrics.panelPadding
         if fanned {
             let area = strip.placementFrame
             let wanted = horizontal
-                ? (area.midX - stackContentHeight / 2) - panel.frame.minX
-                : panel.frame.maxY - (area.midY + stackContentHeight / 2)
-            let room = (horizontal ? bounds.width : bounds.height) - stackContentHeight
-            along = max(Metrics.panelPadding,
-                        min(wanted, max(Metrics.panelPadding, room - Metrics.panelPadding)))
+                ? (area.midX - viewport / 2) - panel.frame.minX
+                : panel.frame.maxY - (area.midY + viewport / 2)
+            // The far end has to leave the controls their room, or they are
+            // laid out past the end of the panel and drawn half off it.
+            let room = (horizontal ? bounds.width : bounds.height)
+                - viewport - Metrics.Plus.run - Metrics.panelPadding
+            start = max(Metrics.panelPadding, min(wanted, max(Metrics.panelPadding, room)))
         }
+
+        stackClip.isHidden = !fanned
+        stackClip.frame = horizontal
+            ? NSRect(x: start, y: 0, width: viewport, height: bounds.height)
+            : NSRect(x: 0, y: start, width: bounds.width, height: viewport)
+
+        // Never further than the end of the stack, and never before its start.
+        stackOffset = max(0, min(stackOffset, max(0, tabStackHeight - viewport)))
+        let clip = stackClip.bounds
+        var along: CGFloat = -stackOffset
 
         for (i, tab) in tabs.enumerated() {
             let length = i < heights.count ? heights[i] : Metrics.Tab.minHeight
@@ -508,9 +551,10 @@ final class DeckController {
 
             tab.mirrored = mirrored
             tab.horizontal = horizontal
+            if tab.superview !== stackClip { stackClip.addSubview(tab) }
             tab.frame = horizontal
-                ? NSRect(x: along, y: bounds.height - depth, width: length, height: depth)
-                : NSRect(x: inset(bounds.width, depth), y: along, width: depth, height: length)
+                ? NSRect(x: along, y: clip.height - depth, width: length, height: depth)
+                : NSRect(x: inset(clip.width, depth), y: along, width: depth, height: length)
 
             tab.applyLean()
             tab.isSelected = tab.record.id == state.noteID
@@ -523,8 +567,13 @@ final class DeckController {
         }
 
         // The two controls, after the last tab along the edge.
-        let lastEnd = tabs.last.map { horizontal ? $0.frame.maxX : $0.frame.maxY }
-            ?? Metrics.panelPadding
+        // After the viewport, not after the last tab: the last tab may be
+        // scrolled far out of sight, and the plus has to stay where you can
+        // reach it. The viewport already has their width subtracted out of it,
+        // so this room was reserved before a single tab was placed.
+        let lastEnd = fanned
+            ? (horizontal ? stackClip.frame.maxX : stackClip.frame.maxY)
+            : Metrics.panelPadding
         let size = Metrics.Plus.size
         let controlDepth = inset(horizontal ? bounds.height : bounds.width, Metrics.Tab.width)
             + (mirrored && !horizontal ? Metrics.Tab.width - size - 1 : 1)
@@ -533,8 +582,8 @@ final class DeckController {
             ? NSRect(x: lastEnd + Metrics.Plus.gap, y: bounds.height - size - 2, width: size, height: size)
             : NSRect(x: controlDepth, y: lastEnd + Metrics.Plus.gap, width: size, height: size)
         pinButton.frame = horizontal
-            ? plusButton.frame.offsetBy(dx: size + 5, dy: 0)
-            : plusButton.frame.offsetBy(dx: 0, dy: size + 5)
+            ? plusButton.frame.offsetBy(dx: size + Metrics.Plus.spacing, dy: 0)
+            : plusButton.frame.offsetBy(dx: 0, dy: size + Metrics.Plus.spacing)
 
         for control in [plusButton as NSView, pinButton] { control.alphaValue = fanned ? 1 : 0 }
         plusButton.isInteractive = fanned
@@ -619,6 +668,15 @@ final class DeckController {
 
     // MARK: - pointer
 
+    /// Moves the stack under the viewport. Clamped in `layoutSubviews`, which
+    /// is the only place that knows how long the stack currently is.
+    func scrollStack(by delta: CGFloat) {
+        guard state.isFannedOrBeyond, tabStackHeight > stackViewport else { return }
+        lastScroll = Date()
+        stackOffset -= delta
+        applyLayout(animated: false)
+    }
+
     private func pointerInside(_ point: NSPoint) {
         grace?.invalidate(); grace = nil
 
@@ -637,7 +695,12 @@ final class DeckController {
             // it is still a tab you are pointing at. Ignoring the whole card
             // rectangle, which is what this did first, meant you had to walk
             // almost to the far end of the next tab before it would answer.
-            let under = tabs.last { !$0.isHidden && $0.frame.insetBy(dx: 0, dy: -1).contains(point) }
+            // The tabs live inside the viewport now, so the point has to be
+            // taken there — and it has to be *in* the viewport, or a tab
+            // scrolled halfway out would answer for the half you cannot see.
+            let local = root.convert(point, to: stackClip)
+            guard stackClip.bounds.contains(local) else { return }
+            let under = tabs.last { !$0.isHidden && $0.frame.insetBy(dx: 0, dy: -1).contains(local) }
             if let under {
                 tabHovered(under)
             }
@@ -673,6 +736,10 @@ final class DeckController {
 
     private func tabHovered(_ tab: NoteTabView) {
         guard state.isFannedOrBeyond else { return }
+        // Scrolling drags tabs under a pointer that has not moved. Opening
+        // whatever passes underneath would make a flick down the deck open
+        // every note on the way.
+        guard Date().timeIntervalSince(lastScroll) > Motion.scrollQuiet else { return }
         if case .editing = state { return }
         // A note that is out on the desk does not re-open on the edge.
         guard floating[tab.record.id] == nil else { return }
@@ -816,8 +883,28 @@ final class DeckController {
         applyLayout(animated: true)
     }
 
+    /// Brings a tab inside the viewport, if it is not already.
+    ///
+    /// Opening a note has to show you the tab it comes out of — by keyboard, by
+    /// a followed link, or simply because it is the last one on a long deck.
+    /// Otherwise the card is clamped into view growing out of nothing.
+    private func scrollTabIntoView(_ id: String) {
+        guard let tab = tabs.first(where: { $0.record.id == id }) else { return }
+        let frame = tab.frame                       // in the viewport's coordinates
+        let length = stackClip.bounds.height > 0 && !horizontal
+            ? stackClip.bounds.height : stackClip.bounds.width
+        let near = horizontal ? frame.minX : frame.minY
+        let far = horizontal ? frame.maxX : frame.maxY
+        if near < 0 {
+            stackOffset += near
+        } else if far > length {
+            stackOffset += far - length
+        }
+    }
+
     private func preview(_ id: String) {
         guard state.isFannedOrBeyond, records.contains(where: { $0.id == id }) else { return }
+        scrollTabIntoView(id)
         cancelCollapse()
         commitPendingSave()
         state = .open(id)
@@ -1280,8 +1367,17 @@ final class DeckController {
 
     var panelFrame: NSRect { panel.frame }
     var pillFrame: NSRect { pill.frame }
-    var tabFrames: [NSRect] { tabs.map(\.frame) }
-    var debugTabFramesForTesting: [NSRect] { tabs.map(\.frame) }
+    /// In the panel's coordinates, not the viewport's. Every check asks where
+    /// a tab is on the strip; which view it hangs from is an implementation
+    /// detail that changed under them.
+    var tabFrames: [NSRect] { tabs.map { stackClip.convert($0.frame, to: root) } }
+    var debugTabFramesForTesting: [NSRect] { tabFrames }
+    /// The window the tabs are seen through, in the panel's coordinates.
+    var viewportFrame: NSRect { stackClip.frame }
+    /// How far the stack is scrolled, and how far it could be.
+    var scrollExtent: (offset: CGFloat, maximum: CGFloat) {
+        (stackOffset, max(0, tabStackHeight - min(tabStackHeight, max(0, stackViewport))))
+    }
     var tabRotations: [Double] { tabs.map(\.jitter.tabRotation) }
     var tabAlphas: [Double] { tabs.map { Double($0.layer?.opacity ?? 0) } }
     var plusFrame: NSRect { plusButton.frame }
@@ -1307,7 +1403,7 @@ final class DeckController {
     /// Where the tabs actually are on screen — the only frame of reference in
     /// which "the strip moved" means anything.
     func debugTabScreenFrames() -> [NSRect] {
-        tabs.map { panel.convertToScreen(root.convert($0.frame, to: nil)) }
+        tabs.map { panel.convertToScreen(stackClip.convert($0.frame, to: nil)) }
     }
 
     func debugPointerInside(_ point: NSPoint) { pointerInside(point) }
@@ -1395,6 +1491,7 @@ extension DeckController {
         var rotations: [Double]
         var tabAlpha: [Double]
         var plus: NSRect
+        var pin: NSRect
         var card: NSRect?
         var cardRotation: Double
         var liveRegion: NSRect
@@ -1419,6 +1516,7 @@ extension DeckController {
             rotations: tabRotations,
             tabAlpha: tabAlphas,
             plus: plusFrame,
+            pin: pinButton.frame,
             card: cardFrame,
             cardRotation: cardRotationDegrees,
             liveRegion: liveRegionRect,

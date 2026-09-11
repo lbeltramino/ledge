@@ -1423,6 +1423,11 @@ enum SelfTest {
     /// the card, where no tab is drawn, is the note you are reading, and a
     /// point there must not hover whatever the rectangles say is underneath.
     static func checkPointerAgainstAnOpenCard(deck: DeckController) async {
+        // The check before this one scrolls, and a tab under the pointer does
+        // not open while the wheel is still warm. That is the deck behaving as
+        // designed; this check is about hovering, so it waits the window out
+        // rather than measuring it.
+        try? await Task.sleep(for: .milliseconds(Int(Motion.scrollQuiet * 1000) + 120))
         await deck.refresh()
         let ids = deck.recordsForTesting.map(\.id)
         guard ids.count >= 2 else { check(false, "need two notes"); return }
@@ -1436,8 +1441,10 @@ enum SelfTest {
 
         // ---- the half that was reported: moving to the next tab must answer
         // where you first touch it, not at its far end.
-        guard let neighbour = visible.first(where: { $0.1.intersects(card) }) ?? visible.first else {
-            check(false, "no neighbouring tab"); return
+        let port = deck.viewportFrame
+        let reachable = visible.filter { port.contains($0.1) }
+        guard let neighbour = reachable.first(where: { $0.1.intersects(card) }) ?? reachable.first else {
+            check(false, "no neighbouring tab fully in view"); return
         }
         let near = NSPoint(x: neighbour.1.midX, y: neighbour.1.minY + neighbour.1.height * 0.12)
         deck.debugPointerInside(near)
@@ -1523,6 +1530,90 @@ enum SelfTest {
         // Collapsing the selection puts it away.
         view.setSelectedRange(NSRange(location: 3, length: 0))
         check(view.highlightBar.isHidden, "putting the caret down takes it away again")
+    }
+
+    /// A deck longer than the strip.
+    ///
+    /// Everything above assumes you can see the tab you are reaching for. Past
+    /// a handful of notes you cannot, and what used to happen is that the rest
+    /// were laid out below the bottom of the display: unreachable, at 34 pt
+    /// each, with the plus button among them.
+    static func checkScrollingDeck(deck: DeckController) async {
+        await deck.refresh()
+        let ids = deck.recordsForTesting.map(\.id)
+        guard ids.count > 8 else {
+            check(true, "this run has \(ids.count) notes; the crowded checks need more "
+                  + "(LEDGE_SELFTEST_NOTES=n)")
+            return
+        }
+
+        deck.fanOut(takingFocus: false)
+        let extent = deck.scrollExtent
+        check(extent.maximum > 0, "a deck this long has somewhere to scroll to")
+
+        // The peek: at the top, the tab at the far edge is cut by the viewport
+        // rather than by the screen. Half a tab is the whole announcement that
+        // there is more.
+        let port = deck.viewportFrame
+        let straddling = deck.debugTabFramesForTesting.filter {
+            $0.intersects(port) && $0.maxY > port.maxY + 0.5
+        }
+        check(!straddling.isEmpty,
+              "a tab is cut by the end of the window, so you can see there is more")
+
+        // It stops at both ends rather than running off.
+        deck.scrollStack(by: -100_000)
+        check(deck.scrollExtent.offset <= extent.maximum + 0.5,
+              String(format: "scrolling stops at the end: %.0f of %.0f",
+                     deck.scrollExtent.offset, extent.maximum))
+        let atEnd = deck.debugTabFramesForTesting.last
+        check(atEnd.map { $0.intersects(deck.viewportFrame) } == true,
+              "and the last note is there when you arrive")
+
+        deck.scrollStack(by: 100_000)
+        check(deck.scrollExtent.offset >= -0.5 && deck.scrollExtent.offset < 1,
+              String(format: "and at the start: %.1f", deck.scrollExtent.offset))
+        check(deck.debugTabFramesForTesting.first.map { $0.intersects(deck.viewportFrame) } == true,
+              "with the first note back in view")
+
+        // Scrolling drags tabs under a pointer that has not moved. Opening
+        // whatever goes past would make one flick open every note on the deck.
+        deck.closeNote()
+        deck.scrollStack(by: -200)
+        // Wholly inside, not merely touching: the point used below is the
+        // middle of the tab, and the middle of a half-clipped tab is outside
+        // the window — which is a fact about this check, not about the deck.
+        let arrivals = deck.debugTabFramesForTesting.enumerated()
+            .first { deck.viewportFrame.contains($0.element) }
+        if let arrivals {
+            deck.debugPointerInside(NSPoint(x: arrivals.element.midX, y: arrivals.element.midY))
+            try? await Task.sleep(for: .milliseconds(150))
+            check(deck.openNoteID == nil,
+                  "a tab dragged under the pointer by scrolling does not open itself")
+            // …but it opens once the wheel has been still for a moment.
+            try? await Task.sleep(for: .milliseconds(400))
+            deck.debugPointerInside(NSPoint(x: arrivals.element.midX, y: arrivals.element.midY))
+            try? await Task.sleep(for: .milliseconds(400))
+            check(deck.openNoteID != nil, "…and opens normally once the scrolling has stopped")
+            deck.closeNote()
+        }
+
+        // Opening a note off the end brings its tab back into view.
+        deck.scrollStack(by: 100_000)
+        if let last = ids.last {
+            deck.previewForTesting(last)
+            let tab = zip(deck.recordsForTesting, deck.debugTabFramesForTesting)
+                .first { $0.0.id == last }?.1
+            check(tab.map { $0.intersects(deck.viewportFrame) } == true,
+                  "opening the last note scrolls its tab into view, so the card has "
+                  + "something to grow out of")
+            deck.closeNote()
+        }
+
+        // And the stripe at rest says "a few notes", not two hundred.
+        check(PillView.shown(ids.count) <= PillView.mostDashes,
+              "the resting stripe shows at most \(PillView.mostDashes) dashes, "
+              + "not \(ids.count)")
     }
 
     /// Notes something else is writing to.
@@ -1824,6 +1915,7 @@ enum SelfTest {
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
         await checkHoverDoesNotMoveTheStrip(deck: deck)
+        await checkScrollingDeck(deck: deck)
         await checkPointerAgainstAnOpenCard(deck: deck)
         await checkConcurrentWriters(deck: deck, folder: deck.notesFolder)
 
@@ -2148,8 +2240,13 @@ enum SelfTest {
         let gaps = zip(fan.tabs, fan.tabs.dropFirst()).map { $0.maxX - $1.minX }
         check(gaps.allSatisfy { $0 >= 2 && $0 <= 6 },
               "tabs still bite into each other: " + gaps.map { String(format: "%.1f", $0) }.joined(separator: ", "))
-        check(fan.tabs.allSatisfy { $0.minX >= -0.5 && $0.maxX <= fan.panel.width + 0.5 },
-              "the whole row fits inside the panel")
+        // As with a side strip: past a few notes the row is longer than the
+        // screen and scrolls, so what has to hold is that the window onto it is
+        // inside the panel and something is in view.
+        let rowPort = deck.viewportFrame
+        check(rowPort.minX >= -0.5 && rowPort.maxX <= fan.panel.width + 0.5,
+              "the window onto the row is inside the panel")
+        check(fan.tabs.contains { $0.intersects(rowPort) }, "at least one tab is in view")
 
         let labels = deck.debugLabelBoxes()
         check(labels.allSatisfy { $0.box.maxX <= $0.bounds.width + 0.5 && $0.box.minX >= -0.5 },
@@ -2251,9 +2348,15 @@ enum SelfTest {
             check(Set(lengths.map { Int($0) }).count > 1,
                   "a longer title makes a longer tab: "
                   + lengths.map { String(format: "%.0f", $0) }.joined(separator: ", "))
-            check(zip(deck.debugTitles(), lengths).sorted { $0.0.count < $1.0.count }
-                    .map(\.1) == lengths.sorted(),
-                  "tab length follows title length, in order")
+            // Against the length the title actually asks for, not against how
+            // many characters it has. That worked while the labels were set in
+            // a typewriter face, where every letter is the same width; with a
+            // proportional one "WWW" is half again as long as "III" and the
+            // count predicts nothing.
+            let wanted = deck.debugTitles().map { NoteTabView.naturalHeight(for: $0) }
+            let off = zip(lengths, wanted).map { abs($0 - $1) }.max() ?? 0
+            check(off < 0.5,
+                  String(format: "each tab is the length its own title asks for (worst gap %.1f pt)", off))
         }
         check(lengths.allSatisfy { $0 <= Metrics.Tab.maxHeight + 0.5 },
               "no tab grows past the configured limit")
@@ -2269,9 +2372,25 @@ enum SelfTest {
         check(fan.rotations.allSatisfy { abs($0) > 0.2 && abs($0) <= 0.6 },
               "every tab leans, none sits square: "
               + fan.rotations.map { String(format: "%.2f°", $0) }.joined(separator: ", "))
-        check(fan.tabs.allSatisfy { $0.minY >= 0 && $0.maxY <= fan.panel.height },
-              "the whole stack fits inside the panel")
-        check(fan.plus.minY > (fan.tabs.last?.maxY ?? 0), "the + sits below the last tab")
+        // The stack is longer than the strip as soon as you have a few notes,
+        // so what has to hold is not that all of it fits but that all of it is
+        // *reachable*: the window it is seen through is inside the panel, and
+        // nothing is laid out somewhere scrolling cannot bring it back.
+        let viewport = deck.viewportFrame
+        check(viewport.minY >= 0 && viewport.maxY <= fan.panel.height + 0.5,
+              "the window onto the stack is inside the panel")
+        let inView = fan.tabs.filter { $0.intersects(viewport) }
+        check(!inView.isEmpty, "at least one tab is in view")
+        check(inView.allSatisfy { $0.maxY <= viewport.maxY + $0.height },
+              "no tab is laid out past the end of the window it is seen through")
+        check(fan.plus.minY >= viewport.maxY - 0.5,
+              "the + sits after the window, where scrolling cannot take it away")
+        // Reported: the pin came out half off the end. The viewport subtracts
+        // the room these need, so if either one lands outside the panel the two
+        // sums have drifted apart again.
+        check(fan.plus.maxY <= fan.panel.height + 0.5 && fan.pin.maxY <= fan.panel.height + 0.5,
+              String(format: "both controls fit on the strip: + ends at %.0f, pin at %.0f, panel is %.0f",
+                     fan.plus.maxY, fan.pin.maxY, fan.panel.height))
         check(fan.liveRegion.contains(fan.plus.insetBy(dx: 1, dy: 1)),
               "reaching down to the + does not fall outside the deck and collapse it")
 
