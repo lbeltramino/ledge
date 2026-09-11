@@ -1681,6 +1681,49 @@ enum SelfTest {
               "…and puts the caret on it")
         check(!card.debugOutlineVisible, "and the index closes behind you")
 
+        // ---- an index longer than the room for it
+        let many = (1...24).map { "## Sección \($0)\n\ntexto\n" }.joined()
+        let big = NoteCardView(record: record, body: "# Cabeza\n\n" + many)
+        big.frame = NSRect(x: 0, y: 0, width: 320, height: 420)
+        big.layoutSubtreeIfNeeded()
+        big.debugOpenOutline()
+        big.layoutSubtreeIfNeeded()
+        let list = big.debugOutline
+        check(list.scrollRoom > 0,
+              String(format: "an index of 25 headings has somewhere to scroll (%.0f pt)",
+                     list.scrollRoom))
+
+        // The rows and the hit testing move together, or you scroll to a
+        // heading and clicking it takes you to a different one.
+        let row = NSPoint(x: list.bounds.midX, y: list.bounds.midY)
+        let atTop = big.debugOutlineHit(at: row)
+        list.scroll(by: -list.bounds.height)
+        big.layoutSubtreeIfNeeded()
+        list.displayIfNeeded()
+        let after = big.debugOutlineHit(at: row)
+        check(atTop != nil && after != nil && atTop != after,
+              "scrolling changes which heading is under a given point: "
+              + "\(atTop.map(String.init) ?? "none") then \(after.map(String.init) ?? "none")")
+
+        // And it stops at both ends rather than running off.
+        list.scroll(by: -100_000)
+        list.displayIfNeeded()
+        check(abs(list.scrollOffset - list.scrollRoom) < 0.5,
+              String(format: "the index stops at its end: %.0f of %.0f",
+                     list.scrollOffset, list.scrollRoom))
+        list.scroll(by: 100_000)
+        list.displayIfNeeded()
+        check(list.scrollOffset < 0.5, "and at its start")
+        check(big.debugOutlineHit(at: row) == atTop, "…with the same heading back under the pointer")
+
+        // A short index does not scroll at all. Opened and laid out first: a
+        // panel that has never been given a size has no room for anything.
+        card.debugOpenOutline()
+        card.layoutSubtreeIfNeeded()
+        check(card.debugOutline.scrollRoom == 0,
+              String(format: "an index that fits has nowhere to scroll (%.0f pt of room)",
+                     card.debugOutline.scrollRoom))
+
         // ---- dropping on the edge
         let board = NSPasteboard(name: NSPasteboard.Name("ledge.selftest.drop"))
         board.clearContents()

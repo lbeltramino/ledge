@@ -12,6 +12,10 @@ final class OutlineBar: NSView {
 
     private var items: [Headings.Item] = []
     private var rows: [NSRect] = []
+    /// How far the list has been pushed up past the top of the panel. Long
+    /// notes have more headings than there is room for, and a list you cannot
+    /// reach the end of is worse than no list.
+    private var offset: CGFloat = 0
     private var hovered: Int?
     private var tracking: NSTrackingArea?
 
@@ -23,14 +27,36 @@ final class OutlineBar: NSView {
     private var rowHeight: CGFloat { max(18, Metrics.Card.titleSize * 1.5) }
     private var font: NSFont { .systemFont(ofSize: max(9, Metrics.Card.titleSize * 0.82)) }
 
-    /// As tall as its list, up to a point: past that it is a wall of text, and
-    /// the note underneath has disappeared.
+    /// As tall as its list, up to a point: past that it is a wall of text and
+    /// the note underneath has disappeared. Beyond the cap the list scrolls.
     func height(for count: Int) -> CGFloat {
-        min(CGFloat(min(count, 9)) * rowHeight + 10, 260)
+        min(CGFloat(count) * rowHeight + 10, 260)
+    }
+
+    /// The whole list, whether or not it fits.
+    private var contentHeight: CGFloat { CGFloat(items.count) * rowHeight + 10 }
+
+    /// How far it can be pushed before the last heading is at the bottom.
+    var scrollRoom: CGFloat { max(0, contentHeight - bounds.height) }
+    var scrollOffset: CGFloat { offset }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard scrollRoom > 0 else { return }
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 10
+        scroll(by: delta)
+    }
+
+    /// Moves the list. Clamped here rather than in `draw`, so the offset is
+    /// never a value the hit testing below has to be told to distrust.
+    func scroll(by delta: CGFloat) {
+        let wanted = offset - delta
+        offset = max(0, min(wanted, scrollRoom))
+        needsDisplay = true
     }
 
     func show(_ found: [Headings.Item], paper: NSColor, ink: NSColor) {
         items = found
+        offset = 0
         self.paper = paper
         self.ink = ink
         hovered = nil
@@ -57,9 +83,30 @@ final class OutlineBar: NSView {
 
     override func mouseExited(with event: NSEvent) { hovered = nil; needsDisplay = true }
 
+    /// Where each row is, given the list, the offset and the room.
+    ///
+    /// Worked out here rather than while drawing, so that what a click lands on
+    /// does not depend on whether the view has been on screen yet — it did, and
+    /// the check that noticed could not have been written any other way.
+    private func layoutRows() {
+        offset = max(0, min(offset, scrollRoom))
+        rows = items.indices.map { index in
+            NSRect(x: 1, y: 5 - offset + CGFloat(index) * rowHeight,
+                   width: max(0, bounds.width - 2), height: rowHeight)
+        }
+    }
+
+    /// The row a point lands on, in this view's coordinates.
+    func indexOfRow(at point: NSPoint) -> Int? {
+        guard bounds.contains(point) else { return nil }
+        layoutRows()
+        return rows.firstIndex { $0.contains(point) }
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        guard let index = rows.firstIndex(where: { $0.contains(point) }), index < items.count else {
+        guard bounds.contains(point),
+              let index = rows.firstIndex(where: { $0.contains(point) }), index < items.count else {
             onClose?()
             return
         }
@@ -91,11 +138,17 @@ final class OutlineBar: NSView {
         plate.lineWidth = 1
         plate.stroke()
 
-        rows = []
-        var y: CGFloat = 5
-        for (index, item) in items.prefix(9).enumerated() {
-            let row = NSRect(x: 1, y: y, width: bounds.width - 2, height: rowHeight)
-            rows.append(row)
+        // Clipped to the panel, so the row at the boundary is cut in half —
+        // the same announcement the deck makes: there is more, scroll.
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: bounds).addClip()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+
+        layoutRows()
+        for (index, item) in items.enumerated() {
+            let row = rows[index]
+            let y = row.minY
+            guard row.intersects(bounds) else { continue }
 
             if hovered == index {
                 ink.withAlphaComponent(0.08).setFill()
@@ -116,14 +169,7 @@ final class OutlineBar: NSView {
             fitted.draw(at: NSPoint(x: 10 + indent,
                                     y: y + (rowHeight - font.pointSize * 1.3) / 2),
                         withAttributes: attributes)
-            y += rowHeight
         }
 
-        if items.count > 9 {
-            let more = "+\(items.count - 9)" as NSString
-            more.draw(at: NSPoint(x: 10, y: bounds.height - 15),
-                      withAttributes: [.font: NSFont.systemFont(ofSize: font.pointSize * 0.85),
-                                       .foregroundColor: ink.withAlphaComponent(0.40)])
-        }
     }
 }

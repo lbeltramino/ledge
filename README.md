@@ -84,7 +84,8 @@ SQLite index beside it is a cache you can delete at any moment.
   one typed by hand are the same file. `⌘⇧H` does the same from the keyboard.
 - **The headings, as somewhere to jump.** A note with two headings or more
   offers a small index beside the button that opens the editor: the outline,
-  indented by level, click one and you are there. Nothing is written into the
+  indented by level, click one and you are there. A long one scrolls under the
+  wheel, cut off at the edge the way the deck is. Nothing is written into the
   note — no `[TOC]`, no markers to go stale — and a `# comment` inside a code
   block is a comment, not a heading.
 - **Drop things on the edge.** Drag a selection out of any app, or a text file

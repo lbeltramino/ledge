@@ -398,6 +398,10 @@ final class NoteCardView: NSView {
     var debugOutlineVisible: Bool { !outline.isHidden }
     func debugOpenOutline() { showOutline() }
     func debugPickOutline(_ item: Headings.Item) { jump(to: item) }
+    var debugOutline: OutlineBar { outline }
+    /// Which heading a click at this point would take, so a check can prove the
+    /// list and its hit testing move together.
+    func debugOutlineHit(at point: NSPoint) -> Int? { outline.indexOfRow(at: point) }
 
     func beginFind() {
         isFinding = true
