@@ -12,23 +12,6 @@ public enum NoteColor: String, CaseIterable, Sendable, Codable {
     }
 }
 
-/// The hand a note is written in, when it asks for one of its own.
-///
-/// Nil on a note that has not: those follow whatever the app is set to, which
-/// is what almost every note does. Written into the file, because it is a fact
-/// about the note — it should look the same on your other machine.
-public enum NoteFace: String, Sendable, Codable, CaseIterable {
-    case casual
-    case legible
-
-    public var label: String {
-        switch self {
-        case .casual: return "Handwritten"
-        case .legible: return "Legible"
-        }
-    }
-}
-
 public enum NoteState: String, Sendable, Codable {
     case active, archived
 }
@@ -49,8 +32,6 @@ public struct Note: Sendable, Equatable, Identifiable {
     /// note — it should follow it to your other machine, and survive a rebuild
     /// of the index.
     public var feed: String
-    /// The hand this note is written in, or nil to follow the app.
-    public var face: NoteFace?
     public var created: Date
     public var updated: Date
     public var body: String
@@ -68,7 +49,6 @@ public struct Note: Sendable, Equatable, Identifiable {
         tags: [String] = [],
         strip: String = "",
         feed: String = "",
-        face: NoteFace? = nil,
         created: Date = Date(),
         updated: Date = Date(),
         body: String = "",
@@ -82,7 +62,6 @@ public struct Note: Sendable, Equatable, Identifiable {
         self.tags = tags
         self.strip = strip
         self.feed = feed
-        self.face = face
         self.created = Frontmatter.normalized(created)
         self.updated = Frontmatter.normalized(updated)
         self.body = body

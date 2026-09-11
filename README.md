@@ -73,11 +73,6 @@ SQLite index beside it is a cache you can delete at any moment.
   top right; click it and the block is on your clipboard without its fences,
   ready to paste into a terminal. `⌘⇧C` does the same for the block the caret is
   in.
-- **A hand per note.** Beside the five papers are two buttons, each drawn in the
-  hand it picks: the handwritten one and a plain one that stays legible at
-  length. Press one and that note is written in it whatever the app is set to;
-  press it again and the note goes back to following the app. The choice is in
-  the file, so the note looks the same on your other machine.
 - **The small things.** Paste a URL over some words and they become the link
   text. Type a bracket or a quote with something selected and it wraps rather
   than replaces. `⌥↑` and `⌥↓` move the line you are on, renumbering the list
@@ -272,7 +267,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 196 unit tests
+swift run ledge-tests                               # 195 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -338,15 +333,13 @@ state: active
 rank: a0V
 tags: [work]
 strip: left-1
-face: legible
 created: 2026-08-29T21:06:12Z
 updated: 2026-08-29T21:31:44Z
 ---
 - understand all the apis listed
 ```
 
-`face` is there only on a note that asks for a hand of its own; leave it out and
-the note follows the app. `id` is a ULID and never changes, so retitling renames the file without the app
+`id` is a ULID and never changes, so retitling renames the file without the app
 losing the note. `rank` is a fractional index, so dragging one note in the deck
 rewrites exactly one file instead of every file below it. Keys written by other
 tools are preserved verbatim.
