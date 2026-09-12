@@ -287,6 +287,11 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
 
     // MARK: - applying
 
+    /// Called after every pass. The note's drawings reserve room with a
+    /// paragraph style, and a pass here can overwrite it — so whoever owns the
+    /// drawings gets told to put it back.
+    var onDidHighlight: (() -> Void)?
+
     func highlight(_ storage: NSTextStorage) {
         highlight(storage, in: NSRange(location: 0, length: storage.length))
     }
@@ -321,6 +326,7 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             }
         }
         storage.endEditing()
+        onDidHighlight?()
     }
 
     /// The smallest range that can be re-highlighted correctly after an edit.

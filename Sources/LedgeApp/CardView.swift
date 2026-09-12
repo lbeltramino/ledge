@@ -141,6 +141,7 @@ final class NoteCardView: NSView {
         textView.strokeSeed = record.id
         textView.textStorage?.delegate = markdown
         if let storage = textView.textStorage { markdown.highlight(storage) }
+        markdown.onDidHighlight = { [weak self] in self?.textView.reserveMediaRoom() }
         highlighter = markdown
         textView.onChange = { [weak self] in
             guard let self else { return }
@@ -1152,13 +1153,7 @@ final class NoteTextView: NSTextView {
             let height = MediaView.height(of: content, available: available)
             mediaHeights[item.range.location] = height
 
-            // Only the last line of the reference: paragraph spacing lands
-            // after every paragraph in the range it is set on, and a fenced
-            // diagram is a range of several. Setting it on all of them would
-            // space the fence out like a poem.
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.paragraphSpacing = height
-            storage.addAttribute(.paragraphStyle, value: paragraph, range: lastLine(of: item.range))
+            reserveRoom(height, on: lastLine(of: item.range), in: storage)
         }
 
         for (location, view) in mediaViews where !seen.contains(location) {
@@ -1167,6 +1162,50 @@ final class NoteTextView: NSTextView {
             mediaHeights.removeValue(forKey: location)
         }
         needsLayout = true
+        layoutMedia()
+    }
+
+    /// Reserves the room a drawing needs after the line it hangs from.
+    ///
+    /// Built on top of whatever paragraph style is already there rather than
+    /// replacing it: the closing fence of a mermaid block is part of a code
+    /// block, and the highlighter indents those. A fresh style here would take
+    /// the indent away, the same way the highlighter's style took this
+    /// reservation away — see `reserveMediaRoom`.
+    ///
+    /// Only the last line of the reference: paragraph spacing lands after every
+    /// paragraph in the range it is set on, and a fenced diagram is several.
+    private func reserveRoom(_ height: CGFloat, on line: NSRange, in storage: NSTextStorage) {
+        guard line.location != NSNotFound, NSMaxRange(line) <= storage.length,
+              line.length > 0 else { return }
+        let existing = storage.attribute(.paragraphStyle, at: line.location,
+                                         effectiveRange: nil) as? NSParagraphStyle
+        let paragraph = (existing?.mutableCopy() as? NSMutableParagraphStyle)
+            ?? NSMutableParagraphStyle()
+        guard paragraph.paragraphSpacing != height else { return }
+        paragraph.paragraphSpacing = height
+        storage.addAttribute(.paragraphStyle, value: paragraph, range: line)
+    }
+
+    /// Puts the room back after the highlighter has been over the note.
+    ///
+    /// The highlighter runs on a `DispatchQueue.main.async` after every edit —
+    /// so it always runs *after* `refreshMedia` — and its fenced-code rule sets
+    /// a paragraph style over the whole block, closing fence included. That
+    /// silently deleted the reservation, and the text below a diagram ended up
+    /// behind it until you typed blank lines in by hand. Which is how it was
+    /// reported.
+    ///
+    /// Cheap on purpose: no decoding, no measuring, just the attribute. Adding
+    /// an attribute does not re-enter the highlighter, which only listens for
+    /// changed characters.
+    func reserveMediaRoom() {
+        guard let storage = textStorage, !mediaHeights.isEmpty else { return }
+        let items = Media.all(in: string)
+        for item in items {
+            guard let height = mediaHeights[item.range.location] else { continue }
+            reserveRoom(height, on: lastLine(of: item.range), in: storage)
+        }
         layoutMedia()
     }
 

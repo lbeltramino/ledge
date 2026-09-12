@@ -1866,6 +1866,129 @@ enum SelfTest {
               "a small picture is not blown up to fill the note: \(smallImage.size.width)")
     }
 
+    /// The same invariant as `checkDrawnMedia`, after typing.
+    ///
+    /// Every check about drawings measured a note nobody had touched, which is
+    /// how this was reported instead of caught: editing a reference left the
+    /// text after it behind the drawing until you put blank lines in by hand.
+    static func checkMediaSurvivesTyping() {
+        let note = """
+        Antes.
+
+        ![una grande](resources/img/big.png)
+
+        ```mermaid
+        graph TD
+            A[Una] --> B[Otra]
+        ```
+
+        Después de todo.
+        """
+        let record = NoteRecord(note: Note(title: "Editando"), filename: "e.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 900)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        /// Does the text after the drawings still start below them?
+        ///
+        /// Pumps the run loop first, on purpose: the highlighter re-runs on a
+        /// `DispatchQueue.main.async` after an edit, so anything that asserts
+        /// straight after typing is measuring a note the highlighter has not
+        /// touched yet — which is how this whole class of bug stayed invisible.
+        func tailClearsDrawings(_ when: String) {
+            for _ in 0..<3 {
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+            }
+            card.layoutSubtreeIfNeeded()
+            guard let manager = view.layoutManager, let container = view.textContainer else {
+                check(false, "no layout manager"); return
+            }
+            manager.ensureLayout(for: container)
+            let tail = (view.string as NSString).range(of: "Después de todo.")
+            guard tail.location != NSNotFound else {
+                check(false, "the closing line went missing \(when)"); return
+            }
+            let glyphs = manager.glyphRange(forCharacterRange: tail, actualCharacterRange: nil)
+            let box = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            let frames = view.debugMediaFrames.sorted { $0.minY < $1.minY }
+            guard let last = frames.last else { check(false, "nothing drawn \(when)"); return }
+            check(box.minY >= last.maxY - 2,
+                  String(format: "the text clears the drawings %@ (%.0f vs %.0f)",
+                         when, box.minY, last.maxY))
+        }
+
+        tailClearsDrawings("before any typing")
+
+        // Typing inside the image's path — the reference is briefly not one.
+        let path = (view.string as NSString).range(of: "big.png")
+        view.setSelectedRange(NSRange(location: path.location, length: 0))
+        view.insertText("x", replacementRange: view.selectedRange())
+        tailClearsDrawings("while the path is being edited")
+
+        view.insertText("", replacementRange: NSRange(location: path.location, length: 1))
+        tailClearsDrawings("and once it is a picture again")
+
+        // And inside the diagram.
+        let inside = (view.string as NSString).range(of: "A[Una]")
+        view.setSelectedRange(NSRange(location: NSMaxRange(inside), length: 0))
+        view.insertText(" --> C[Tercera]", replacementRange: view.selectedRange())
+        tailClearsDrawings("after adding a node to the diagram")
+
+        // The highlighter, run the way the app runs it after an edit.
+        //
+        // Called straight rather than waited for: it goes out on a
+        // `DispatchQueue.main.async`, so it always lands *after* the media has
+        // reserved its room, and its fenced-code rule sets a paragraph style
+        // over the whole block — closing fence included. That deleted the
+        // reservation and put the text behind the diagram. A check that types
+        // and measures without letting it run sees none of this, which is why
+        // four of them passed while the bug was on screen.
+        let ns = view.string as NSString
+        let fence = ns.range(of: "```", options: .backwards)
+        if let storage = view.textStorage,
+           let highlighter = storage.delegate as? MarkdownHighlighter,
+           fence.location != NSNotFound {
+            highlighter.highlight(storage,
+                                  in: MarkdownHighlighter.dirtyRange(for: ns.range(of: "A[Una]"),
+                                                                     in: ns))
+            let style = storage.attribute(.paragraphStyle, at: fence.location,
+                                          effectiveRange: nil) as? NSParagraphStyle
+            check((style?.paragraphSpacing ?? 0) > 40,
+                  String(format: "the room survives a highlighting pass (%.0f pt)",
+                         style?.paragraphSpacing ?? 0))
+            // And the highlighter's own work survives the room being put back.
+            check((style?.headIndent ?? 0) == 10,
+                  String(format: "…and the fence is still indented like code (%.0f)",
+                         style?.headIndent ?? 0))
+        }
+        tailClearsDrawings("after the highlighter has been over it")
+
+        // The same for a picture. It is not only the fenced-code rule: a pass
+        // begins by setting every attribute in the range it covers, so any line
+        // it touches loses its reservation — which is why this was reported for
+        // image references as well as diagrams.
+        let reference = ns.range(of: "![una grande]")
+        if let storage = view.textStorage,
+           let highlighter = storage.delegate as? MarkdownHighlighter,
+           reference.location != NSNotFound {
+            highlighter.highlight(storage,
+                                  in: MarkdownHighlighter.dirtyRange(for: reference, in: ns))
+            let style = storage.attribute(.paragraphStyle, at: reference.location,
+                                          effectiveRange: nil) as? NSParagraphStyle
+            check((style?.paragraphSpacing ?? 0) > 40,
+                  String(format: "a picture's room survives it too (%.0f pt)",
+                         style?.paragraphSpacing ?? 0))
+        }
+        tailClearsDrawings("after a pass over the picture")
+
+        // And a line typed above everything, which moves every range below it.
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        view.insertText("Una línea nueva arriba\n", replacementRange: view.selectedRange())
+        tailClearsDrawings("after typing a line above them")
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -2447,6 +2570,7 @@ enum SelfTest {
         checkDrawnTables()
         checkDrawnMedia()
         checkMediaOnEverySurface()
+        checkMediaSurvivesTyping()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

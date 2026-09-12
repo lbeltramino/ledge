@@ -47,6 +47,10 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         )
         super.init()
 
+        // The same hazard as the card: a highlighting pass overwrites the room
+        // a drawing reserved, so it is put back after every one.
+        highlighter.onDidHighlight = { [weak self] in self?.textView.reserveMediaRoom() }
+
         // Under ARC this must be false: AppKit would otherwise release the
         // window on close while `editors[id]` still holds it.
         window.isReleasedWhenClosed = false
