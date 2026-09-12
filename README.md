@@ -86,6 +86,17 @@ SQLite index beside it is a cache you can delete at any moment.
   you were reading, not at the first line — which on a long note is the same
   thing as having lost it. For the session: a fresh launch opens a note at its
   beginning.
+- **Pictures, drawn.** `![alt](resources/img/thing.png)` on a line of its own
+  shows the picture under the line, and the markdown stays there to edit. They
+  live in one folder beside the notes, so the whole thing is still a directory
+  you can copy or sync. Nothing is fetched: a reference to somebody's server
+  stays plain text, because the app has never made a network request and an
+  image tag is not the place to start.
+- **Mermaid diagrams.** A ```` ```mermaid ```` block is drawn the way GitHub
+  draws it — flowcharts, sequence diagrams, pie charts — under the fence that
+  defines it, with the source still there to change. Drawn with CoreGraphics by
+  [swift-mermaid](https://github.com/Australware/swift-mermaid): no JavaScript,
+  no WebView, no network.
 - **Tables, drawn.** A Markdown table is rendered while you are reading it —
   ruled, aligned, the header set apart — and the note still says pipes and
   dashes. It is locked: a click is not an edit. Press the padlock and it becomes
@@ -196,9 +207,10 @@ build from source there, or ask and it can ship as a universal binary.
 To build: a Swift 6 toolchain. **Xcode is not required** — the Swift Command
 Line Tools are enough.
 
-The download is 1.3 MB. Unpacked it is 3.4 MB: a 2.1 MB app, the 776 KB `ledge`
-command beside it, a 396 KB handwriting font and a 212 KB icon. There are no
-third-party frameworks and nothing is embedded — no runtime, no browser.
+The download is 2.0 MB. Unpacked it is 5.2 MB: a 3.8 MB app, the 808 KB `ledge`
+command beside it, a 396 KB handwriting font and a 212 KB icon. Drawing Mermaid
+diagrams is 1.6 MB of that app, and it is the only third-party code in it —
+nothing else is embedded, no runtime and no browser.
 
 ## Build and run
 
@@ -223,7 +235,7 @@ Measured on an idle Mac with five notes, by `--diagnose` and by macOS itself:
 
 | | |
 |---|---|
-| Memory | **13 MB** — the `phys_footprint` Activity Monitor shows |
+| Memory | **14 MB** — the `phys_footprint` Activity Monitor shows |
 | CPU, idle | **0.0%** across ten one-second samples |
 | Threads | 3 |
 | Highlighting | **under 0.1 ms** per keystroke, at 20 lines or at 1000 |
@@ -231,8 +243,11 @@ Measured on an idle Mac with five notes, by `--diagnose` and by macOS itself:
 Resident size reads around 68 MB, and almost all of that is shared AppKit pages
 every Mac app maps. The number that costs you something is the footprint.
 
-It was 12 MB when this table was first written and is 13.4 MB now, measured from
-outside the process with `vmmap --summary` after eighteen idle seconds. For
+It was 12 MB when this table was first written and is 13.8 MB now, measured from
+outside the process with `vmmap --summary` after eighteen idle seconds. Pictures
+and diagrams cost nothing until a note that has one is open: about 0.4 MB of
+that figure is the diagram code being mapped, and a 2000×1500 photograph adds
+1.4 MB while you are looking at it rather than the 11.4 MB it weighs decoded. For
 comparison, on the machine that number came from: Notes 103 MB, Chrome 281 MB,
 Safari 496 MB.
 
@@ -378,7 +393,8 @@ macOS asks for. It cannot drift away from the thing it stands for.
 ## Where the notes live
 
 `~/Documents/Ledge` by default, one Markdown file per note, with a hidden
-`.index.sqlite3` beside them that you can delete at any time.
+`.index.sqlite3` beside them that you can delete at any time, and
+`resources/img/` for the pictures the notes point at.
 
 **Choose notes folder…** in the menu bar item points Ledge somewhere else, and
 offers to bring the notes with it. Put it in iCloud Drive and it syncs — every
@@ -491,6 +507,56 @@ agent the above. Copy it to `~/.claude/skills/` to have it available everywhere.
 
 If you installed with Homebrew, `ledge` is already on your PATH. Otherwise it is
 at `/Applications/Ledge.app/Contents/MacOS/ledge-cli`.
+
+## Pictures and diagrams
+
+An image reference on a line of its own is drawn under the line:
+
+```markdown
+![The deck, fanned](resources/img/deck.png)
+```
+
+The markdown stays visible and stays editable — you see the reference and the
+picture at once, which is what keeps this a note rather than a document with
+attachments. Tables hide their source because a table *is* its layout; a picture
+is not, so nothing is hidden here.
+
+Pictures live in **`resources/img/`** beside the notes, and paths are resolved
+from there. One folder for the lot, so a notes folder is still something you can
+copy to another machine, put in a git repo or hand to someone as a directory.
+Paths that climb out of it, absolute paths, and `https://` references are left
+as plain markdown and never opened: Ledge has never made a network request, and
+an image tag is not the place to start.
+
+**Nothing is ever decoded at its own size.** The file's dimensions are read from
+its header — no pixels — the display size is worked out from those, and ImageIO
+is asked for a thumbnail of exactly the pixels that will be drawn. A 4000×3000
+photograph is 46 MB decoded whole and 1.9 MB at the width a note gives it. Small
+pictures are never blown up, and nothing is drawn taller than 420 pt, so one
+screenshot cannot take over a note.
+
+A ```` ```mermaid ```` block is drawn under its closing fence:
+
+````markdown
+```mermaid
+graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Do it]
+    B -->|No| D[Do the other thing]
+```
+````
+
+Flowcharts, sequence diagrams, state diagrams and pie charts, drawn with
+CoreGraphics by [swift-mermaid](https://github.com/Australware/swift-mermaid)
+(MIT, by Australware) — no JavaScript, no WebView, no network. It was picked by
+measurement: 1.6 MB of binary and about 0.4 MB of footprint, against 35-45 MB
+for the same diagram rendered in a `WKWebView`, which is three times the whole
+app. A block Mermaid cannot parse says so on the paper in a quiet line rather
+than leaving a gap you would read as a note that failed to load.
+
+Pictures and diagrams are drawn on the deck's card, on a note pulled onto the
+desk, and in the full-size editor — all three, because they are drawn by the
+text view all three share.
 
 ## Tables
 
