@@ -283,6 +283,7 @@ enum SelfTest {
         [a link](https://example.com/x)
         [relative](./otra-nota.md)
         ![a picture](resources/img/x.png)
+        ![a remote picture](https://example.com/x.png)
 
         ```swift
         let answer = 42
@@ -333,6 +334,11 @@ enum SelfTest {
         // reference gave when its alt text was linkified.
         check(attribute(.link, at: "a picture") == nil,
               "the alt text of a picture is not a link to follow")
+        // The one the scheme check alone does not save: a remote picture's URL
+        // *is* openable, so only refusing to match after a `!` keeps its alt
+        // text from becoming a link.
+        check(attribute(.link, at: "a remote picture") == nil,
+              "…nor a remote picture's, which is a perfectly good URL")
         check(attribute(.underlineStyle, at: "a picture") == nil,
               "…and is not underlined as though it were")
         check(attribute(.link, at: "relative") == nil,
