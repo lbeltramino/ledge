@@ -97,6 +97,11 @@ SQLite index beside it is a cache you can delete at any moment.
   defines it, with the source still there to change. Drawn with CoreGraphics by
   [swift-mermaid](https://github.com/Australware/swift-mermaid): no JavaScript,
   no WebView, no network.
+- **Paste a screenshot.** ⌘V with a picture on the clipboard writes it into
+  `resources/img/` and drops the reference in, on a line of its own. A file
+  copied in Finder is copied across as it is; pixels copied out of an app are
+  written as a PNG. A clipboard that also has words on it is still a text
+  paste.
 - **Take a drawing with you.** Hover a picture or a diagram and the same mark a
   code block shows appears at its top right. Click it and the drawing is on the
   clipboard: a picture at the quality of its file, a diagram redrawn at its own
@@ -558,6 +563,13 @@ measurement: 1.6 MB of binary and about 0.4 MB of footprint, against 35-45 MB
 for the same diagram rendered in a `WKWebView`, which is three times the whole
 app. A block Mermaid cannot parse says so on the paper in a quiet line rather
 than leaving a gap you would read as a note that failed to load.
+
+**⌘V with a picture on the clipboard** writes it into `resources/img/` and
+inserts the reference. A file copied in Finder is copied across untouched —
+re-encoding somebody's JPEG would be a quiet loss — and pixels copied out of an
+app are written as a PNG, stamped with the time and never overwriting a picture
+already there. A clipboard carrying words as well as pixels, which is what
+copying out of a browser gives you, is still a text paste.
 
 Hovering either offers the copy mark from the top right — the one a code block
 uses — and clicking it puts the drawing on the clipboard. A picture goes as its
