@@ -2026,8 +2026,26 @@ enum SelfTest {
                                 mtime: 0, size: 0, hash: "")
         let card = NoteCardView(record: record, body: note)
         card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        // In a real window, so the pointer can be moved the way a pointer is
+        // moved: `mouseMoved` converts from window coordinates, and a check
+        // that calls the hover method directly proves nothing about what
+        // happens when somebody points at a picture.
+        let window = NSWindow(contentRect: card.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.contentView?.addSubview(card)
         card.layoutSubtreeIfNeeded()
         let view = card.textView
+
+        /// Points at a spot in the text view, through `mouseMoved`.
+        func point(at spot: NSPoint) {
+            let inWindow = view.convert(spot, to: nil)
+            guard let event = NSEvent.mouseEvent(with: .mouseMoved, location: inWindow,
+                                                 modifierFlags: [], timestamp: 0,
+                                                 windowNumber: window.windowNumber, context: nil,
+                                                 eventNumber: 0, clickCount: 0, pressure: 0)
+            else { return }
+            view.mouseMoved(with: event)
+        }
 
         let frames = view.debugMediaFrames.sorted { $0.minY < $1.minY }
         check(frames.count == 2, "a picture and a diagram to copy: \(frames.count)")
@@ -2037,12 +2055,28 @@ enum SelfTest {
 
         // Over the picture.
         let onPicture = NSPoint(x: frames[0].minX + 20, y: frames[0].midY)
-        check(view.debugHoverMedia(at: onPicture), "hovering a picture offers the mark")
+        point(at: onPicture)
+        check(view.debugMediaCopyFrame != nil,
+              "pointing at a picture offers the mark")
         guard let mark = view.debugMediaCopyFrame else {
             check(false, "no mark over the picture"); return
         }
         check(frames[0].contains(NSPoint(x: mark.midX, y: mark.midY)),
               "and it sits on the drawing, not beside it")
+
+        // On top of the drawing, not under it. The mark is made once at set-up
+        // and the drawings are added later, so it ends up behind them in the
+        // subview order — visible to every check that asks whether it is shown,
+        // and invisible to anyone actually looking at the note.
+        let order = view.subviews
+        if let markIndex = order.firstIndex(of: view.mediaCopy),
+           let drawingIndex = order.firstIndex(where: { $0 === view.debugMediaViews.first }) {
+            check(markIndex > drawingIndex,
+                  "the mark is drawn over the picture, not under it "
+                  + "(mark at \(markIndex), picture at \(drawingIndex))")
+        } else {
+            check(false, "could not find the mark and the picture in the same view")
+        }
 
         // Never the general pasteboard in a check: emptying what somebody had
         // copied is not something a test run should do.
@@ -2055,7 +2089,8 @@ enum SelfTest {
 
         // Over the diagram.
         let onDiagram = NSPoint(x: frames[1].minX + 20, y: frames[1].midY)
-        check(view.debugHoverMedia(at: onDiagram), "hovering a diagram offers it as well")
+        point(at: onDiagram)
+        check(view.debugMediaCopyFrame != nil, "and pointing at a diagram offers it as well")
         check(view.copyHoveredMedia(to: scratch), "the diagram is copied")
         guard let copied = NSImage(pasteboard: scratch) else {
             check(false, "no diagram on the clipboard"); return
@@ -2078,9 +2113,8 @@ enum SelfTest {
                      raster?.width ?? 0, copied.size.width))
 
         // And off the drawings again.
-        check(!view.debugHoverMedia(at: NSPoint(x: 10, y: frames[0].minY - 30)),
-              "the mark goes away off the drawing")
-        check(view.debugMediaCopyFrame == nil, "…and is actually hidden")
+        point(at: NSPoint(x: 10, y: frames[0].minY - 30))
+        check(view.debugMediaCopyFrame == nil, "and goes away off the drawing")
         scratch.releaseGlobally()
     }
 

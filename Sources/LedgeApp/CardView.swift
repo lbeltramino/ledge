@@ -1312,6 +1312,11 @@ final class NoteTextView: NSTextView {
         if mediaCopy.isHidden {
             mediaCopy.forget()
             mediaCopy.isHidden = false
+            // Over the drawing, not under it. The mark is made once when the
+            // view is built and the drawings are added as the note is read, so
+            // it starts out behind them — shown, positioned correctly, and
+            // completely invisible.
+            addSubview(mediaCopy, positioned: .above, relativeTo: nil)
         }
         return true
     }
