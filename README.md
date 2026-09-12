@@ -97,6 +97,11 @@ SQLite index beside it is a cache you can delete at any moment.
   defines it, with the source still there to change. Drawn with CoreGraphics by
   [swift-mermaid](https://github.com/Australware/swift-mermaid): no JavaScript,
   no WebView, no network.
+- **Take a drawing with you.** Hover a picture or a diagram and the same mark a
+  code block shows appears at its top right. Click it and the drawing is on the
+  clipboard: a picture at the quality of its file, a diagram redrawn at its own
+  size and twice the density, because what you paste into a ticket should be
+  worth looking at.
 - **Tables, drawn.** A Markdown table is rendered while you are reading it —
   ruled, aligned, the header set apart — and the note still says pipes and
   dashes. It is locked: a click is not an edit. Press the padlock and it becomes
@@ -553,6 +558,11 @@ measurement: 1.6 MB of binary and about 0.4 MB of footprint, against 35-45 MB
 for the same diagram rendered in a `WKWebView`, which is three times the whole
 app. A block Mermaid cannot parse says so on the paper in a quiet line rather
 than leaving a gap you would read as a note that failed to load.
+
+Hovering either offers the copy mark from the top right — the one a code block
+uses — and clicking it puts the drawing on the clipboard. A picture goes as its
+own file as well as an image, so dropping it into Finder or a mail attaches the
+file rather than a screenshot of it.
 
 Pictures and diagrams are drawn on the deck's card, on a note pulled onto the
 desk, and in the full-size editor — all three, because they are drawn by the
