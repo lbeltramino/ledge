@@ -348,6 +348,7 @@ final class NoteCardView: NSView {
         titleField.textColor = ink
         textView.textColor = ink.withAlphaComponent(0.92)
         textView.codeCopy.ink = ink
+        textView.mediaCopy.ink = ink
         textView.highlighterPen = MarkerStroke.colour(for: color, dark: dark)
         textView.tablePaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
         textView.tableInk = ink
@@ -882,6 +883,8 @@ final class NoteTextView: NSTextView {
 
         codeCopy.onCopy = { [weak self] in self?.copyHoveredBlock() }
         addSubview(codeCopy)
+        mediaCopy.onCopy = { [weak self] in _ = self?.copyHoveredMedia() }
+        addSubview(mediaCopy)
 
         highlightBar.onClick = { [weak self] in
             guard let self else { return }
@@ -1147,7 +1150,9 @@ final class NoteTextView: NSTextView {
             }()
             view.ink = tableInk
             view.paper = tablePaper
+            lastOrigin = nil
             let content = content(for: item, available: available, scale: scale, dark: dark)
+            view.origin = lastOrigin
             view.show(content)
 
             let height = MediaView.height(of: content, available: available)
@@ -1217,6 +1222,11 @@ final class NoteTextView: NSTextView {
         return source.lineRange(for: NSRange(location: NSMaxRange(range) - 1, length: 1))
     }
 
+    /// Set by `content(for:…)` as it works out what to draw, and read straight
+    /// back by the one caller. A returned pair would be tidier and this has one
+    /// job: to say where the drawing came from.
+    private var lastOrigin: MediaView.Origin?
+
     private func content(for item: Media.Item, available: CGFloat, scale: CGFloat,
                          dark: Bool) -> MediaView.Content {
         switch item.kind {
@@ -1230,6 +1240,7 @@ final class NoteTextView: NSTextView {
             guard let image = MediaStore.image(at: url, available: available, scale: scale) else {
                 return .missing("could not read \(path)")
             }
+            lastOrigin = .file(url)
             return .picture(image)
 
         case .diagram(let source):
@@ -1237,6 +1248,7 @@ final class NoteTextView: NSTextView {
                                                  scale: scale, dark: dark) else {
                 return .missing("this mermaid diagram could not be drawn")
             }
+            lastOrigin = .diagram(source)
             return .picture(image)
         }
     }
@@ -1273,6 +1285,72 @@ final class NoteTextView: NSTextView {
         }
     }
 
+    // MARK: - taking a drawing with you
+
+    /// The same mark a code block offers, on a picture or a diagram. Hover and
+    /// it appears at the drawing's top right; click and the picture is on the
+    /// clipboard — the file itself for a picture, and the diagram drawn at its
+    /// own size for a diagram.
+    let mediaCopy = CodeCopyButton()
+    private var hoveredMedia: MediaView?
+
+    /// Shows the mark over the drawing under `point`. True when there is one,
+    /// so the code block's own mark can stand down: a mermaid block is a fenced
+    /// block too, and both marks appearing at once is one too many.
+    @discardableResult
+    func updateMediaCopy(at point: NSPoint) -> Bool {
+        guard let view = mediaViews.values.first(where: { $0.frame.contains(point) }),
+              let picture = view.pictureRect, view.origin != nil else {
+            hideMediaCopy()
+            return false
+        }
+        hoveredMedia = view
+        let inset: CGFloat = 6
+        let corner = NSPoint(x: view.frame.minX + picture.maxX - CodeCopyButton.size - inset,
+                             y: view.frame.minY + picture.minY + inset)
+        mediaCopy.setFrameOrigin(corner)
+        if mediaCopy.isHidden {
+            mediaCopy.forget()
+            mediaCopy.isHidden = false
+        }
+        return true
+    }
+
+    func hideMediaCopy() {
+        guard !mediaCopy.isHidden else { return }
+        mediaCopy.isHidden = true
+        mediaCopy.forget()
+        hoveredMedia = nil
+    }
+
+    /// The drawing under the pointer, on the clipboard.
+    ///
+    /// Takes the pasteboard rather than reaching for `.general`, so a check can
+    /// prove this works without emptying whatever you had copied.
+    @discardableResult
+    func copyHoveredMedia(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard let origin = hoveredMedia?.origin else { return false }
+        switch origin {
+        case .file(let url):
+            guard let image = NSImage(contentsOf: url) else { return false }
+            pasteboard.clearContents()
+            // The picture and the file both: pasting into a document wants the
+            // one, dropping into Finder or a mail attachment wants the other.
+            pasteboard.writeObjects([image, url as NSURL])
+        case .diagram(let source):
+            guard let image = MediaStore.diagramForCopying(source,
+                                                           dark: effectiveAppearance.isDark)
+            else { return false }
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
+        }
+        mediaCopy.confirm()
+        return true
+    }
+
+    var debugMediaCopyFrame: NSRect? { mediaCopy.isHidden ? nil : mediaCopy.frame }
+    func debugHoverMedia(at point: NSPoint) -> Bool { updateMediaCopy(at: point) }
+
     var debugMediaCount: Int { mediaViews.count }
     var debugMediaViews: [MediaView] { Array(mediaViews.values) }
     var debugMediaFrames: [NSRect] { mediaViews.values.map(\.frame) }
@@ -1300,21 +1378,28 @@ final class NoteTextView: NSTextView {
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        updateCodeCopy(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        // A drawing wins: a mermaid diagram hangs off a fenced block, so the
+        // pointer is over both and only one mark should answer.
+        if updateMediaCopy(at: point) { return hideCodeCopy() }
+        updateCodeCopy(at: point)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         hideCodeCopy()
+        hideMediaCopy()
     }
 
     /// Scrolling moves the block out from under a pointer that never moved, so
     /// the mark has to be placed again whenever the text is drawn.
     override func viewWillDraw() {
         super.viewWillDraw()
-        guard !codeCopy.isHidden, let window else { return }
+        guard !codeCopy.isHidden || !mediaCopy.isHidden, let window else { return }
         let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-        updateCodeCopy(at: convert(inWindow, from: nil))
+        let point = convert(inWindow, from: nil)
+        if updateMediaCopy(at: point) { return hideCodeCopy() }
+        updateCodeCopy(at: point)
     }
 
     /// Shows the mark at the top right of the block under `point`, or hides it.

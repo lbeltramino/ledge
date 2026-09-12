@@ -143,6 +143,18 @@ enum MediaStore {
         return image
     }
 
+    /// The diagram at its own size, for the clipboard.
+    ///
+    /// Not the one on screen: that is fitted to the width of a sticky note, and
+    /// pasting it into anything else should give the diagram, at a density that
+    /// survives being looked at.
+    static func diagramForCopying(_ source: String, dark: Bool) -> NSImage? {
+        guard let scene = try? Mermaid.render(source, theme: dark ? .dark : .default),
+              scene.size.width > 0, scene.size.height > 0,
+              let raster = scene.cgImage(scale: 2) else { return nil }
+        return NSImage(cgImage: raster, size: scene.size)
+    }
+
     /// Whether a block of mermaid says something this can draw, without drawing
     /// it — for telling "not a diagram yet" from "a diagram that failed".
     static func canDraw(_ source: String) -> Bool {

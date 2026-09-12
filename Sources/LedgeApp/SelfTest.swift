@@ -2010,6 +2010,80 @@ enum SelfTest {
         tailClearsDrawings("after typing a line above them")
     }
 
+    /// Taking a drawing with you.
+    static func checkCopyingADrawing() {
+        let note = """
+        ![una grande](resources/img/big.png)
+
+        ```mermaid
+        graph TD
+            A[Una] --> B[Otra]
+        ```
+
+        Después.
+        """
+        let record = NoteRecord(note: Note(title: "Copiando"), filename: "c.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        let frames = view.debugMediaFrames.sorted { $0.minY < $1.minY }
+        check(frames.count == 2, "a picture and a diagram to copy: \(frames.count)")
+        guard frames.count == 2 else { return }
+
+        check(view.debugMediaCopyFrame == nil, "no mark until the pointer is on one")
+
+        // Over the picture.
+        let onPicture = NSPoint(x: frames[0].minX + 20, y: frames[0].midY)
+        check(view.debugHoverMedia(at: onPicture), "hovering a picture offers the mark")
+        guard let mark = view.debugMediaCopyFrame else {
+            check(false, "no mark over the picture"); return
+        }
+        check(frames[0].contains(NSPoint(x: mark.midX, y: mark.midY)),
+              "and it sits on the drawing, not beside it")
+
+        // Never the general pasteboard in a check: emptying what somebody had
+        // copied is not something a test run should do.
+        let scratch = NSPasteboard(name: .init("ledge.selftest.copy"))
+        check(view.copyHoveredMedia(to: scratch), "the picture is copied")
+        check(scratch.canReadObject(forClasses: [NSImage.self], options: nil),
+              "and what lands on the clipboard is a picture")
+        check(scratch.canReadObject(forClasses: [NSURL.self], options: nil),
+              "…and the file too, for dropping into Finder or a mail")
+
+        // Over the diagram.
+        let onDiagram = NSPoint(x: frames[1].minX + 20, y: frames[1].midY)
+        check(view.debugHoverMedia(at: onDiagram), "hovering a diagram offers it as well")
+        check(view.copyHoveredMedia(to: scratch), "the diagram is copied")
+        guard let copied = NSImage(pasteboard: scratch) else {
+            check(false, "no diagram on the clipboard"); return
+        }
+        // Copied at its own size rather than at the size a sticky note drew it,
+        // and at twice the density, so pasting it somewhere else gives a
+        // diagram worth looking at. Measured against the drawing, not against
+        // the view's frame — the frame is the width of the note.
+        let drawn = view.debugMediaViews
+            .sorted { $0.frame.minY < $1.frame.minY }
+            .last?.pictureRect?.width ?? 0
+        check(drawn > 0, "the diagram was drawn at some size to compare against")
+        check(copied.size.width >= drawn - 1,
+              String(format: "the diagram is copied no smaller than drawn (%.0f vs %.0f)",
+                     copied.size.width, drawn))
+        var proposed = NSRect(origin: .zero, size: copied.size)
+        let raster = copied.cgImage(forProposedRect: &proposed, context: nil, hints: nil)
+        check(Double(raster?.width ?? 0) >= copied.size.width * 1.9,
+              String(format: "…and at twice the density (%d px for %.0f pt)",
+                     raster?.width ?? 0, copied.size.width))
+
+        // And off the drawings again.
+        check(!view.debugHoverMedia(at: NSPoint(x: 10, y: frames[0].minY - 30)),
+              "the mark goes away off the drawing")
+        check(view.debugMediaCopyFrame == nil, "…and is actually hidden")
+        scratch.releaseGlobally()
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -2592,6 +2666,7 @@ enum SelfTest {
         checkDrawnMedia()
         checkMediaOnEverySurface()
         checkMediaSurvivesTyping()
+        checkCopyingADrawing()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

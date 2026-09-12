@@ -17,6 +17,13 @@ final class MediaView: NSView {
         case missing(String)
     }
 
+    /// Where this came from, so it can be put on the clipboard. A picture is
+    /// copied from its file at full quality — what you want when you paste it
+    /// somewhere else is the picture, not the thumbnail a note happened to
+    /// draw.
+    enum Origin { case file(URL), diagram(String) }
+    var origin: Origin?
+
     private var content: Content = .missing("")
     var ink: NSColor = .labelColor
     var paper: NSColor = .white
@@ -44,6 +51,14 @@ final class MediaView: NSView {
     }
 
     static let padding: CGFloat = 6
+
+    /// Where the picture itself is, inside this view's full-width frame — the
+    /// copy mark hangs off its corner, not off the paper beside it.
+    var pictureRect: NSRect? {
+        guard case .picture(let image) = content else { return nil }
+        let size = MediaStore.fit(image.size, into: bounds.width)
+        return NSRect(x: 0, y: Self.padding, width: size.width, height: size.height)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         switch content {
