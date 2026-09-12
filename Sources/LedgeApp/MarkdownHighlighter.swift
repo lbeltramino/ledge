@@ -199,13 +199,20 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             this.fade(storage, match.range(at: 3), 0.30)
         }
 
-        // [text](url)
-        rule("\\[([^\\]\\n]+)\\]\\(([^)\\s]+)\\)") { storage, match, this in
+        // [text](url) — but not ![alt](picture), which is not somewhere to go.
+        // Without the lookbehind, the alt text of every image became an
+        // underlined link to a relative path, and clicking one handed
+        // LaunchServices a URL with no scheme: "the application can't be
+        // opened, -50".
+        rule("(?<!!)\\[([^\\]\\n]+)\\]\\(([^)\\s]+)\\)") { storage, match, this in
             storage.addAttribute(.foregroundColor, value: this.accent, range: match.range(at: 1))
-            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
-                                 range: match.range(at: 1))
             let url = (storage.string as NSString).substring(with: match.range(at: 2))
-            if let link = URL(string: url) {
+            // Underlined only when there is something to open. A link that
+            // looks like a link and then fails is worse than plain text, and
+            // every relative path in a note is one of those.
+            if let link = URL(string: url), link.scheme != nil {
+                storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
+                                     range: match.range(at: 1))
                 storage.addAttribute(.link, value: link, range: match.range(at: 1))
             }
             this.fade(storage, match.range, 0.55, only: [match.range(at: 2)])

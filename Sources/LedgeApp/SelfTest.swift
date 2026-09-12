@@ -281,6 +281,8 @@ enum SelfTest {
         - a list item
         Some **bold** and `code` and https://example.com
         [a link](https://example.com/x)
+        [relative](./otra-nota.md)
+        ![a picture](resources/img/x.png)
 
         ```swift
         let answer = 42
@@ -324,6 +326,19 @@ enum SelfTest {
               "a bare URL becomes a real link")
         check(attribute(.link, at: "a link") != nil,
               "a [labelled](url) link becomes a real link")
+
+        // Clicking a link hands the URL to LaunchServices, so only something it
+        // can open is allowed to look like one. A relative path is not: that is
+        // "the application can't be opened, -50", which is what an image
+        // reference gave when its alt text was linkified.
+        check(attribute(.link, at: "a picture") == nil,
+              "the alt text of a picture is not a link to follow")
+        check(attribute(.underlineStyle, at: "a picture") == nil,
+              "…and is not underlined as though it were")
+        check(attribute(.link, at: "relative") == nil,
+              "a link to a relative path is not handed to LaunchServices either")
+        check(attribute(.foregroundColor, at: "relative") != nil,
+              "…though it still reads as a link in the note")
 
         // tasks and links
         let tasks = NSTextStorage(string: "- [ ] milk\n- [x] bread\nsee [[Office]]")
