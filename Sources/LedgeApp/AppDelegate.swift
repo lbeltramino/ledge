@@ -133,6 +133,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let store = try NoteStore(folder: AppDelegate.notesFolder)
             self.store = store
+            // Pictures are resolved against the notes folder, so every surface
+            // that draws a note draws them — the deck's card, one pulled onto
+            // the desk, and the big editor — without any of the three having to
+            // be told.
+            MediaStore.notesFolder = AppDelegate.notesFolder
             let workspace = Workspace(store: store)
             self.workspace = workspace
 

@@ -146,6 +146,7 @@ final class NoteCardView: NSView {
             guard let self else { return }
             self.refreshOutlineAffordance()
             self.textView.refreshTables()
+            self.textView.refreshMedia()
             self.onEdit?(self.textView.string)
         }
         textView.onFind = { [weak self] in self?.beginFind() }
@@ -214,6 +215,7 @@ final class NoteCardView: NSView {
             self?.textView.unlockTable(containing: location)
         }
         textView.refreshTables()
+        textView.refreshMedia()
 
         textView.highlighterPen = MarkerStroke.colour(for: record.color, dark: isDark)
         textView.findColour = { [weak self] current in
@@ -349,6 +351,7 @@ final class NoteCardView: NSView {
         textView.tablePaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
         textView.tableInk = ink
         textView.refreshTables()
+        textView.refreshMedia()
         textView.insertionPointColor = ink
     }
 
@@ -609,6 +612,7 @@ final class NoteCardView: NSView {
                                                        height: .greatestFiniteMagnitude)
         // Now that the text has a width, the tables can be measured against it.
         textView.tablesDidLayout()
+        textView.mediaDidLayout()
     }
 
     /// Clicking anywhere on the paper puts the caret in the note, the way a
@@ -1104,6 +1108,135 @@ final class NoteTextView: NSTextView {
         }
         return runs
     }
+
+    // MARK: - pictures and diagrams, drawn
+
+    /// One view per drawing, kept by the line its markdown starts on.
+    private var mediaViews: [Int: MediaView] = [:]
+    /// What each one was told to be tall, so layout does not have to ask the
+    /// store again on every pass.
+    private var mediaHeights: [Int: CGFloat] = [:]
+    private var mediaWidth: CGFloat = 0
+
+    /// Draws every picture and diagram the note points at, in the room reserved
+    /// after the markdown that asks for it.
+    ///
+    /// Unlike a table, the markdown stays visible and stays editable: you can
+    /// see the `![alt](…)` and the picture at once, which is what makes this a
+    /// note rather than a document with an attachment. The room comes from the
+    /// paragraph spacing after the last line of the reference, so nothing is
+    /// hidden and no glyph moves.
+    func refreshMedia() {
+        guard let storage = textStorage, let container = textContainer,
+              container.size.width > 1 else { return }
+        let items = Media.all(in: string)
+        let available = max(80, container.size.width - 4)
+        mediaWidth = container.size.width
+        let scale = window?.backingScaleFactor ?? 2
+        let dark = effectiveAppearance.isDark
+        var seen: Set<Int> = []
+
+        for item in items {
+            seen.insert(item.range.location)
+            let view = mediaViews[item.range.location] ?? {
+                let fresh = MediaView()
+                addSubview(fresh)
+                mediaViews[item.range.location] = fresh
+                return fresh
+            }()
+            view.ink = tableInk
+            view.paper = tablePaper
+            let content = content(for: item, available: available, scale: scale, dark: dark)
+            view.show(content)
+
+            let height = MediaView.height(of: content, available: available)
+            mediaHeights[item.range.location] = height
+
+            // Only the last line of the reference: paragraph spacing lands
+            // after every paragraph in the range it is set on, and a fenced
+            // diagram is a range of several. Setting it on all of them would
+            // space the fence out like a poem.
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.paragraphSpacing = height
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: lastLine(of: item.range))
+        }
+
+        for (location, view) in mediaViews where !seen.contains(location) {
+            view.removeFromSuperview()
+            mediaViews.removeValue(forKey: location)
+            mediaHeights.removeValue(forKey: location)
+        }
+        needsLayout = true
+        layoutMedia()
+    }
+
+    /// The line the drawing hangs from — the closing fence of a diagram, or the
+    /// single line an image reference is.
+    private func lastLine(of range: NSRange) -> NSRange {
+        let source = string as NSString
+        guard range.length > 0, NSMaxRange(range) <= source.length else { return range }
+        return source.lineRange(for: NSRange(location: NSMaxRange(range) - 1, length: 1))
+    }
+
+    private func content(for item: Media.Item, available: CGFloat, scale: CGFloat,
+                         dark: Bool) -> MediaView.Content {
+        switch item.kind {
+        case .image(let path):
+            guard let url = MediaStore.url(for: path) else {
+                return .missing("\(path) — pictures live in \(Media.folder) beside your notes")
+            }
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                return .missing("no such picture: \(path)")
+            }
+            guard let image = MediaStore.image(at: url, available: available, scale: scale) else {
+                return .missing("could not read \(path)")
+            }
+            return .picture(image)
+
+        case .diagram(let source):
+            guard let image = MediaStore.diagram(source, available: available,
+                                                 scale: scale, dark: dark) else {
+                return .missing("this mermaid diagram could not be drawn")
+            }
+            return .picture(image)
+        }
+    }
+
+    /// Re-measures when the note has been given a different width. Same hazard
+    /// as the tables: before the text container has a size there is nowhere to
+    /// put anything, and measuring then gives every drawing a frame of zero.
+    func mediaDidLayout() {
+        guard let container = textContainer, container.size.width > 1 else { return }
+        if abs(container.size.width - mediaWidth) > 0.5 {
+            refreshMedia()
+        } else {
+            layoutMedia()
+        }
+    }
+
+    /// Puts each drawing in the gap under its markdown.
+    func layoutMedia() {
+        guard let manager = layoutManager, let container = textContainer,
+              container.size.width > 1 else { return }
+        manager.ensureLayout(for: container)
+        let items = Media.all(in: string)
+        for (location, view) in mediaViews {
+            guard let item = items.first(where: { $0.range.location == location }),
+                  let height = mediaHeights[location] else { continue }
+            let line = lastLine(of: item.range)
+            let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
+            // The *used* rect is the text itself; the fragment rect includes the
+            // room reserved after it. The drawing goes between the two.
+            var used = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            used.origin.y += textContainerOrigin.y
+            view.frame = NSRect(x: textContainerOrigin.x, y: used.maxY,
+                                width: container.size.width, height: height)
+        }
+    }
+
+    var debugMediaCount: Int { mediaViews.count }
+    var debugMediaViews: [MediaView] { Array(mediaViews.values) }
+    var debugMediaFrames: [NSRect] { mediaViews.values.map(\.frame) }
 
     // MARK: - copying a code block
 

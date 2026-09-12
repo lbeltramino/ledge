@@ -190,6 +190,8 @@ final class Workspace {
         }
 
         Settings.setNotesFolder(folder)
+        MediaStore.notesFolder = folder
+        MediaStore.empty()
         store = try NoteStore(folder: folder)
         _ = try? await store.scan()
         for deck in decks { deck.storeChanged() }

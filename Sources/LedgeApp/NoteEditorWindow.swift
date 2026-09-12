@@ -88,6 +88,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.allowsUndo = true
         textView.drawsBackground = false
         textView.textColor = ink
+        textView.tableInk = ink
         textView.insertionPointColor = ink
         textView.codeCopy.ink = ink
         textView.textContainerInset = NSSize(width: 0, height: 6)
@@ -99,7 +100,10 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
         textView.strokeSeed = record.id
         textView.textStorage?.delegate = highlighter
         if let storage = textView.textStorage { highlighter.highlight(storage) }
-        textView.onChange = { [weak self] in self?.onEdit?(self?.textView.string ?? "") }
+        textView.onChange = { [weak self] in
+            self?.textView.refreshMedia()
+            self?.onEdit?(self?.textView.string ?? "")
+        }
         textView.onEscape = { [weak self] in self?.window.performClose(nil) }
         textView.onOpenLink = { [weak self] name in self?.onOpenLink?(name) }
 
@@ -203,6 +207,10 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
                                 height: max(visible.height, textView.frame.height))
         textView.textContainer?.containerSize = NSSize(width: visible.width,
                                                        height: .greatestFiniteMagnitude)
+        // The same note on a bigger page draws the same pictures. Tables are
+        // still text here on purpose — the editor is where you go to change
+        // the characters — but a picture is not something you edit in place.
+        textView.mediaDidLayout()
     }
 
     func show() {
@@ -247,6 +255,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
 
     /// Re-applies the size setting to a window that is already open.
     private func applySizeSettings() {
+        defer { textView.refreshMedia() }
         titleField.font = .systemFont(ofSize: Metrics.Editor.titleSize, weight: .semibold)
         textView.font = Typography.noteBody(size: Metrics.Editor.bodySize)
         highlighter.baseFont = Typography.noteBody(size: Metrics.Editor.bodySize)
@@ -282,6 +291,7 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
                                                tint: Jitter(id: record.id).paperTint)
         titleField.textColor = ink
         textView.textColor = ink
+        textView.tableInk = ink
         textView.insertionPointColor = ink
         textView.codeCopy.ink = ink
         highlighter.ink = ink
