@@ -1285,6 +1285,37 @@ final class NoteTextView: NSTextView {
         }
     }
 
+    /// A picture on the clipboard becomes a file beside the notes and a
+    /// reference to it, so pasting a screenshot into a note is one gesture.
+    ///
+    /// Deliberately narrow about what counts. Copying out of a browser puts the
+    /// picture *and* the text on the clipboard, and a paste that swallowed the
+    /// text to save an image nobody asked for would be worse than not having
+    /// this at all: pixels only win when there is no text to prefer.
+    @discardableResult
+    func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
+        let files = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] ?? []
+        let hasText = !(pasteboard.string(forType: .string) ?? "").isEmpty
+        let looksLikeAPicture = !files.isEmpty || (!hasText && NSImage(pasteboard: pasteboard) != nil)
+        guard looksLikeAPicture, let path = MediaStore.save(from: pasteboard) else { return false }
+
+        // On a line of its own, which is the only kind this draws. Whatever the
+        // caret was in the middle of stays as it was, above and below.
+        let caret = selectedRange()
+        let text = string as NSString
+        let atLineStart = caret.location == 0
+            || text.substring(with: NSRange(location: caret.location - 1, length: 1)) == "\n"
+        let atLineEnd = NSMaxRange(caret) >= text.length
+            || text.substring(with: NSRange(location: NSMaxRange(caret), length: 1)) == "\n"
+        let reference = (atLineStart ? "" : "\n") + "![](\(path))" + (atLineEnd ? "" : "\n")
+
+        guard shouldChangeText(in: caret, replacementString: reference) else { return false }
+        textStorage?.replaceCharacters(in: caret, with: reference)
+        didChangeText()
+        refreshMedia()
+        return true
+    }
+
     // MARK: - taking a drawing with you
 
     /// The same mark a code block offers, on a picture or a diagram. Hover and
@@ -1528,6 +1559,7 @@ final class NoteTextView: NSTextView {
 
     /// Pasting a URL over a selection links it; pasting source code fences it.
     override func paste(_ sender: Any?) {
+        if pasteImage() { return }
         if MarkdownEditing.pasteLink(self) { return }
         let code = MarkdownEditing.pasteCode(self)
         if code.did {

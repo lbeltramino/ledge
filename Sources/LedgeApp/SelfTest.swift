@@ -2118,6 +2118,75 @@ enum SelfTest {
         scratch.releaseGlobally()
     }
 
+    /// Pasting a picture into a note.
+    static func checkPastingAPicture() {
+        let record = NoteRecord(note: Note(title: "Pegando"), filename: "p.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: "una línea\notra línea")
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 400)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        let scratch = NSPasteboard(name: .init("ledge.selftest.paste"))
+        scratch.clearContents()
+        let picture = NSImage(size: NSSize(width: 60, height: 40))
+        picture.lockFocus()
+        NSColor.systemPink.setFill()
+        NSRect(x: 0, y: 0, width: 60, height: 40).fill()
+        picture.unlockFocus()
+        scratch.writeObjects([picture])
+
+        // At the end of the first line, so the reference has to make room for
+        // itself: this only draws a picture on a line of its own.
+        view.setSelectedRange(NSRange(location: 9, length: 0))
+        check(view.pasteImage(from: scratch), "a picture on the clipboard is pasted")
+
+        let lines = view.string.components(separatedBy: "\n")
+        guard let reference = lines.first(where: { $0.hasPrefix("![](") }) else {
+            check(false, "no reference was written: \(view.string)"); return
+        }
+        check(reference.hasSuffix(".png)"), "and it points at a png: \(reference)")
+        check(reference.contains(Media.folder),
+              "…kept beside the notes, in \(Media.folder): \(reference)")
+        check(lines.contains("una línea") && lines.contains("otra línea"),
+              "the lines that were there are still there: \(lines)")
+
+        // The file is really on disk, and the note really draws it.
+        let path = String(reference.dropFirst(4).dropLast(1))
+        guard let url = MediaStore.url(for: path) else {
+            check(false, "the path does not resolve: \(path)"); return
+        }
+        check(FileManager.default.fileExists(atPath: url.path),
+              "the picture was written to disk")
+        card.layoutSubtreeIfNeeded()
+        check(view.debugMediaViews.contains(where: \.debugIsPicture),
+              "and the note draws what was pasted")
+
+        // Twice, in the same second, must not be the same file — the first note
+        // would change picture underneath you.
+        let firstPath = path
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        check(view.pasteImage(from: scratch), "pasting a second time works")
+        let both = view.string.components(separatedBy: "\n")
+            .filter { $0.hasPrefix("![](") }
+        check(Set(both).count == 2,
+              "and writes a second file rather than replacing the first: \(both)")
+        _ = firstPath
+
+        // Text is still text. A browser puts the picture and the words on the
+        // clipboard together, and swallowing the words would be worse than not
+        // having this.
+        let mixed = NSPasteboard(name: .init("ledge.selftest.paste.mixed"))
+        mixed.clearContents()
+        mixed.writeObjects([picture])
+        mixed.setString("algún texto", forType: .string)
+        check(!view.pasteImage(from: mixed),
+              "a clipboard with words on it is not swallowed as a picture")
+
+        scratch.releaseGlobally()
+        mixed.releaseGlobally()
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -2701,6 +2770,7 @@ enum SelfTest {
         checkMediaOnEverySurface()
         checkMediaSurvivesTyping()
         checkCopyingADrawing()
+        checkPastingAPicture()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

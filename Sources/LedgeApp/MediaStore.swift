@@ -50,6 +50,68 @@ enum MediaStore {
         return notesFolder.appendingPathComponent(path)
     }
 
+    // MARK: - keeping a picture
+
+    /// File types worth keeping as they are. Anything else on the clipboard is
+    /// written out as a PNG.
+    private static let keepable: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff"]
+
+    /// Saves whatever picture is on `pasteboard` into the notes folder and
+    /// answers the path a note should reference.
+    ///
+    /// A file that was copied in Finder is copied across untouched — re-encoding
+    /// somebody's JPEG to paste it into a note would be a quiet loss. A picture
+    /// copied out of an app arrives as pixels, and those are written as PNG.
+    static func save(from pasteboard: NSPasteboard) -> String? {
+        guard let notesFolder else { return nil }
+        let folder = notesFolder.appendingPathComponent(Media.folder)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL],
+           let source = urls.first(where: { keepable.contains($0.pathExtension.lowercased()) }) {
+            let destination = free(source.deletingPathExtension().lastPathComponent,
+                                   extension: source.pathExtension.lowercased(), in: folder)
+            guard (try? FileManager.default.copyItem(at: source, to: destination)) != nil
+            else { return nil }
+            return "\(Media.folder)/\(destination.lastPathComponent)"
+        }
+
+        guard let image = NSImage(pasteboard: pasteboard),
+              let data = png(from: image) else { return nil }
+        let destination = free(stamped(), extension: "png", in: folder)
+        guard (try? data.write(to: destination)) != nil else { return nil }
+        return "\(Media.folder)/\(destination.lastPathComponent)"
+    }
+
+    private static func png(from image: NSImage) -> Data? {
+        var proposed = NSRect(origin: .zero, size: image.size)
+        guard let cg = image.cgImage(forProposedRect: &proposed, context: nil, hints: nil)
+        else { return nil }
+        return NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])
+    }
+
+    /// `pasted-20260912-153045`, which sorts and says when.
+    private static func stamped() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return "pasted-\(formatter.string(from: Date()))"
+    }
+
+    /// A name nothing is using. Pasting twice in the same second, or twice from
+    /// the same file, must not quietly replace the first one — the note that
+    /// pointed at it would change picture underneath you.
+    private static func free(_ base: String, extension ext: String, in folder: URL) -> URL {
+        let safe = base.isEmpty ? "picture" : base
+        var candidate = folder.appendingPathComponent("\(safe).\(ext)")
+        var n = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = folder.appendingPathComponent("\(safe)-\(n).\(ext)")
+            n += 1
+        }
+        return candidate
+    }
+
     // MARK: - pictures
 
     /// The picture at `url`, decoded no larger than it will be drawn.
