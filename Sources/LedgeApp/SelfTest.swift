@@ -1841,8 +1841,15 @@ enum SelfTest {
         guard let drawn = MediaStore.image(at: url, available: available, scale: 2) else {
             check(false, "the big picture did not decode"); return
         }
-        let pixels = drawn.representations.first.map { $0.pixelsWide * $0.pixelsHigh } ?? 0
+        // The decoded bitmap itself, not the size in points the image reports:
+        // asking the representation gave a number that did not move when the
+        // downsampling was taken out, which is a check that passes for the
+        // wrong reason.
+        var proposed = NSRect(origin: .zero, size: drawn.size)
+        let bitmap = drawn.cgImage(forProposedRect: &proposed, context: nil, hints: nil)
+        let pixels = (bitmap?.width ?? 0) * (bitmap?.height ?? 0)
         let megabytes = Double(pixels * 4) / 1_048_576
+        check(pixels > 0, "there is a decoded bitmap to measure")
         check(megabytes < 2,
               String(format: "the big picture costs %.1f MB, not %.1f",
                      megabytes, Double(Int(full.width) * Int(full.height) * 4) / 1_048_576))
