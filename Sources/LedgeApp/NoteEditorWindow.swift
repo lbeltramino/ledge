@@ -278,6 +278,9 @@ final class NoteEditorWindow: NSObject, NSWindowDelegate {
 
     var isVisible: Bool { window.isVisible }
 
+    /// For the checks: lay out without showing a window on someone's screen.
+    func debugLayout() { layout() }
+
     func windowDidResize(_ notification: Notification) { layout() }
 
     /// Same hazard as the card: the highlighter owns the text's colour, so it

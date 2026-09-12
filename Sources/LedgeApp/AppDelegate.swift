@@ -56,6 +56,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Titles of deliberately different lengths: several checks are about a tab
     /// being as long as its own title needs.
+    /// A plain PNG of a given size, for the checks about pictures.
+    private static func writePNG(width: Int, height: Int, to url: URL) {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width,
+                                         pixelsHigh: height, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: width, height: max(1, height / 4)).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
+    }
+
     private static func writeSelfTestFixtures() {
         let folder = notesFolder
         try? FileManager.default.removeItem(at: folder)
@@ -74,6 +91,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? Data(Frontmatter.serialize(note).utf8)
                 .write(to: folder.appendingPathComponent("\(title).md"))
         }
+
+        // Pictures for the media checks. Deliberately not a sixth fixture note:
+        // several checks are about "the first note" or how five tabs lay out,
+        // and adding one to the deck to test something unrelated is how this
+        // suite has polluted itself before.
+        let pictures = folder.appendingPathComponent(Media.folder)
+        try? FileManager.default.createDirectory(at: pictures, withIntermediateDirectories: true)
+        writePNG(width: 80, height: 40, to: pictures.appendingPathComponent("small.png"))
+        // Big enough that decoding it whole would be obvious: 2000x1500 is
+        // 11.4 MB of pixels, and a note draws it in well under two.
+        writePNG(width: 2000, height: 1500, to: pictures.appendingPathComponent("big.png"))
 
         // A crowded deck on demand. The fixtures are five notes, so every check
         // about how the stack is laid out has only ever seen a deck that fits —

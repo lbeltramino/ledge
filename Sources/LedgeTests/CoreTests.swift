@@ -578,6 +578,52 @@ enum CoreTests {
                      "an empty feed does not clutter every file in the folder")
         }
 
+        Runner.suite("Pictures and diagrams")
+
+        await Runner.test("an image on a line of its own is something to draw") { c in
+            let items = Media.all(in: "antes\n![un gato](resources/img/gato.png)\ndespués")
+            c.equal(items.count, 1, "found: \(items)")
+            c.equal(items.first?.kind, .image(path: "resources/img/gato.png"))
+            c.equal(items.first?.alt, "un gato")
+        }
+
+        await Runner.test("an image in the middle of a sentence is left alone") { c in
+            // Text flowing around a picture is a page layout, not a sticky note.
+            c.equal(Media.all(in: "mirá ![esto](resources/img/x.png) qué bueno").count, 0)
+        }
+
+        await Runner.test("nothing off the notes folder is ever opened") { c in
+            for path in ["https://example.com/x.png", "http://x/y.png", "/etc/passwd",
+                         "~/secret.png", "../../../etc/hosts", "file:///etc/passwd",
+                         "data:image/png;base64,AAAA"] {
+                c.expect(!Media.isLocal(path), "\(path) should not be opened")
+            }
+            c.expect(Media.isLocal("resources/img/x.png"), "a plain relative path is fine")
+            c.equal(Media.all(in: "![no](https://example.com/x.png)").count, 0,
+                    "and a remote reference is not something to draw")
+        }
+
+        await Runner.test("a mermaid fence is a diagram, and an open one is not yet") { c in
+            let closed = Media.all(in: "```mermaid\ngraph TD\n  A-->B\n```")
+            c.equal(closed.count, 1, "found: \(closed)")
+            c.equal(closed.first?.kind, .diagram(source: "graph TD\n  A-->B"))
+
+            c.equal(Media.all(in: "```mermaid\ngraph TD").count, 0,
+                    "someone half-way through typing a fence has no diagram yet")
+            c.equal(Media.all(in: "```swift\nlet x = 1\n```").count, 0,
+                    "and a code block is a code block")
+            c.equal(Media.all(in: "```mermaid\n\n```").count, 0,
+                    "an empty fence draws nothing")
+        }
+
+        await Runner.test("the drawing stands for markdown that stays in the file") { c in
+            let text = "antes\n![x](resources/img/x.png)\ndespués"
+            guard let item = Media.all(in: text).first else { return c.expect(false, "nothing found") }
+            let quoted = (text as NSString).substring(with: item.range)
+            c.equal(quoted, "![x](resources/img/x.png)",
+                    "the range has to be exactly the reference, or the room is reserved on the wrong line")
+        }
+
         Runner.suite("The ledge command")
 
         // Runs the binary itself rather than the functions under it: the

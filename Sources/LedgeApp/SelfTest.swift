@@ -1754,6 +1754,140 @@ enum SelfTest {
     /// The file has to keep saying pipes and dashes: whatever is on screen, the
     /// note is still Markdown, and a table made here has to be the same file as
     /// one typed by hand or written by the command.
+    /// Pictures and diagrams: that they are drawn, that they land under their
+    /// markdown instead of over it, and that a photograph does not arrive in
+    /// memory at its own size.
+    static func checkDrawnMedia() {
+        let note = """
+        Antes.
+
+        ![una chica](resources/img/small.png)
+
+        Entre las dos.
+
+        ![una grande](resources/img/big.png)
+
+        ![no existe](resources/img/nope.png)
+
+        ![remota](https://example.com/x.png)
+
+        ```mermaid
+        graph TD
+            A[Una] --> B[Otra]
+        ```
+
+        Después de todo.
+        """
+        let record = NoteRecord(note: Note(title: "Con dibujos"), filename: "m.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 900)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        check(view.string == note, "drawing a picture changes not one character of the note")
+
+        // Three drawings: two pictures and a diagram. The missing file is a
+        // fourth view that says so, and the remote one is not drawn at all.
+        check(view.debugMediaCount == 4,
+              "four references drawn, the remote one left alone: \(view.debugMediaCount)")
+        let pictures = view.debugMediaViews.filter(\.debugIsPicture)
+        check(pictures.count == 3, "two pictures and a diagram: \(pictures.count)")
+        let missing = view.debugMediaViews.compactMap(\.debugMissingReason)
+        check(missing.count == 1 && missing[0].contains("nope.png"),
+              "and the one that is not there says so: \(missing)")
+
+        // Where they land. A drawing over the text would be the tables bug
+        // again, from the other side.
+        for frame in view.debugMediaFrames {
+            check(frame.width > 40 && frame.height > 10,
+                  String(format: "a drawing has a frame, not a point (%.0f×%.0f)",
+                         frame.width, frame.height))
+        }
+        let frames = view.debugMediaFrames.sorted { $0.minY < $1.minY }
+        check(!frames.isEmpty && frames.allSatisfy { $0.minY >= 0 },
+              "every drawing is somewhere you can see")
+        for (i, frame) in frames.enumerated() where i > 0 {
+            check(frame.minY >= frames[i - 1].maxY - 1,
+                  String(format: "drawings do not stack on each other (%.0f then %.0f)",
+                         frames[i - 1].maxY, frame.minY))
+        }
+
+        // The invariant: the room under the markdown is reserved, so the text
+        // that follows starts after the drawing rather than under it.
+        guard let manager = view.layoutManager, let container = view.textContainer,
+              let after = (view.string as NSString).range(of: "Después de todo.") as NSRange?,
+              after.location != NSNotFound else {
+            check(false, "no closing line to measure against"); return
+        }
+        manager.ensureLayout(for: container)
+        let glyphs = manager.glyphRange(forCharacterRange: after, actualCharacterRange: nil)
+        let tail = manager.boundingRect(forGlyphRange: glyphs, in: container)
+        if let last = frames.last {
+            check(tail.minY >= last.maxY - 2,
+                  String(format: "the text after the last drawing clears it (%.0f vs %.0f)",
+                         tail.minY, last.maxY))
+        }
+
+        // And the whole point of the feature: a 2000×1500 picture is 11.4 MB of
+        // pixels, and a note this wide must not be holding them.
+        let available = max(80, container.size.width - 4)
+        guard let url = MediaStore.url(for: "resources/img/big.png"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let full = MediaStore.pixelSize(of: source) else {
+            check(false, "no big picture to measure"); return
+        }
+        check(full.width >= 2000, "the fixture really is big: \(Int(full.width))px")
+        guard let drawn = MediaStore.image(at: url, available: available, scale: 2) else {
+            check(false, "the big picture did not decode"); return
+        }
+        let pixels = drawn.representations.first.map { $0.pixelsWide * $0.pixelsHigh } ?? 0
+        let megabytes = Double(pixels * 4) / 1_048_576
+        check(megabytes < 2,
+              String(format: "the big picture costs %.1f MB, not %.1f",
+                     megabytes, Double(Int(full.width) * Int(full.height) * 4) / 1_048_576))
+        check(drawn.size.width <= available + 1,
+              String(format: "and is drawn at the note's width (%.0f in %.0f)",
+                     drawn.size.width, available))
+
+        // Never upscaled: the small one keeps its own size.
+        guard let small = MediaStore.url(for: "resources/img/small.png"),
+              let smallImage = MediaStore.image(at: small, available: available, scale: 2) else {
+            check(false, "no small picture"); return
+        }
+        check(smallImage.size.width == 80,
+              "a small picture is not blown up to fill the note: \(smallImage.size.width)")
+    }
+
+    /// Every surface that shows a note shows its pictures.
+    ///
+    /// The same shape as the check about a note on the desk forwarding its
+    /// buttons, and for the same reason: the last feature worked on the deck's
+    /// card and silently did nothing on the other two.
+    static func checkMediaOnEverySurface() {
+        let note = "![una chica](resources/img/small.png)\n\ndespués"
+        let record = NoteRecord(note: Note(title: "Dibujos"), filename: "m.md",
+                                mtime: 0, size: 0, hash: "")
+
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+        card.layoutSubtreeIfNeeded()
+        check(card.textView.debugMediaViews.contains(where: \.debugIsPicture),
+              "the deck's card draws it")
+
+        let float = FloatingNote(record: record, title: "Dibujos", body: note,
+                                 size: NSSize(width: 420, height: 300))
+        float.cardView.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+        float.cardView.layoutSubtreeIfNeeded()
+        check(float.cardView.textView.debugMediaViews.contains(where: \.debugIsPicture),
+              "a note pulled onto the desk draws it")
+
+        let editor = NoteEditorWindow(record: record, title: "Dibujos", body: note)
+        editor.debugLayout()
+        check(editor.textView.debugMediaViews.contains(where: \.debugIsPicture),
+              "and the big editor draws it")
+    }
+
     static func checkDrawnTables() {
         let note = """
         Antes de la tabla.
@@ -2304,6 +2438,8 @@ enum SelfTest {
         checkProgressTick()
         checkHighlightBar()
         checkDrawnTables()
+        checkDrawnMedia()
+        checkMediaOnEverySurface()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
