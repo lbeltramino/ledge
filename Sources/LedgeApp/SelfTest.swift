@@ -2421,6 +2421,64 @@ enum SelfTest {
               "and a table too: \(other.textView.debugTableCount)")
     }
 
+    /// A drawing must not move when you press Enter after it.
+    ///
+    /// Reported: with a picture as the last thing in a note, pressing Enter at
+    /// the end of its line made the picture vanish until the next character was
+    /// typed. It had not vanished — it had jumped up by its own height, out of
+    /// the part of the note you were looking at.
+    ///
+    /// `boundingRect` swallows the room reserved after a line when that line is
+    /// the last one and leaves it out when anything follows, so the drawing sat
+    /// below the room at the end of a note and inside it everywhere else.
+    static func checkDrawingStaysPutOnEnter() {
+        for (what, tail) in [("a picture", "![](resources/img/big.png)"),
+                             ("a diagram", "```mermaid\ngraph TD\n    A[Uno] --> B[Dos]\n```")] {
+            let body = "una línea\n\n" + tail + "\n"
+            let record = NoteRecord(note: Note(title: "Enter"), filename: "n.md",
+                                    mtime: 0, size: 0, hash: "")
+            let card = NoteCardView(record: record, body: body)
+            card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+            card.layoutSubtreeIfNeeded()
+            let view = card.textView
+
+            guard let before = view.debugMediaFrames.first else {
+                check(false, "\(what) was not drawn at all"); continue
+            }
+
+            // The caret at the end of the line the drawing hangs from, and Enter.
+            let text = view.string as NSString
+            let anchor = what == "a picture"
+                ? text.range(of: "![](", options: .backwards)
+                : text.range(of: "```", options: .backwards)
+            let line = text.lineRange(for: anchor)
+            view.setSelectedRange(NSRange(location: NSMaxRange(line) - 1, length: 0))
+            view.insertText("\n", replacementRange: view.selectedRange())
+            card.layoutSubtreeIfNeeded()
+
+            guard let after = view.debugMediaFrames.first else {
+                check(false, "\(what) disappeared on Enter"); continue
+            }
+            check(abs(after.minY - before.minY) < 1,
+                  String(format: "%@ stays where it was when you press Enter (%.0f → %.0f)",
+                         what, before.minY, after.minY))
+
+            // And it is in the room reserved for it, not below it: the gap is
+            // what the note laid out, and a drawing beneath the gap is a
+            // drawing with a hole above it.
+            if let manager = view.layoutManager, let container = view.textContainer {
+                manager.ensureLayout(for: container)
+                let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
+                let last = max(glyphs.location, NSMaxRange(glyphs) - 1)
+                let textBottom = manager.lineFragmentUsedRect(forGlyphAt: last,
+                                                              effectiveRange: nil).maxY
+                check(abs(after.minY - textBottom) < 2,
+                      String(format: "%@ sits directly under its line (%.0f vs %.0f)",
+                             what, after.minY, textBottom))
+            }
+        }
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -3008,6 +3066,7 @@ enum SelfTest {
         checkDiagramsTheSkillPromises()
         checkDrawingAtTheEnd()
         checkDrawingsArriveFromOutside()
+        checkDrawingStaysPutOnEnter()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

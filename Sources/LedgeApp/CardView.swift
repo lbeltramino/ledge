@@ -1284,9 +1284,19 @@ final class NoteTextView: NSTextView {
                   let height = mediaHeights[location] else { continue }
             let line = lastLine(of: item.range)
             let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
-            // The *used* rect is the text itself; the fragment rect includes the
-            // room reserved after it. The drawing goes between the two.
-            var used = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            // The line's own text, not `boundingRect`.
+            //
+            // `boundingRect` swallows the paragraph spacing when the line is the
+            // last one in the note and leaves it out when anything follows — so
+            // the drawing sat *below* the reserved room at the end of a note and
+            // *inside* it everywhere else. Pressing Enter after a picture moved
+            // it up by its own height, out of view, and it came back as soon as
+            // you typed. Reported exactly that way.
+            //
+            // The used rect of the line's last fragment is the text and only the
+            // text, at the end of a note or anywhere else.
+            let last = max(glyphs.location, NSMaxRange(glyphs) - 1)
+            var used = manager.lineFragmentUsedRect(forGlyphAt: last, effectiveRange: nil)
             used.origin.y += textContainerOrigin.y
             view.frame = NSRect(x: textContainerOrigin.x, y: used.maxY,
                                 width: container.size.width, height: height)
