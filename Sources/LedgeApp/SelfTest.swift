@@ -2479,6 +2479,53 @@ enum SelfTest {
         }
     }
 
+    /// Copying a fenced block, and what comes off with it.
+    static func checkCopyingKeepsWhatMatters() {
+        let note = """
+        antes
+
+        ```bash
+        kubectl get pods
+        ```
+
+        ```mermaid
+        graph TD
+            A[Uno] --> B[Dos]
+        ```
+        """
+        let record = NoteRecord(note: Note(title: "Copiar"), filename: "c.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+        let scratch = NSPasteboard(name: .init("ledge.selftest.fence"))
+
+        // The shell block: fences off, ready for a terminal.
+        let text = view.string as NSString
+        view.setSelectedRange(text.range(of: "kubectl get pods"))
+        let shell = view.copyBlockAtCaret(to: scratch)
+        check(shell == "kubectl get pods",
+              "a snippet is copied without its fences: \(shell?.debugDescription ?? "nil")")
+
+        // The diagram: fences on, or what you paste is a page of arrows.
+        view.setSelectedRange(text.range(of: "A[Uno]"))
+        let diagram = view.copyBlockAtCaret(to: scratch) ?? ""
+        check(diagram.hasPrefix("```mermaid"),
+              "a diagram keeps the fence that makes it one: \(diagram.prefix(12).debugDescription)")
+        check(diagram.hasSuffix("```"), "…and the one that closes it")
+
+        // The real test of that: what came off the clipboard draws.
+        let pasted = Media.all(in: diagram)
+        check(pasted.count == 1, "what was copied is a diagram again when pasted: \(pasted.count)")
+        if case .diagram(let source)? = pasted.first?.kind {
+            check(MediaStore.canDraw(source), "…and it draws")
+        } else {
+            check(false, "what was copied did not read back as a diagram")
+        }
+        scratch.releaseGlobally()
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -3067,6 +3114,7 @@ enum SelfTest {
         checkDrawingAtTheEnd()
         checkDrawingsArriveFromOutside()
         checkDrawingStaysPutOnEnter()
+        checkCopyingKeepsWhatMatters()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

@@ -1567,7 +1567,7 @@ final class NoteTextView: NSTextView {
     @discardableResult
     func copyHoveredBlock(to pasteboard: NSPasteboard = .general) -> String? {
         guard let block = hoveredBlock, let storage = textStorage else { return nil }
-        return copy(body: block.body, from: storage, to: pasteboard)
+        return copy(block: block, from: storage, to: pasteboard)
     }
 
     /// ⌘⇧C — the block the caret is in, for when your hands are on the keys.
@@ -1577,7 +1577,7 @@ final class NoteTextView: NSTextView {
               let block = MarkdownEditing.enclosingFence(in: storage.string as NSString,
                                                          at: selectedRange())
         else { return nil }
-        return copy(body: block.body, from: storage, to: pasteboard)
+        return copy(block: block, from: storage, to: pasteboard)
     }
 
     /// Puts the tick over the block ⌘⇧C just took, then lets the pointer decide
@@ -1603,12 +1603,27 @@ final class NoteTextView: NSTextView {
         }
     }
 
-    private func copy(body: NSRange, from storage: NSTextStorage,
+    private func copy(block: (whole: NSRange, body: NSRange), from storage: NSTextStorage,
                       to pasteboard: NSPasteboard) -> String? {
-        let code = (storage.string as NSString).substring(with: body)
+        let text = storage.string as NSString
+        // A snippet is something you paste into a terminal, so its fences are
+        // packaging and come off. A diagram is the other way round: ```mermaid
+        // is what makes it a diagram, and without it what you paste somewhere
+        // else is a page of arrows. Reported exactly that way.
+        let range = Self.isDiagram(block.whole, in: text) ? block.whole : block.body
+        let code = text.substring(with: range)
         pasteboard.clearContents()
         pasteboard.setString(code, forType: .string)
         return code
+    }
+
+    /// Does this fenced block open with ```mermaid?
+    static func isDiagram(_ whole: NSRange, in text: NSString) -> Bool {
+        let opening = text.lineRange(for: NSRange(location: whole.location, length: 0))
+        let tag = text.substring(with: opening)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tag.hasPrefix("```") else { return false }
+        return tag.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased() == "mermaid"
     }
 
     /// Where the mark sits, for the checks that cannot see it.
