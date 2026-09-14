@@ -1,6 +1,6 @@
 ---
 name: ledge
-description: Keep a Ledge note updated as a live progress feed for a long task — create the note, add and tick checklist items, append findings. Use when the user asks to be kept posted on progress, wants a task tracked in their notes, or mentions Ledge notes.
+description: Keep a Ledge note updated as a live progress feed for a long task — create the note, add and tick checklist items, append findings, and draw a process or a sequence of steps as a Mermaid diagram. Use when the user asks to be kept posted on progress, wants a task tracked in their notes, or mentions Ledge notes.
 ---
 
 # Keeping a Ledge note as a progress feed
@@ -76,6 +76,59 @@ Long or multi-line text can go on stdin instead:
 ```bash
 some-command | ledge append "$ID"
 ```
+
+## When the answer is a shape, draw it
+
+A ```` ```mermaid ```` block in a note is **drawn as a diagram** on the paper,
+under the fence that defines it. So when what you have to say is a process, an
+order of events, a decision, or which piece talks to which, put it in one
+instead of describing it in a paragraph. That is the whole reason to reach for
+this: a shape is read at a glance, and a glance is all this note gets.
+
+The backticks and the newlines make this a job for stdin:
+
+````bash
+ledge append "$ID" <<'EOF'
+```mermaid
+graph TD
+    A[Migración] --> B{Backfill ok?}
+    B -->|sí| C[Cambiar la lectura]
+    B -->|no| D[Revisar las filas]
+```
+EOF
+````
+
+The source stays in the note and stays editable — the drawing goes underneath
+it — so this is still a plain `.md` file that renders on GitHub too.
+
+### What is drawn
+
+Checked against the renderer, not assumed:
+
+| | |
+|---|---|
+| `graph TD` / `graph LR` / `flowchart` | steps, decisions, anything with arrows |
+| `sequenceDiagram` | who called what, in order |
+| `stateDiagram-v2` | what something can be, and how it moves |
+| `classDiagram`, `erDiagram` | shapes of data |
+| `pie` | a split worth seeing |
+| `journey`, `architecture-beta` | occasionally |
+
+`gantt`, `mindmap` and `timeline` are **not** drawn. Nothing breaks — the note
+says, in a quiet line, that it could not draw that block — but you have spent
+the user's attention on a fence they now have to read as text.
+
+### Keep it small
+
+This is a sticky note, not a whiteboard. Five to eight nodes says something at a
+glance; twenty says "open me later", which is the opposite of the point. If the
+shape genuinely needs more than that, the honest move is two diagrams at two
+moments in the task, not one big one.
+
+And draw when the shape *is* the news — the plan at the start, a flow that
+turned out to be different from what anyone expected. A diagram on every append
+is decoration, and the rule below about not writing a transcript applies to
+pictures too.
 
 ## Reading it back
 

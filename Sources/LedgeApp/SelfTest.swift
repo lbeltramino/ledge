@@ -2250,6 +2250,38 @@ enum SelfTest {
         huge.releaseGlobally()
     }
 
+    /// The diagrams the skill tells an agent to reach for.
+    ///
+    /// An agent is told, in `skills/ledge/SKILL.md`, which kinds are drawn and
+    /// which three are not. That list is a promise made to something that
+    /// cannot check it — it will write the fence, and the user will get a quiet
+    /// "could not draw this" where they expected a picture. So the promise is
+    /// checked here against the renderer itself.
+    static func checkDiagramsTheSkillPromises() {
+        let drawn: [(String, String)] = [
+            ("graph TD", "graph TD\n    A[Uno] --> B{Decide}\n    B -->|sí| C[Hace]"),
+            ("graph LR", "graph LR\n    A[Uno] --> B[Dos] --> C[Tres]"),
+            ("flowchart", "flowchart TD\n    A[Uno] --> B[Dos]"),
+            ("sequenceDiagram", "sequenceDiagram\n    participant A\n    participant B\n    A->>B: pide"),
+            ("stateDiagram-v2", "stateDiagram-v2\n    [*] --> Quieto\n    Quieto --> Corriendo: arranca"),
+            ("classDiagram", "classDiagram\n    class Nota {\n      +String titulo\n    }"),
+            ("erDiagram", "erDiagram\n    NOTA ||--o{ IMAGEN : tiene"),
+            ("pie", "pie title Reparto\n    \"Uno\" : 40\n    \"Dos\" : 60"),
+        ]
+        for (name, source) in drawn {
+            check(MediaStore.canDraw(source), "the skill promises \(name), and it draws")
+        }
+
+        // And the three it warns off. If one of these starts working, the
+        // warning is now wrong in the other direction — still worth knowing.
+        for name in ["gantt\n    title Plan\n    section A\n    Tarea :a1, 2026-01-01, 30d",
+                     "mindmap\n  root((idea))\n    rama",
+                     "timeline\n    title Historia\n    2024 : algo"] {
+            check(!MediaStore.canDraw(name),
+                  "the skill warns off \(name.prefix(8)), and it is still not drawn")
+        }
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -2834,6 +2866,7 @@ enum SelfTest {
         checkMediaSurvivesTyping()
         checkCopyingADrawing()
         checkPastingAPicture()
+        checkDiagramsTheSkillPromises()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

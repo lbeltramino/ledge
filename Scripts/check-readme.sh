@@ -41,3 +41,13 @@ if [ -x "$LEDGE" ]; then
 else
   echo "note: the ledge binary is not built, so its verbs were not checked"
 fi
+
+# The skill ships twice — once where Claude Code looks for it, once where a
+# reader of the repo would. Two copies of a file drift; this is the whole
+# defence against editing one of them.
+if ! diff -q skills/ledge/SKILL.md .claude/skills/ledge/SKILL.md > /dev/null; then
+  echo "the two copies of the ledge skill have drifted apart:"
+  diff skills/ledge/SKILL.md .claude/skills/ledge/SKILL.md || true
+  exit 1
+fi
+echo "both copies of the skill agree"
