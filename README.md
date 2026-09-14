@@ -72,7 +72,8 @@ SQLite index beside it is a cache you can delete at any moment.
 - **Take the code back out.** Hover a code block and a small mark appears at its
   top right; click it and the block is on your clipboard without its fences,
   ready to paste into a terminal. `⌘⇧C` does the same for the block the caret is
-  in.
+  in. A ```` ```mermaid ```` block keeps its fences, because there they are not
+  packaging — they are what makes it a diagram in the note you paste it into.
 - **The small things.** Paste a URL over some words and they become the link
   text. Type a bracket or a quote with something selected and it wraps rather
   than replaces. `⌥↑` and `⌥↓` move the line you are on, renumbering the list
