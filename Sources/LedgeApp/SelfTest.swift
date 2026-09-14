@@ -2515,6 +2515,27 @@ enum SelfTest {
               "a diagram keeps the fence that makes it one: \(diagram.prefix(12).debugDescription)")
         check(diagram.hasSuffix("```"), "…and the one that closes it")
 
+        // And the round trip that matters: copy it, paste it, and it is a
+        // diagram again — not a fence wrapped in a longer fence. Reported as
+        // "lots of ticks, another set of four wrapping the content", which is
+        // what fencing an already-fenced block does.
+        let elsewhere = NoteCardView(record: record, body: "antes\n")
+        elsewhere.frame = card.frame
+        elsewhere.layoutSubtreeIfNeeded()
+        elsewhere.textView.pasteboard = scratch
+        elsewhere.textView.setSelectedRange(NSRange(location: 6, length: 0))
+        elsewhere.textView.paste(nil)
+        let landed = elsewhere.textView.string
+        check(!landed.contains("````"),
+              "pasting a copied diagram does not fence it again: \(landed.debugDescription.prefix(40))")
+        check(landed.components(separatedBy: "```").count - 1 == 2,
+              "exactly one fence, opened and closed: \(landed.components(separatedBy: "```").count - 1) marks")
+        check(Media.all(in: landed).count == 1,
+              "…and what landed is a diagram: \(Media.all(in: landed).count)")
+        elsewhere.layoutSubtreeIfNeeded()
+        check(elsewhere.textView.debugMediaViews.contains(where: \.debugIsPicture),
+              "…drawn where it was pasted")
+
         // The real test of that: what came off the clipboard draws.
         let pasted = Media.all(in: diagram)
         check(pasted.count == 1, "what was copied is a diagram again when pasted: \(pasted.count)")

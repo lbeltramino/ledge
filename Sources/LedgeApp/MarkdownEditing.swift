@@ -333,10 +333,18 @@ enum MarkdownEditing {
         // Already inside a block? Then it is code arriving into code, and a
         // second fence would close the first one.
         if enclosingFence(in: text, at: selection) != nil { return (false, nil) }
-        guard let found = Code.detect(pasted) else { return (false, nil) }
+
+        // Already a fenced block? Then it is markdown that came out of a note,
+        // not a snippet that came out of a terminal. Fencing it again wraps it
+        // in a longer fence and what lands is backticks inside backticks —
+        // which is what copying a diagram puts on the clipboard, so this is the
+        // ordinary case and not a corner of one.
+        let fenced = isFencedBlock(pasted)
+        let found = fenced ? nil : Code.detect(pasted)
+        guard fenced || found != nil else { return (false, nil) }
 
         // A fence has to start its own line, and be followed by one.
-        var block = Code.fenced(pasted, language: found.language)
+        var block = fenced ? pasted : Code.fenced(pasted, language: found!.language)
         let atLineStart = selection.location == 0
             || text.substring(with: NSRange(location: selection.location - 1, length: 1)) == "\n"
         if !atLineStart { block = "\n" + block }
@@ -347,7 +355,16 @@ enum MarkdownEditing {
         replace(textView, range: selection, with: block)
         textView.setSelectedRange(NSRange(location: selection.location + (block as NSString).length,
                                           length: 0))
-        return (true, found.title)
+        return (true, found?.title)
+    }
+
+    /// Is this text a fenced block already, opening and closing on its own
+    /// lines?
+    static func isFencedBlock(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("```") else { return false }
+        let lines = trimmed.components(separatedBy: "\n")
+        return lines.count >= 2 && lines.last?.trimmingCharacters(in: .whitespaces) == "```"
     }
 
     /// Typing a bracket or a quote with something selected puts it around the

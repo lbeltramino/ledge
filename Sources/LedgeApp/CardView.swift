@@ -1649,9 +1649,13 @@ final class NoteTextView: NSTextView {
 
     /// Pasting a URL over a selection links it; pasting source code fences it.
     override func paste(_ sender: Any?) {
+        // Every half of this reads the same clipboard — the view's, which is
+        // the real one in the app and its own in a check. Two of the three used
+        // to reach for `.general` regardless, so a check that handed this view
+        // a picture was still measuring whatever the machine had copied.
         if pasteImage(from: pasteboard) { return }
-        if MarkdownEditing.pasteLink(self) { return }
-        let code = MarkdownEditing.pasteCode(self)
+        if MarkdownEditing.pasteLink(self, from: pasteboard) { return }
+        let code = MarkdownEditing.pasteCode(self, from: pasteboard)
         if code.did {
             if let title = code.title { onSuggestedTitle?(title) }
             return
