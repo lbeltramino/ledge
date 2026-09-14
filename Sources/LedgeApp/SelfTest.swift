@@ -2136,10 +2136,25 @@ enum SelfTest {
         picture.unlockFocus()
         scratch.writeObjects([picture])
 
+        // Through the door ⌘V actually uses.
+        //
+        // It is a menu key equivalent, and an item that does not validate never
+        // fires: a plain-text view refuses `paste:` when the clipboard holds no
+        // text, so with a screenshot on it `paste(_:)` was never called and
+        // nothing happened anywhere. The old check called the paste method
+        // itself and saw none of that.
+        view.pasteboard = scratch
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)),
+                                   keyEquivalent: "v")
+        check(view.validateUserInterfaceItem(pasteItem),
+              "⌘V is offered when there is a picture to take")
+        check(view.validateMenuItem(pasteItem), "…by both of the ways AppKit asks")
+
         // At the end of the first line, so the reference has to make room for
         // itself: this only draws a picture on a line of its own.
         view.setSelectedRange(NSRange(location: 9, length: 0))
-        check(view.pasteImage(from: scratch), "a picture on the clipboard is pasted")
+        view.paste(nil)
+        check(view.string.contains("![]("), "a picture on the clipboard is pasted")
 
         let lines = view.string.components(separatedBy: "\n")
         guard let reference = lines.first(where: { $0.hasPrefix("![](") }) else {
@@ -2166,7 +2181,7 @@ enum SelfTest {
         // would change picture underneath you.
         let firstPath = path
         view.setSelectedRange(NSRange(location: 0, length: 0))
-        check(view.pasteImage(from: scratch), "pasting a second time works")
+        view.paste(nil)
         let both = view.string.components(separatedBy: "\n")
             .filter { $0.hasPrefix("![](") }
         check(Set(both).count == 2,
@@ -2180,8 +2195,22 @@ enum SelfTest {
         mixed.clearContents()
         mixed.writeObjects([picture])
         mixed.setString("algún texto", forType: .string)
-        check(!view.pasteImage(from: mixed),
+        view.pasteboard = mixed
+        check(!view.canTakePicture(from: mixed),
               "a clipboard with words on it is not swallowed as a picture")
+
+        func referenceCount() -> Int {
+            view.string.components(separatedBy: "\n").filter { $0.hasPrefix("![](") }.count
+        }
+        let referencesBefore = referenceCount()
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        // Not "the words arrive": that is `super.paste`, which reads the real
+        // clipboard whatever this view is pointed at. What matters here is that
+        // the picture path stands aside and lets the ordinary paste happen.
+        check(!view.pasteImage(from: mixed), "…the paste is left to the text")
+        view.paste(nil)
+        check(referenceCount() == referencesBefore,
+              "…and no picture is written behind your back")
 
         scratch.releaseGlobally()
         mixed.releaseGlobally()

@@ -1285,6 +1285,38 @@ final class NoteTextView: NSTextView {
         }
     }
 
+    /// The clipboard this note pastes from. The real one in the app; a check
+    /// hands it its own, so proving that ⌘V works does not mean emptying
+    /// whatever somebody had copied.
+    var pasteboard: NSPasteboard = .general
+
+    /// Is there a picture here worth taking?
+    ///
+    /// Deliberately narrow. Copying out of a browser puts the picture *and* the
+    /// text on the clipboard, and a paste that swallowed the text to save an
+    /// image nobody asked for would be worse than not having this at all:
+    /// pixels only win when there is no text to prefer.
+    func canTakePicture(from pasteboard: NSPasteboard) -> Bool {
+        let files = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] ?? []
+        let hasText = !(pasteboard.string(forType: .string) ?? "").isEmpty
+        return !files.isEmpty || (!hasText && NSImage(pasteboard: pasteboard) != nil)
+    }
+
+    /// ⌘V is a menu key equivalent, and a menu item that does not validate
+    /// never fires. A plain-text view refuses `paste:` when the clipboard holds
+    /// no text — so with a screenshot on it the item was quietly disabled and
+    /// `paste(_:)` was never called at all. Not a paste that failed: a paste
+    /// that never happened, which is why nothing was written anywhere.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(paste(_:)), canTakePicture(from: pasteboard) { return true }
+        return super.validateMenuItem(item)
+    }
+
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), canTakePicture(from: pasteboard) { return true }
+        return super.validateUserInterfaceItem(item)
+    }
+
     /// A picture on the clipboard becomes a file beside the notes and a
     /// reference to it, so pasting a screenshot into a note is one gesture.
     ///
@@ -1293,11 +1325,10 @@ final class NoteTextView: NSTextView {
     /// text to save an image nobody asked for would be worse than not having
     /// this at all: pixels only win when there is no text to prefer.
     @discardableResult
-    func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
-        let files = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] ?? []
-        let hasText = !(pasteboard.string(forType: .string) ?? "").isEmpty
-        let looksLikeAPicture = !files.isEmpty || (!hasText && NSImage(pasteboard: pasteboard) != nil)
-        guard looksLikeAPicture, let path = MediaStore.save(from: pasteboard) else { return false }
+    func pasteImage(from pasteboard: NSPasteboard? = nil) -> Bool {
+        let pasteboard = pasteboard ?? self.pasteboard
+        guard canTakePicture(from: pasteboard),
+              let path = MediaStore.save(from: pasteboard) else { return false }
 
         // On a line of its own, which is the only kind this draws. Whatever the
         // caret was in the middle of stays as it was, above and below.
@@ -1559,7 +1590,7 @@ final class NoteTextView: NSTextView {
 
     /// Pasting a URL over a selection links it; pasting source code fences it.
     override func paste(_ sender: Any?) {
-        if pasteImage() { return }
+        if pasteImage(from: pasteboard) { return }
         if MarkdownEditing.pasteLink(self) { return }
         let code = MarkdownEditing.pasteCode(self)
         if code.did {
