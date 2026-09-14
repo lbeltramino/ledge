@@ -2221,6 +2221,33 @@ enum SelfTest {
 
         scratch.releaseGlobally()
         mixed.releaseGlobally()
+
+        // The ceiling. Not compression: a screenshot is left exactly as it is,
+        // and only a photograph nobody will ever see at that size is brought
+        // down. Measured on the file, because that is what fills the folder.
+        let huge = NSPasteboard(name: .init("ledge.selftest.paste.huge"))
+        huge.clearContents()
+        let big = NSImage(size: NSSize(width: CGFloat(MediaStore.largestEdge) + 800, height: 900))
+        big.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: CGFloat(MediaStore.largestEdge) + 800, height: 900).fill()
+        big.unlockFocus()
+        huge.writeObjects([big])
+        view.pasteboard = huge
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        view.paste(nil)
+        if let line = view.string.components(separatedBy: "\n").first(where: { $0.hasPrefix("![](") }),
+           let kept = MediaStore.url(for: String(line.dropFirst(4).dropLast(1))),
+           let source = CGImageSourceCreateWithURL(kept as CFURL, nil),
+           let size = MediaStore.pixelSize(of: source) {
+            check(Int(max(size.width, size.height)) <= MediaStore.largestEdge,
+                  String(format: "an enormous picture is brought down to the ceiling (%.0f×%.0f)",
+                         size.width, size.height))
+            check(size.width > size.height, "…keeping its proportions")
+        } else {
+            check(false, "the enormous picture was not written")
+        }
+        huge.releaseGlobally()
     }
 
     /// Every surface that shows a note shows its pictures.

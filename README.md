@@ -292,7 +292,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 200 unit tests
+swift run ledge-tests                               # 205 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -502,6 +502,7 @@ Everything the command does:
 | `ledge set <note>` | `--title` `--color` `--feed` `--archive` `--activate` |
 | `ledge get <note> [--json]` | the text, or id/title/tasks/state |
 | `ledge list [--feed NAME] [--json]` | with `[done/total]` and what is writing |
+| `ledge images [--unused] [--prune] [--days N]` | what the pictures weigh, and which nothing points at |
 | `ledge folder` | where the notes live |
 
 `<note>` is an id, or enough of a title to be unambiguous — an ambiguous name is
@@ -575,6 +576,40 @@ Hovering either offers the copy mark from the top right — the one a code block
 uses — and clicking it puts the drawing on the clipboard. A picture goes as its
 own file as well as an image, so dropping it into Finder or a mail attaches the
 file rather than a screenshot of it.
+
+### Housekeeping
+
+A picture is kept at the size it arrived. Not compression by default: a
+full-screen screenshot is 1.6 MB as a PNG and 1.2 MB shrunk to 2048 px — a
+quarter saved for a real loss of sharpness on text, which is a bad trade. There
+is a ceiling instead, at 4000 px on the longest edge, for the case that actually
+fills a folder: a twelve-megapixel photograph a sticky note will never draw
+above 800 px. Under the ceiling, a file copied in from Finder is copied byte for
+byte.
+
+Deleting the reference does **not** delete the file, and nothing ever collects
+them while you write. The folder is yours and may hold files Ledge knows nothing
+about, so tidying is a command you run:
+
+```console
+$ ledge images
+4 in use — 3.0 MB
+2 unused — 1.1 MB
+   pasted-20260901-101433.png  812 KB
+   pasted-20260903-145501.png  312 KB
+1 unused but newer than 7 days, left alone
+
+ledge images --prune  moves them to resources/img/trash
+```
+
+Three rules, and they are all about not losing a picture. A file is **in use if
+any note mentions its name** — in a sentence, a code block or a plain link, not
+only where a picture would be drawn — because every one of those is somebody
+meaning to keep it. Anything touched in the last **seven days** is left alone,
+which covers pasting and undoing, cutting a paragraph to move it, and a note
+iCloud has not brought over to this machine yet. And `--prune` **moves** files
+to `resources/img/trash` rather than deleting them, so a wrong answer costs a
+`mv` to undo.
 
 Pictures and diagrams are drawn on the deck's card, on a note pulled onto the
 desk, and in the full-size editor — all three, because they are drawn by the

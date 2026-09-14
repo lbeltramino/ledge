@@ -624,6 +624,66 @@ enum CoreTests {
                     "the range has to be exactly the reference, or the room is reserved on the wrong line")
         }
 
+        Runner.suite("Pictures nothing points at")
+
+        func picture(_ name: String, _ bytes: Int = 1000, daysOld: Double = 30) -> MediaAudit.Picture {
+            MediaAudit.Picture(name: name, bytes: bytes,
+                               modified: Date().addingTimeInterval(-daysOld * 86_400))
+        }
+
+        await Runner.test("a picture a note mentions is in use") { c in
+            let report = MediaAudit.report(pictures: [picture("a.png"), picture("b.png")],
+                                           notes: ["mirá ![](resources/img/a.png) esto"])
+            c.equal(report.used.map(\.name), ["a.png"])
+            c.equal(report.unused.map(\.name), ["b.png"])
+        }
+
+        await Runner.test("mentioned counts, drawn does not") { c in
+            // The generous test on purpose: none of these are drawn as pictures,
+            // and every one of them is somebody meaning to keep the file. The
+            // failure this must never have is calling something unused when a
+            // note still points at it.
+            let notes = [
+                "a picture mid sentence ![](resources/img/a.png) like this",
+                "```\nresources/img/b.png\n```",
+                "[the file](resources/img/c.png)",
+                "I keep resources/img/d.png for later",
+            ]
+            let report = MediaAudit.report(
+                pictures: ["a.png", "b.png", "c.png", "d.png", "e.png"].map { picture($0) },
+                notes: notes)
+            c.equal(report.used.map(\.name), ["a.png", "b.png", "c.png", "d.png"])
+            c.equal(report.unused.map(\.name), ["e.png"], "only the one nobody names")
+        }
+
+        await Runner.test("something pasted a moment ago is left alone") { c in
+            // Pasting and undoing, cutting a paragraph to move it, or a note
+            // that iCloud has not brought over yet: all short, all look exactly
+            // like an orphan while they last.
+            let report = MediaAudit.report(pictures: [picture("fresh.png", daysOld: 1),
+                                                      picture("old.png", daysOld: 30)],
+                                           notes: [])
+            c.equal(report.tooRecent.map(\.name), ["fresh.png"])
+            c.equal(report.unused.map(\.name), ["old.png"],
+                    "and only what has been unused a while is offered")
+        }
+
+        await Runner.test("the sizes are what would be freed") { c in
+            let report = MediaAudit.report(pictures: [picture("a.png", 2_000_000),
+                                                      picture("b.png", 1_048_576)],
+                                           notes: ["![](resources/img/a.png)"])
+            c.equal(report.usedBytes, 2_000_000)
+            c.equal(report.unusedBytes, 1_048_576)
+            c.equal(MediaAudit.readable(1_048_576), "1.0 MB")
+            c.equal(MediaAudit.readable(2048), "2 KB")
+        }
+
+        await Runner.test("pruning moves, never deletes") { c in
+            c.expect(MediaAudit.trash.hasPrefix(Media.folder),
+                     "the trash lives inside the picture folder: \(MediaAudit.trash)")
+            c.expect(MediaAudit.trash != Media.folder, "and is not the folder itself")
+        }
+
         Runner.suite("The ledge command")
 
         // Runs the binary itself rather than the functions under it: the

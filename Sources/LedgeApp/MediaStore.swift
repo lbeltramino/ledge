@@ -56,6 +56,17 @@ enum MediaStore {
     /// written out as a PNG.
     private static let keepable: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff"]
 
+    /// The largest edge a picture is kept at.
+    ///
+    /// A ceiling, not a compression setting. Measured before it was picked: a
+    /// full-screen screenshot is 1.6 MB as PNG and 1.2 MB shrunk to 2048 px —
+    /// a quarter saved for a real loss of sharpness on text, which is a bad
+    /// trade. What this is for is the other case: a twelve-megapixel photograph
+    /// that a sticky note will never draw above 800 px. Above 4000 the file is
+    /// resized; below it, nothing is touched and a file is copied byte for
+    /// byte, because re-encoding somebody's picture is not ours to do.
+    static let largestEdge = 4000
+
     /// Saves whatever picture is on `pasteboard` into the notes folder and
     /// answers the path a note should reference.
     ///
@@ -71,16 +82,56 @@ enum MediaStore {
            let source = urls.first(where: { keepable.contains($0.pathExtension.lowercased()) }) {
             let destination = free(source.deletingPathExtension().lastPathComponent,
                                    extension: source.pathExtension.lowercased(), in: folder)
-            guard (try? FileManager.default.copyItem(at: source, to: destination)) != nil
-            else { return nil }
+            guard copy(source, to: destination) else { return nil }
             return "\(Media.folder)/\(destination.lastPathComponent)"
         }
 
         guard let image = NSImage(pasteboard: pasteboard),
-              let data = png(from: image) else { return nil }
+              let data = png(from: capped(image)) else { return nil }
         let destination = free(stamped(), extension: "png", in: folder)
         guard (try? data.write(to: destination)) != nil else { return nil }
         return "\(Media.folder)/\(destination.lastPathComponent)"
+    }
+
+    /// Copies a file in, resizing it only if it is enormous. Under the ceiling
+    /// the bytes are copied exactly as they are — same format, same quality,
+    /// same metadata.
+    private static func copy(_ source: URL, to destination: URL) -> Bool {
+        guard let image = CGImageSourceCreateWithURL(source as CFURL, nil),
+              let size = pixelSize(of: image),
+              max(size.width, size.height) > CGFloat(largestEdge) else {
+            return (try? FileManager.default.copyItem(at: source, to: destination)) != nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: largestEdge,
+        ]
+        guard let smaller = CGImageSourceCreateThumbnailAtIndex(image, 0, options as CFDictionary),
+              let type = CGImageSourceGetType(image),
+              let out = CGImageDestinationCreateWithURL(destination as CFURL, type, 1, nil)
+        else {
+            // Anything unexpected and the original goes in untouched: a picture
+            // that is too big is a far smaller problem than one that is gone.
+            return (try? FileManager.default.copyItem(at: source, to: destination)) != nil
+        }
+        CGImageDestinationAddImage(out, smaller, nil)
+        return CGImageDestinationFinalize(out)
+    }
+
+    /// The same ceiling for pixels off the clipboard.
+    private static func capped(_ image: NSImage) -> NSImage {
+        var proposed = NSRect(origin: .zero, size: image.size)
+        guard let cg = image.cgImage(forProposedRect: &proposed, context: nil, hints: nil),
+              max(cg.width, cg.height) > largestEdge else { return image }
+        let scale = CGFloat(largestEdge) / CGFloat(max(cg.width, cg.height))
+        let size = NSSize(width: CGFloat(cg.width) * scale, height: CGFloat(cg.height) * scale)
+        let smaller = NSImage(size: size)
+        smaller.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(origin: .zero, size: size))
+        smaller.unlockFocus()
+        return smaller
     }
 
     private static func png(from image: NSImage) -> Data? {

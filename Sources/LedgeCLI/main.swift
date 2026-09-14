@@ -131,6 +131,7 @@ ledge — write to your Ledge notes from a script or an agent
   ledge set <note> [--title T] [--color C] [--feed F] [--archive] [--activate]
   ledge get <note> [--json]
   ledge list [--feed NAME] [--json]
+  ledge images [--unused] [--prune] [--days N]
   ledge folder
 
 <note> is an id, or enough of a title to be unambiguous.
@@ -257,6 +258,74 @@ do {
                 let feed = entry.note.feed.isEmpty ? "" : "  ← \(entry.note.feed)"
                 print("\(entry.note.id)  \(entry.note.displayTitle)\(progress)\(feed)")
             }
+        }
+
+    // Pictures nothing points at any more.
+    //
+    // A command you run, never something that happens while you write. The
+    // folder is yours and is allowed to hold files Ledge knows nothing about,
+    // so the answer to "is this still needed?" is deliberately generous and the
+    // answer to "then delete it" is always "move it to a trash folder".
+    case "images":
+        let pictures = store.folder.appendingPathComponent(Media.folder)
+        let grace = arguments.value("days").flatMap(Int.init) ?? MediaAudit.grace
+        let manager = FileManager.default
+
+        let files = (try? manager.contentsOfDirectory(at: pictures,
+                                                      includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
+                                                      options: [.skipsHiddenFiles])) ?? []
+        let found: [MediaAudit.Picture] = files.compactMap { url in
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isDirectoryKey])
+            guard values?.isDirectory != true else { return nil }   // the trash folder itself
+            return MediaAudit.Picture(name: url.lastPathComponent,
+                                      bytes: values?.fileSize ?? 0,
+                                      modified: values?.contentModificationDate ?? Date())
+        }
+
+        // The whole file, not the parsed body: a reference could be anywhere,
+        // and reading it the generous way is what keeps this from ever calling
+        // something unused when it is not.
+        let texts = try store.notes().compactMap { try? FileIO.read($0.url).text }
+        let report = MediaAudit.report(pictures: found, notes: texts, grace: grace)
+
+        if arguments.has("unused") {
+            for picture in report.unused { print(picture.name) }
+            break
+        }
+
+        if arguments.has("prune") {
+            guard !report.unused.isEmpty else {
+                print("nothing to put away")
+                break
+            }
+            let trash = store.folder.appendingPathComponent(MediaAudit.trash)
+            try manager.createDirectory(at: trash, withIntermediateDirectories: true)
+            var moved = 0
+            for picture in report.unused {
+                let from = pictures.appendingPathComponent(picture.name)
+                var to = trash.appendingPathComponent(picture.name)
+                var n = 2
+                while manager.fileExists(atPath: to.path) {
+                    to = trash.appendingPathComponent("\((picture.name as NSString).deletingPathExtension)-\(n).\((picture.name as NSString).pathExtension)")
+                    n += 1
+                }
+                if (try? manager.moveItem(at: from, to: to)) != nil { moved += 1 }
+            }
+            print("moved \(moved) to \(MediaAudit.trash) — \(MediaAudit.readable(report.unusedBytes))")
+            print("they are still there: delete the folder when you are sure, or move them back")
+            break
+        }
+
+        print("\(report.used.count) in use — \(MediaAudit.readable(report.usedBytes))")
+        print("\(report.unused.count) unused — \(MediaAudit.readable(report.unusedBytes))")
+        for picture in report.unused {
+            print("   \(picture.name)  \(MediaAudit.readable(picture.bytes))")
+        }
+        if !report.tooRecent.isEmpty {
+            print("\(report.tooRecent.count) unused but newer than \(grace) days, left alone")
+        }
+        if !report.unused.isEmpty {
+            print("\nledge images --prune  moves them to \(MediaAudit.trash)")
         }
 
     case "folder":
