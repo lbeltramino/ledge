@@ -2144,11 +2144,18 @@ enum SelfTest {
         // nothing happened anywhere. The old check called the paste method
         // itself and saw none of that.
         view.pasteboard = scratch
-        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)),
-                                   keyEquivalent: "v")
-        check(view.validateUserInterfaceItem(pasteItem),
-              "⌘V is offered when there is a picture to take")
-        check(view.validateMenuItem(pasteItem), "…by both of the ways AppKit asks")
+        // The question AppKit asks before it lets ⌘V fire. A plain-text view
+        // answers "text", which is why a screenshot on the clipboard left the
+        // menu item disabled and `paste(_:)` uncalled. Asserted on the answer
+        // itself rather than on a validation call, which needs a window, a
+        // first responder and whatever happens to be on the real clipboard to
+        // mean anything at all.
+        let readable = view.readablePasteboardTypes
+        check(readable.contains(.png) && readable.contains(.tiff),
+              "a note says it can be handed a picture")
+        check(readable.contains(.fileURL), "…and a file")
+        check(view.acceptableDragTypes.contains(.png),
+              "…including one dragged onto it")
 
         // At the end of the first line, so the reference has to make room for
         // itself: this only draws a picture on a line of its own.
@@ -2203,12 +2210,12 @@ enum SelfTest {
             view.string.components(separatedBy: "\n").filter { $0.hasPrefix("![](") }.count
         }
         let referencesBefore = referenceCount()
-        view.setSelectedRange(NSRange(location: 0, length: 0))
-        // Not "the words arrive": that is `super.paste`, which reads the real
-        // clipboard whatever this view is pointed at. What matters here is that
-        // the picture path stands aside and lets the ordinary paste happen.
+        // Only the picture path is asked. Calling `paste(_:)` here would fall
+        // through to `super`, which reads the real clipboard whatever this view
+        // is pointed at — so it would be measuring whatever happened to be
+        // copied on the machine running the checks, which is not a fact about
+        // Ledge.
         check(!view.pasteImage(from: mixed), "…the paste is left to the text")
-        view.paste(nil)
         check(referenceCount() == referencesBefore,
               "…and no picture is written behind your back")
 

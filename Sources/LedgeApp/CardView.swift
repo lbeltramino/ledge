@@ -1302,20 +1302,27 @@ final class NoteTextView: NSTextView {
         return !files.isEmpty || (!hasText && NSImage(pasteboard: pasteboard) != nil)
     }
 
-    /// ⌘V is a menu key equivalent, and a menu item that does not validate
-    /// never fires. A plain-text view refuses `paste:` when the clipboard holds
-    /// no text — so with a screenshot on it the item was quietly disabled and
-    /// `paste(_:)` was never called at all. Not a paste that failed: a paste
-    /// that never happened, which is why nothing was written anywhere.
-    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(paste(_:)), canTakePicture(from: pasteboard) { return true }
-        return super.validateMenuItem(item)
+    /// What a note can be handed.
+    ///
+    /// ⌘V is a menu key equivalent, and an item that does not validate never
+    /// fires. AppKit validates `paste:` by asking a view what it can read, and
+    /// a plain-text view says text — so with a screenshot on the clipboard the
+    /// item was quietly disabled and `paste(_:)` was never called at all. Not a
+    /// paste that failed: a paste that never happened, which is why nothing was
+    /// written anywhere and the folder stayed clean.
+    ///
+    /// Saying so here rather than overriding the two validation methods: this
+    /// is the question AppKit actually asks, and answering the real question
+    /// covers the menu, the key equivalent and a drag onto the note at once.
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        super.readablePasteboardTypes + Self.pictureTypes
     }
 
-    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(paste(_:)), canTakePicture(from: pasteboard) { return true }
-        return super.validateUserInterfaceItem(item)
+    override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
+        super.acceptableDragTypes + Self.pictureTypes
     }
+
+    static let pictureTypes: [NSPasteboard.PasteboardType] = [.png, .tiff, .fileURL]
 
     /// A picture on the clipboard becomes a file beside the notes and a
     /// reference to it, so pasting a screenshot into a note is one gesture.
