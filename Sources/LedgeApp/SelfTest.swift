@@ -1299,6 +1299,44 @@ enum SelfTest {
               "the card and the file still agree")
     }
 
+    /// An agent writing a diagram into the note you are looking at.
+    ///
+    /// The whole way through: the command writes the file, the folder watcher
+    /// brings it in, and the open note has to *draw* it. Checked here rather
+    /// than only against `syncBody`, because the last two times something did
+    /// not appear on screen the mechanism was fine and the path to it was not.
+    static func checkAgentDiagramArrives(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let record = deck.recordsForTesting.first else {
+            check(false, "no note"); return
+        }
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(record.id)
+        await deck.refresh()
+        let before = deck.debugCardDrawings()
+
+        let feed = FeedStore(folder: folder)
+        guard let entry = try? feed.find(record.id) else {
+            check(false, "the command cannot find the note"); return
+        }
+        var note = entry.note
+        // At the very end, which is where an agent appends.
+        note.body = FeedEdit.appending("```mermaid\ngraph TD\n    A[Build] --> B[Deploy]\n```",
+                                       to: note.body)
+        _ = try? feed.write(note, to: entry.url)
+
+        await deck.reconcileForTesting([record.filename])
+        try? await Task.sleep(for: .milliseconds(800))
+
+        check(deck.debugCardBody()?.contains("mermaid") == true,
+              "the text an agent appended reaches the open note")
+        check(deck.debugCardDrawings() == before + 1,
+              "…and it is drawn, without anyone touching the keyboard: "
+              + "\(before) → \(deck.debugCardDrawings())")
+        deck.closeNote()
+        await deck.refresh()
+    }
+
     /// An agent writing to a note you do *not* have open.
     ///
     /// The index picks it up, so All Notes and search are right — and the deck
@@ -2333,6 +2371,56 @@ enum SelfTest {
               "a note ending in a picture keeps somewhere to type: \(trailing.debugDescription)")
     }
 
+    /// What arrives while you are looking at the note.
+    ///
+    /// An agent writes to the file, the app pulls the change in, and the note
+    /// has to *draw* what arrived — not keep it as text until you happen to
+    /// type. Reported as a mermaid block appended by an agent that never
+    /// appeared; typing anywhere in the note brought it to life, which is what
+    /// made it look like a problem with being last.
+    static func checkDrawingsArriveFromOutside() {
+        let record = NoteRecord(note: Note(title: "Feed"), filename: "s.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: "el agente está trabajando")
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+        check(view.debugMediaCount == 0, "nothing drawn yet")
+
+        // Exactly what the deck does when the file changes underneath it.
+        view.syncBody("""
+        el agente está trabajando
+
+        ```mermaid
+        graph TD
+            A[Build] --> B[Deploy]
+        ```
+
+        ![](resources/img/small.png)
+        """)
+        card.layoutSubtreeIfNeeded()
+
+        check(view.debugMediaCount == 2,
+              "what an agent wrote is drawn when it arrives: \(view.debugMediaCount)")
+        check(view.debugMediaViews.filter(\.debugIsPicture).count == 2,
+              "…both of them, actually drawn")
+
+        // A table written from outside is the same promise.
+        let other = NoteCardView(record: record, body: "antes")
+        other.frame = card.frame
+        other.layoutSubtreeIfNeeded()
+        other.textView.syncBody("""
+        antes
+
+        | Servicio | Estado |
+        |---|---|
+        | api | ok |
+        """)
+        other.layoutSubtreeIfNeeded()
+        check(other.textView.debugTableCount == 1,
+              "and a table too: \(other.textView.debugTableCount)")
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -2919,6 +3007,7 @@ enum SelfTest {
         checkPastingAPicture()
         checkDiagramsTheSkillPromises()
         checkDrawingAtTheEnd()
+        checkDrawingsArriveFromOutside()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
@@ -2934,6 +3023,7 @@ enum SelfTest {
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
+        await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
         await checkHoverDoesNotMoveTheStrip(deck: deck)

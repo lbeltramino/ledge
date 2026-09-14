@@ -1731,9 +1731,7 @@ final class NoteTextView: NSTextView {
         let caret = Merge.caret(selectedRange().location, from: mine, into: merged)
         string = merged.text
         setSelectedRange(NSRange(location: min(caret, (merged.text as NSString).length), length: 0))
-        if let storage = textStorage, let highlighter = storage.delegate as? MarkdownHighlighter {
-            highlighter.highlight(storage)
-        }
+        adoptedText()
     }
 
     func syncBody(_ text: String) {
@@ -1747,8 +1745,21 @@ final class NoteTextView: NSTextView {
         let caret = selectedRange().location
         string = text
         setSelectedRange(NSRange(location: min(caret, (text as NSString).length), length: 0))
+        adoptedText()
+    }
+
+    /// Text that arrived from somewhere other than the keyboard.
+    ///
+    /// Everything typing would have done, done once here so that neither
+    /// caller has to remember: highlight it, and *draw* it. Without the second
+    /// half, a table or a diagram an agent wrote stayed as text on the paper
+    /// until you happened to type — which is how a mermaid block appended to a
+    /// note was reported as never appearing.
+    private func adoptedText() {
         if let storage = textStorage, let highlighter = storage.delegate as? MarkdownHighlighter {
             highlighter.highlight(storage)
         }
+        refreshTables()
+        refreshMedia()
     }
 }

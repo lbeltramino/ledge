@@ -1603,6 +1603,7 @@ extension DeckController {
     func debugEditor(_ id: String) -> NoteEditorWindow? { editors[id] }
 
     func debugCardBody() -> String? { card?.textView.string }
+    func debugCardDrawings() -> Int { card?.textView.debugMediaCount ?? -1 }
 
     func debugCardMinimumWidth() -> CGFloat? { card?.minimumWidth }
 
