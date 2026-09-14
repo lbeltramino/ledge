@@ -2282,6 +2282,57 @@ enum SelfTest {
         }
     }
 
+    /// A drawing on the last line of a note.
+    ///
+    /// Reported: an agent appended a mermaid block to the end of a note and it
+    /// was not drawn; the same block pasted higher up drew fine. And once a
+    /// picture is the last thing in a note there is no way to type after it.
+    static func checkDrawingAtTheEnd() {
+        // Long enough that the text alone fills the card. On a short note the
+        // text view is as tall as the card whatever happens, so a drawing past
+        // the end lands inside it by luck and the check proves nothing.
+        let filler = (1...40).map { "línea \($0) de relleno" }.joined(separator: "\n")
+        for (what, tail) in [("a picture", "![](resources/img/small.png)"),
+                             ("a diagram", "```mermaid\ngraph TD\n    A[Uno] --> B[Dos]\n```")] {
+            let note = filler + "\n\n" + tail
+            let record = NoteRecord(note: Note(title: "Final"), filename: "f.md",
+                                    mtime: 0, size: 0, hash: "")
+            let card = NoteCardView(record: record, body: note)
+            card.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+            card.layoutSubtreeIfNeeded()
+            let view = card.textView
+
+            check(view.debugMediaCount == 1, "\(what) at the end is found: \(view.debugMediaCount)")
+            guard let frame = view.debugMediaFrames.first else {
+                check(false, "\(what) at the end has no drawing"); continue
+            }
+            check(frame.height > 10,
+                  String(format: "%@ at the end is drawn (%.0f×%.0f)", what, frame.width, frame.height))
+
+            // The text view's own height is what can be scrolled to, so that is
+            // what has to contain the drawing. Measured against the text as
+            // well, to be sure the case is the one that used to break: the
+            // drawing really does hang past the end of the words.
+            if let manager = view.layoutManager, let container = view.textContainer {
+                manager.ensureLayout(for: container)
+                let text = manager.usedRect(for: container).maxY
+                check(frame.maxY > text,
+                      String(format: "%@ really does hang past the text (%.0f vs %.0f)",
+                             what, frame.maxY, text))
+                check(frame.maxY <= view.frame.height + 1,
+                      String(format: "%@ at the end is inside what scrolls (%.0f vs %.0f)",
+                             what, frame.maxY, view.frame.height))
+            }
+        }
+
+        // And somewhere to put the caret afterwards. A note whose last line is a
+        // picture has nowhere to type: the file is saved with its trailing
+        // newlines stripped, so any line you add is taken away again on save.
+        let trailing = Frontmatter.normalizedBody("![](resources/img/small.png)\n")
+        check(trailing.hasSuffix("\n"),
+              "a note ending in a picture keeps somewhere to type: \(trailing.debugDescription)")
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -2867,6 +2918,7 @@ enum SelfTest {
         checkCopyingADrawing()
         checkPastingAPicture()
         checkDiagramsTheSkillPromises()
+        checkDrawingAtTheEnd()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

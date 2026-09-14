@@ -23,7 +23,22 @@ public enum Frontmatter {
     /// off again, so a body that goes in with trailing newlines does not come
     /// back the same. Anything that remembers "what I last wrote" has to
     /// remember this, or it will believe someone else edited the file.
-    public static func normalizedBody(_ body: String) -> String { trimmed(body) }
+    /// What a body looks like once it has been through a save and a load.
+    ///
+    /// Reading and writing must agree on this exactly. They did not once — the
+    /// baseline a merge was measured against said one thing and the file said
+    /// another, and typing duplicated the line below. So `parse` uses this too,
+    /// and the two cannot drift apart because there is only one of them.
+    public static func normalizedBody(_ body: String) -> String {
+        let body = trimmed(body)
+        // A note whose last line is a picture or a diagram has nowhere to type:
+        // the drawing is painted in the room after that line, and there is no
+        // line after it. One newline is kept so there always is somewhere to go.
+        guard let last = Media.all(in: body).last,
+              NSMaxRange(last.range) >= (body as NSString).length,
+              !body.isEmpty else { return body }
+        return body + "\n"
+    }
 
     static func trimmed(_ body: String) -> String {
         var b = body
@@ -77,7 +92,7 @@ public enum Frontmatter {
 
         let lines = text.components(separatedBy: "\n")
         guard lines.first?.trimmingCharacters(in: .whitespaces) == fence else {
-            note.body = trimmed(text)
+            note.body = normalizedBody(text)
             return Parsed(note: note, declared: declared)
         }
 
@@ -87,7 +102,7 @@ public enum Frontmatter {
             break
         }
         guard let close = end else {
-            note.body = trimmed(text)
+            note.body = normalizedBody(text)
             return Parsed(note: note, declared: declared)
         }
 
@@ -126,7 +141,7 @@ public enum Frontmatter {
         note.passthrough = passthrough
         note.body = lines[(close + 1)...].joined(separator: "\n")
         if note.body.hasPrefix("\n") { note.body.removeFirst() }
-        note.body = trimmed(note.body)
+        note.body = normalizedBody(note.body)
         return Parsed(note: note, declared: declared)
     }
 

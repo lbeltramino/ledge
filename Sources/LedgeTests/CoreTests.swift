@@ -624,6 +624,34 @@ enum CoreTests {
                     "the range has to be exactly the reference, or the room is reserved on the wrong line")
         }
 
+        await Runner.test("a note that ends in a drawing keeps somewhere to type") { c in
+            // The drawing is painted in the room after its line; with no line
+            // after it there is nowhere to put the caret, and an agent that
+            // appends a diagram to the end leaves the note unable to grow.
+            for tail in ["![](resources/img/x.png)", "```mermaid\ngraph TD\n  A-->B\n```"] {
+                let kept = Frontmatter.normalizedBody("texto\n\n" + tail)
+                c.expect(kept.hasSuffix("\n"), "nowhere to type after: \(tail)")
+            }
+            c.expect(!Frontmatter.normalizedBody("sólo texto\n\n\n").hasSuffix("\n"),
+                     "an ordinary note still loses its trailing blank lines")
+        }
+
+        await Runner.test("what is written and what is read back are the same thing") { c in
+            // They disagreed once: the baseline a merge measured against said
+            // one thing and the file said another, and typing duplicated the
+            // line below. `parse` and the save path now share this function.
+            for body in ["texto", "![](resources/img/x.png)", "texto\n\n```mermaid\ngraph TD\n  A-->B\n```",
+                         "- una tarea\n- otra"] {
+                var note = Note(title: "T")
+                note.body = Frontmatter.normalizedBody(body)
+                let back = Frontmatter.parse(Frontmatter.serialize(note),
+                                             fallbackTitle: "", fallbackID: note.id)
+                c.equal(back.body, note.body, "round trip changed the body: \(body.debugDescription)")
+                c.equal(Frontmatter.normalizedBody(note.body), note.body,
+                        "normalising twice is not the same as once")
+            }
+        }
+
         Runner.suite("Pictures nothing points at")
 
         func picture(_ name: String, _ bytes: Int = 1000, daysOld: Double = 30) -> MediaAudit.Picture {

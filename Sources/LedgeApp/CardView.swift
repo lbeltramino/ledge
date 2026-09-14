@@ -615,6 +615,14 @@ final class NoteCardView: NSView {
         // Now that the text has a width, the tables can be measured against it.
         textView.tablesDidLayout()
         textView.mediaDidLayout()
+        // And a drawing hanging off the last line needs the note to be that
+        // much taller, because nothing in the text reserves room for it.
+        let overhang = textView.mediaOverhang
+        if overhang > 0 {
+            textView.frame.size.height = max(textView.frame.height,
+                                             textView.frame.height + overhang)
+            textView.mediaDidLayout()
+        }
     }
 
     /// Clicking anywhere on the paper puts the caret in the note, the way a
@@ -1424,6 +1432,25 @@ final class NoteTextView: NSTextView {
 
     var debugMediaCopyFrame: NSRect? { mediaCopy.isHidden ? nil : mediaCopy.frame }
     func debugHoverMedia(at point: NSPoint) -> Bool { updateMediaCopy(at: point) }
+
+    /// How far the last drawing reaches past the end of the text.
+    ///
+    /// TextKit lays out paragraph spacing *between* paragraphs, and there is
+    /// nothing after the last one — so a drawing hanging off the final line of
+    /// a note reserves no room at all and falls outside everything that
+    /// scrolls. Reported as a diagram appended to the end of a note that simply
+    /// did not appear, while the same block higher up drew fine.
+    ///
+    /// The card adds this to the height it gives the text view, which is the
+    /// one number that decides what can be scrolled to.
+    var mediaOverhang: CGFloat {
+        guard let manager = layoutManager, let container = textContainer,
+              !mediaViews.isEmpty else { return 0 }
+        manager.ensureLayout(for: container)
+        let text = manager.usedRect(for: container).maxY + textContainerOrigin.y
+        let drawings = mediaViews.values.map(\.frame.maxY).max() ?? 0
+        return max(0, drawings - text)
+    }
 
     var debugMediaCount: Int { mediaViews.count }
     var debugMediaViews: [MediaView] { Array(mediaViews.values) }
