@@ -1019,7 +1019,7 @@ final class DeckController {
         }
         view.onBeginEditing = { [weak self] in self?.beginEditing(id) }
         view.textView.onEscape = { [weak self] in self?.dismiss() }
-        view.textView.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
+        view.textView.onOpenLink = { [weak self] name in self?.workspace.open(link: name) }
         view.onClose = { [weak self] in self?.closeNote() }
         view.onTitle = { [weak self] title in self?.rename(id: id, to: title) }
         view.onExpand = { [weak self] in self?.expand(id) }
@@ -1267,7 +1267,7 @@ final class DeckController {
         }
         float.shouldRedock = { [weak self] pointer in self?.workspace.strip(near: pointer) != nil }
         float.onColor = { [weak self] color in self?.recolor(id, to: color) }
-        float.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
+        float.onOpenLink = { [weak self] name in self?.workspace.open(link: name) }
         float.onOpenRelative = { [weak self] other in self?.visit(other) }
         float.onToggleOnStrip = { [weak self] out in self?.setOnStrip(id, out) }
         float.titlesForLinking = { [weak self] in (self?.records ?? []).map(\.displayTitle) }
@@ -1323,7 +1323,7 @@ final class DeckController {
             self?.scheduleSave(id: id, body: text, from: editor)
         }
         editor.onTitle = { [weak self] text in self?.rename(id: id, to: text) }
-        editor.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
+        editor.onOpenLink = { [weak self] name in self?.workspace.open(link: name) }
         editor.textView.titlesForLinking = { [weak self] in (self?.records ?? []).map(\.displayTitle) }
         editor.textView.onCreateLinked = { [weak self] name, asChild in
             self?.createLinked(name, from: id, asChild: asChild)
@@ -1420,6 +1420,11 @@ final class DeckController {
                              isOnStrip: record?.onStrip ?? false)
             view.needsLayout = true
         }
+    }
+
+    /// Pressing a link to a note nobody has written yet.
+    func createLinkedFromPress(_ name: String, parent: String) {
+        createLinked(name, from: parent, asChild: false)
     }
 
     /// A name was typed between brackets that no note answers to yet.

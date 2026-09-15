@@ -256,6 +256,25 @@ public actor NoteStore {
         return try index.search(trimmed).first?.record
     }
 
+    /// The note a `[[link]]` names.
+    ///
+    /// By title, and only by title. `find(reference:)` falls back to searching
+    /// the text, which for a link is exactly wrong: the note that *mentions* a
+    /// name is not the note that name refers to, and it is almost always the
+    /// very note the link is written in. So pressing `[[Nueva nota]]` opened
+    /// the note you were already reading, and looked like nothing happening.
+    public func find(title: String) throws -> NoteRecord? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let all = try index.all(.all)
+        if let exact = all.first(where: { $0.displayTitle == trimmed }) { return exact }
+        let folded = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        return all.first {
+            $0.displayTitle.folding(options: [.caseInsensitive, .diacriticInsensitive],
+                                    locale: nil) == folded
+        }
+    }
+
     /// Loads full notes for export. The index has metadata; the files have text.
     public func notes(ids: [String]) throws -> [Note] {
         try ids.compactMap { try? load(id: $0) }

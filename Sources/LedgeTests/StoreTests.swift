@@ -620,6 +620,38 @@ enum StoreTests {
                      "a new file must wake the app, not only a changed one: saw \(seen.names)")
         }
 
+        await Runner.test("un enlace no resuelve a la nota que lo menciona") { c in
+            // El bug que hacía que apretar un enlace pareciera no hacer nada:
+            // la nota que *menciona* un nombre ganaba la búsqueda de texto, y
+            // es casi siempre la nota donde está escrito el enlace. Apretarlo
+            // te abría la nota en la que ya estabas.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            _ = try await store.create(title: "This is a test",
+                                       body: "algo\n\n[[ Nueva nota ]]")
+
+            c.expect(try await store.find(title: "Nueva nota") == nil,
+                     "no existe una nota con ese título, y mencionarla no la crea")
+
+            // Y cuando existe de verdad, la encuentra.
+            _ = try await store.create(title: "Nueva nota", body: "por fin")
+            c.equal(try await store.find(title: "Nueva nota")?.displayTitle, "Nueva nota")
+            c.equal(try await store.find(title: "  nueva NOTA  ")?.displayTitle, "Nueva nota",
+                    "ignorando caja y espacios")
+            c.equal(try await store.find(title: "Migracion")?.displayTitle, nil,
+                    "y lo que no está, no está")
+        }
+
+        await Runner.test("find(reference:) sigue buscando en el texto, que es su trabajo") { c in
+            // La otra mitad: el esquema de URL y la línea de comandos sí quieren
+            // encontrar una nota por su contenido.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            _ = try await store.create(title: "This is a test", body: "hablo de bedrock acá")
+            c.equal(try await store.find(reference: "bedrock")?.displayTitle, "This is a test",
+                    "buscar por texto sigue andando donde corresponde")
+        }
+
         await Runner.test("a child does not take a tab, but is not lost either") { c in
             let box = Sandbox()
             let store = try NoteStore(folder: box.url)

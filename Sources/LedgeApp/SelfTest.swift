@@ -1392,6 +1392,62 @@ enum SelfTest {
         check(abiertos.isEmpty, "apretar el resto de la nota no abre nada")
     }
 
+    /// Saca del folder lo que un check dejó, y deja el deck como estaba.
+    ///
+    /// Los checks comparten una carpeta de notas. Uno que agrega notas y no las
+    /// saca le cambia el deck a todos los que corren después — esta suite ya se
+    /// contaminó a sí misma tres veces de esta forma, y la respuesta es que
+    /// cada check limpie lo suyo.
+    static func cleanUp(_ titles: [String], deck: DeckController, folder: URL) async {
+        let manager = FileManager.default
+        var removed: [String] = []
+        for title in titles {
+            let url = folder.appendingPathComponent("\(title).md")
+            if manager.fileExists(atPath: url.path) {
+                try? manager.removeItem(at: url)
+                removed.append("\(title).md")
+            }
+        }
+        guard !removed.isEmpty else { return }
+        await deck.reconcileForTesting(removed)
+        await deck.refresh()
+    }
+
+    /// Apretar un enlace a una nota que todavía no existe.
+    ///
+    /// Por el camino entero, y con la trampa adentro: la nota que se aprieta
+    /// *contiene* el texto del enlace. Buscar por contenido la hacía ganar a
+    /// ella misma, así que apretar abría la nota en la que ya estabas — que
+    /// desde afuera se ve exactamente igual que no hacer nada.
+    static func checkPressingALinkThatDoesNotExistYet(deck: DeckController, folder: URL) async {
+        let nombre = "Nota inventada \(Int(Date().timeIntervalSince1970) % 10000)"
+        let feed = FeedStore(folder: folder)
+        var madre = Note(title: "Con un enlace suelto", color: .coral)
+        madre.body = "algo\n\n[[ \(nombre) ]]"
+        _ = try? feed.write(madre, to: folder.appendingPathComponent("Con un enlace suelto.md"))
+        await deck.reconcileForTesting(["Con un enlace suelto.md"])
+        await deck.refresh()
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(madre.id)
+        try? await Task.sleep(for: .milliseconds(400))
+        guard let card = deck.debugCard, card.record.id == madre.id else {
+            check(false, "no se abrió la nota del enlace"); return
+        }
+
+        card.textView.onOpenLink?(nombre)
+        try? await Task.sleep(for: .milliseconds(900))
+        await deck.refresh()
+
+        let creada = (try? feed.notes())?.contains { $0.note.title == nombre } ?? false
+        check(creada, "apretar un enlace a una nota que no existe la crea: «\(nombre)»")
+        check(deck.debugCardBody() != madre.body,
+              "y te lleva ahí, no te deja en la nota donde está el enlace")
+
+        deck.closeNote()
+        await cleanUp([nombre, "Con un enlace suelto"], deck: deck, folder: folder)
+    }
+
     /// Escribir `[[`, crear la hija, y poder llegar a ella.
     ///
     /// El camino entero, por el deck: el selector inserta, el deck crea el
@@ -1440,7 +1496,7 @@ enum SelfTest {
               "la fila de la madre la lista: \(deck.debugCard?.family.debugLabels ?? [])")
 
         deck.closeNote()
-        await deck.refresh()
+        await cleanUp(["Una hija por tipeo"], deck: deck, folder: folder)
     }
 
     /// Abrir una hija, que no tiene tab.
@@ -1485,7 +1541,7 @@ enum SelfTest {
         check(deck.debugCardBody()?.contains("lo que hay adentro") == true,
               "un refresco no la echa de la pantalla")
         deck.closeNote()
-        await deck.refresh()
+        await cleanUp(["Hija sin tab"], deck: deck, folder: folder)
     }
 
     /// An agent writing a diagram into the note you are looking at.
@@ -3506,6 +3562,7 @@ enum SelfTest {
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
+        await checkPressingALinkThatDoesNotExistYet(deck: deck, folder: deck.notesFolder)
         await checkCreatingAChildByTyping(deck: deck, folder: deck.notesFolder)
         await checkOpeningAChild(deck: deck, folder: deck.notesFolder)
         await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)

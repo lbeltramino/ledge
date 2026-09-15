@@ -257,6 +257,24 @@ final class Workspace {
     /// Opens the note a `[[link]]` or a `ledge://` URL points at, creating it if
     /// nothing matches — an unresolved link you can click into existence is what
     /// makes linking worth doing.
+    /// A `[[link]]` was pressed. Resolved by title only — see
+    /// `NoteStore.find(title:)` for why searching the text is wrong here.
+    func open(link name: String, childOf parent: String? = nil) {
+        Task {
+            if let found = try? await store.find(title: name) {
+                await deck(for: found.strip.isEmpty ? StripConfig.primaryID : found.strip)?
+                    .reveal(id: found.id)
+                return
+            }
+            // Nothing answers to that name yet, so pressing it makes it.
+            if let parent, let deck = primaryDeck ?? decks.first {
+                deck.createLinkedFromPress(name, parent: parent)
+            } else {
+                (primaryDeck ?? decks.first)?.newNote(title: name)
+            }
+        }
+    }
+
     func open(reference: String, creatingIfMissing: Bool = true) {
         Task {
             if let found = try? await store.find(reference: reference) {
