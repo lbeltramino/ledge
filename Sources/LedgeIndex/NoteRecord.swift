@@ -14,6 +14,10 @@ public struct NoteRecord: Sendable, Equatable, Identifiable {
     public var strip: String
     /// What is writing to this note, if anything. See `Note.feed`.
     public var feed: String
+    /// See `Note.parent`.
+    public var parent: String?
+    /// See `Note.onStrip`.
+    public var onStrip: Bool
     public var snippet: String
     public var created: Date
     public var updated: Date
@@ -30,13 +34,13 @@ public struct NoteRecord: Sendable, Equatable, Identifiable {
 
     public init(
         id: String, filename: String, title: String, color: NoteColor, state: NoteState,
-        rank: String, tags: [String], strip: String, feed: String = "", snippet: String,
+        rank: String, tags: [String], strip: String, feed: String = "", parent: String? = nil, onStrip: Bool = false, snippet: String,
         created: Date, updated: Date,
         mtime: Double, size: Int, hash: String, width: Double? = nil, height: Double? = nil
     ) {
         self.id = id; self.filename = filename; self.title = title; self.color = color
         self.state = state; self.rank = rank; self.tags = tags; self.strip = strip
-        self.feed = feed; self.snippet = snippet
+        self.feed = feed; self.parent = parent; self.onStrip = onStrip; self.snippet = snippet
         self.created = created; self.updated = updated
         self.mtime = mtime; self.size = size; self.hash = hash
         self.width = width; self.height = height
@@ -49,7 +53,7 @@ public struct NoteRecord: Sendable, Equatable, Identifiable {
         self.init(
             id: note.id, filename: filename, title: note.title, color: note.color,
             state: note.state, rank: note.rank, tags: note.tags, strip: note.strip,
-            feed: note.feed, snippet: note.snippet,
+            feed: note.feed, parent: note.parent, onStrip: note.onStrip, snippet: note.snippet,
             created: note.created, updated: note.updated,
             mtime: mtime, size: size, hash: hash, width: width, height: height
         )

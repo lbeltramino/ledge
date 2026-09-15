@@ -32,6 +32,13 @@ public struct Note: Sendable, Equatable, Identifiable {
     /// note — it should follow it to your other machine, and survive a rebuild
     /// of the index.
     public var feed: String
+    /// The note this one belongs to, by id. A note with a parent is reached
+    /// through it rather than from the strip — see `onStrip` for the way out.
+    public var parent: String?
+    /// A child shown on the strip anyway. Belonging and being visible are two
+    /// different things: taking a sheet out of the folder does not take it out
+    /// of the project.
+    public var onStrip: Bool
     public var created: Date
     public var updated: Date
     public var body: String
@@ -49,6 +56,8 @@ public struct Note: Sendable, Equatable, Identifiable {
         tags: [String] = [],
         strip: String = "",
         feed: String = "",
+        parent: String? = nil,
+        onStrip: Bool = false,
         created: Date = Date(),
         updated: Date = Date(),
         body: String = "",
@@ -62,6 +71,8 @@ public struct Note: Sendable, Equatable, Identifiable {
         self.tags = tags
         self.strip = strip
         self.feed = feed
+        self.parent = parent
+        self.onStrip = onStrip
         self.created = Frontmatter.normalized(created)
         self.updated = Frontmatter.normalized(updated)
         self.body = body

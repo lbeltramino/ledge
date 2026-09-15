@@ -8,7 +8,7 @@ import Foundation
 public enum Frontmatter {
     static let fence = "---"
     static let knownKeys: Set<String> = ["id", "title", "color", "state", "rank", "tags",
-                                        "strip", "feed", "created", "updated"]
+                                        "strip", "feed", "parent", "onstrip", "created", "updated"]
 
     // Value-typed and Sendable, unlike ISO8601DateFormatter.
     private static let iso = Date.ISO8601FormatStyle()
@@ -132,6 +132,8 @@ public enum Frontmatter {
             case "tags":    note.tags = parseList(value)
             case "strip":   note.strip = value
             case "feed":    note.feed = value
+            case "parent":  note.parent = value.isEmpty ? nil : value
+            case "onstrip": note.onStrip = (value.lowercased() == "true")
             case "created": if let d = date(from: value) { note.created = d } else { declared.remove("created") }
             case "updated": if let d = date(from: value) { note.updated = d } else { declared.remove("updated") }
             default: break
@@ -175,6 +177,8 @@ public enum Frontmatter {
         out += "tags: [\(note.tags.map(quoteIfNeeded).joined(separator: ", "))]\n"
         if !note.strip.isEmpty { out += "strip: \(quoteIfNeeded(note.strip))\n" }
         if !note.feed.isEmpty { out += "feed: \(quoteIfNeeded(note.feed))\n" }
+        if let parent = note.parent, !parent.isEmpty { out += "parent: \(parent)\n" }
+        if note.onStrip { out += "onstrip: true\n" }
         out += "created: \(string(from: note.created))\n"
         out += "updated: \(string(from: note.updated))\n"
         for line in note.passthrough { out += line + "\n" }

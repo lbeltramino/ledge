@@ -32,6 +32,29 @@ public actor NoteStore {
 
     public func deck() throws -> [NoteRecord] { try index.deck() }
 
+    /// The notes that belong to this one.
+    public func children(of id: String) throws -> [NoteRecord] { try index.children(of: id) }
+
+    /// Takes a child out to the strip, or puts it back in the folder. It stays
+    /// a child either way.
+    @discardableResult
+    public func setOnStrip(id: String, _ shown: Bool) throws -> Note {
+        var note = try load(id: id)
+        guard note.onStrip != shown else { return note }
+        note.onStrip = shown
+        if shown { note.rank = (try? Rank.between(try index.maxRank(.active), nil)) ?? note.rank }
+        return try save(note, touch: false)
+    }
+
+    /// Makes a note that belongs to another one.
+    @discardableResult
+    public func createChild(title: String, of parent: String, color: NoteColor? = nil) throws -> Note {
+        var note = try create(title: title, body: "")
+        note.parent = parent
+        note.color = color ?? note.color
+        return try save(note, touch: false)
+    }
+
     public func deck(strip: String, collectingUnassigned: Bool,
                      knownStrips: Set<String>) throws -> [NoteRecord] {
         try index.deck(strip: strip, collectingUnassigned: collectingUnassigned,

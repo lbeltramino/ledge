@@ -620,6 +620,56 @@ enum StoreTests {
                      "a new file must wake the app, not only a changed one: saw \(seen.names)")
         }
 
+        await Runner.test("a child does not take a tab, but is not lost either") { c in
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            let madre = try await store.create(title: "Bedrock en el IDP", body: "el proyecto")
+            _ = try await store.createChild(title: "Modelo de permisos", of: madre.id)
+
+            let tira = try await store.deck()
+            c.equal(tira.map(\.title), ["Bedrock en el IDP"],
+                    "la hija no debe ocupar la tira: \(tira.map(\.title))")
+            c.equal(try await store.children(of: madre.id).map(\.title), ["Modelo de permisos"],
+                    "pero la madre tiene que poder listarla")
+
+            // Y sigue siendo buscable — si no, se puede perder de verdad.
+            let todas = try await store.records().map(\.title)
+            c.expect(todas.contains("Modelo de permisos"), "la búsqueda la tiene que ver: \(todas)")
+        }
+
+        await Runner.test("sacarla a la tira no la saca del proyecto") { c in
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            let madre = try await store.create(title: "Migrar billing", body: "")
+            let hija = try await store.createChild(title: "Backfill", of: madre.id)
+
+            _ = try await store.setOnStrip(id: hija.id, true)
+            c.equal(try await store.deck().map(\.title).sorted(), ["Backfill", "Migrar billing"],
+                    "ahora sí tiene tab")
+            c.equal(try await store.children(of: madre.id).map(\.title), ["Backfill"],
+                    "y sigue perteneciendo a su madre")
+
+            _ = try await store.setOnStrip(id: hija.id, false)
+            c.equal(try await store.deck().map(\.title), ["Migrar billing"], "y se puede volver a guardar")
+        }
+
+        await Runner.test("pertenecer sobrevive a borrar el enlace del cuerpo") { c in
+            // Lo que hace robusta la estructura: el `[[enlace]]` es donde la
+            // mencionás, `parent` es lo que la hace pertenecer.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            var madre = try await store.create(title: "Proyecto", body: "ver [[Una hija]]")
+            let hija = try await store.createChild(title: "Una hija", of: madre.id)
+
+            madre = try await store.load(id: madre.id)
+            madre.body = "ya no la menciono"
+            _ = try await store.save(madre)
+
+            c.equal(try await store.children(of: madre.id).map(\.title), ["Una hija"],
+                    "borrar la línea no puede perder la nota")
+            c.equal(try await store.load(id: hija.id).parent, madre.id)
+        }
+
         await Runner.test("a note lands on the deck even when its strip does not exist") { c in
             let folder = FileManager.default.temporaryDirectory
                 .appendingPathComponent("ledge-strip-\(UUID().uuidString)")

@@ -7,7 +7,7 @@ import LedgeCore
 /// Therefore: **no migrations, ever.** A schema mismatch deletes the file and
 /// rebuilds. A derived cache that needs migration logic has stopped being one.
 public final class NoteIndex {
-    public static let schemaVersion = 3
+    public static let schemaVersion = 4
     public static let filename = ".index.sqlite3"
 
     private var db: Connection
@@ -90,6 +90,8 @@ public final class NoteIndex {
           tags     TEXT NOT NULL,
           strip    TEXT NOT NULL DEFAULT '',
           feed     TEXT NOT NULL DEFAULT '',
+          parent   TEXT NOT NULL DEFAULT '',
+          onstrip  INTEGER NOT NULL DEFAULT 0,
           snippet  TEXT NOT NULL,
           created  TEXT NOT NULL,
           updated  TEXT NOT NULL,
@@ -131,20 +133,21 @@ public final class NoteIndex {
     private func writeRow(_ r: NoteRecord, body: String) throws {
         let tagsJSON = (try? String(data: JSONEncoder().encode(r.tags), encoding: .utf8)) ?? "[]"
         try db.run("""
-        INSERT INTO notes (id, filename, title, color, state, rank, tags, strip, feed, snippet,
+        INSERT INTO notes (id, filename, title, color, state, rank, tags, strip, feed, parent, onstrip, snippet,
                            created, updated, mtime, size, hash, width, height)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET
           filename = excluded.filename, title = excluded.title, color = excluded.color,
           state = excluded.state, rank = excluded.rank, tags = excluded.tags,
-          strip = excluded.strip, feed = excluded.feed, snippet = excluded.snippet, created = excluded.created, updated = excluded.updated,
+          strip = excluded.strip, feed = excluded.feed,
+          parent = excluded.parent, onstrip = excluded.onstrip, snippet = excluded.snippet, created = excluded.created, updated = excluded.updated,
           mtime = excluded.mtime, size = excluded.size, hash = excluded.hash,
           width = COALESCE(excluded.width, notes.width),
           height = COALESCE(excluded.height, notes.height)
         """, [
             .text(r.id), .text(r.filename), .text(r.title), .text(r.color.rawValue),
             .text(r.state.rawValue), .text(r.rank), .text(tagsJSON ?? "[]"),
-            .text(r.strip), .text(r.feed), .text(r.snippet),
+            .text(r.strip), .text(r.feed), .text(r.parent ?? ""), .int(r.onStrip ? 1 : 0), .text(r.snippet),
             .text(Frontmatter.string(from: r.created)), .text(Frontmatter.string(from: r.updated)),
             .double(r.mtime), .int(Int64(r.size)), .text(r.hash),
             .double(r.width), .double(r.height)
@@ -188,7 +191,25 @@ public final class NoteIndex {
         try db.query("SELECT \(NoteIndex.columns) FROM notes \(filter.clause) ORDER BY rank ASC", [], NoteIndex.decode)
     }
 
-    public func deck() throws -> [NoteRecord] { try all(.active) }
+    public func deck() throws -> [NoteRecord] {
+        try all(.active).filter { $0.parent == nil || $0.onStrip }
+    }
+
+    /// What a note keeps: its children, in the order they were made.
+    ///
+    /// Read from the index rather than from the links in the body. The link is
+    /// where you mention a note; `parent` is what makes it belong. Editing a
+    /// sentence must not lose a note, and it does not — delete the `[[link]]`
+    /// and the child is still here.
+    public func children(of id: String) throws -> [NoteRecord] {
+        try db.query(
+            "SELECT \(NoteIndex.columns) FROM notes WHERE parent = ? AND state = 'active' ORDER BY created ASC",
+            [.text(id)], NoteIndex.decode)
+    }
+
+    /// A child is reached through its mother, so it does not take a tab — the
+    /// whole point of the thing. `onstrip` is the way back out.
+    private static let notAChild = "(parent = '' OR onstrip = 1)"
 
     /// The active notes on one strip.
     ///
@@ -202,11 +223,11 @@ public final class NoteIndex {
                      knownStrips: Set<String>) throws -> [NoteRecord] {
         guard collectingUnassigned else {
             return try db.query(
-                "SELECT \(NoteIndex.columns) FROM notes WHERE state = 'active' AND strip = ? ORDER BY rank ASC",
+                "SELECT \(NoteIndex.columns) FROM notes WHERE state = 'active' AND \(NoteIndex.notAChild) AND strip = ? ORDER BY rank ASC",
                 [.text(strip)], NoteIndex.decode)
         }
 
-        var clause = "WHERE state = 'active' AND (strip = ? OR strip = ''"
+        var clause = "WHERE state = 'active' AND \(NoteIndex.notAChild) AND (strip = ? OR strip = ''"
         var arguments: [SQLValue] = [.text(strip)]
         if knownStrips.isEmpty {
             // No strips configured at all: every note belongs here.
@@ -306,7 +327,7 @@ public final class NoteIndex {
 
     static let columns = """
     notes.id, notes.filename, notes.title, notes.color, notes.state, notes.rank, notes.tags, \
-    notes.strip, notes.feed, notes.snippet, notes.created, notes.updated, notes.mtime, notes.size, \
+    notes.strip, notes.feed, notes.parent, notes.onstrip, notes.snippet, notes.created, notes.updated, notes.mtime, notes.size, \
     notes.hash, notes.width, notes.height
     """
 
@@ -322,14 +343,16 @@ public final class NoteIndex {
             tags: tags,
             strip: row.text(7),
             feed: row.text(8),
-            snippet: row.text(9),
-            created: Frontmatter.date(from: row.text(10)) ?? Date(),
-            updated: Frontmatter.date(from: row.text(11)) ?? Date(),
-            mtime: row.double(12),
-            size: row.int(13),
-            hash: row.text(14),
-            width: row.optionalDouble(15),
-            height: row.optionalDouble(16)
+            parent: row.text(9).isEmpty ? nil : row.text(9),
+            onStrip: row.int(10) == 1,
+            snippet: row.text(11),
+            created: Frontmatter.date(from: row.text(12)) ?? Date(),
+            updated: Frontmatter.date(from: row.text(13)) ?? Date(),
+            mtime: row.double(14),
+            size: row.int(15),
+            hash: row.text(16),
+            width: row.optionalDouble(17),
+            height: row.optionalDouble(18)
         )
     }
 }
