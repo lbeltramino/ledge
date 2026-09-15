@@ -669,6 +669,36 @@ enum StoreTests {
             c.expect(todas.contains("Modelo de permisos"), "la búsqueda la tiene que ver: \(todas)")
         }
 
+        await Runner.test("lo que devuelve save es lo que devuelve load") { c in
+            // La invariante que sostiene el merge: la línea base se toma de lo
+            // que save devolvió, y se compara contra lo que load trae. Si
+            // difieren en un carácter, el merge cree que otro editó la nota y
+            // conserva las dos versiones — borrás algo y vuelve.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+
+            var json = "```json\n{\n"
+            for i in 0..<200 { json += "  \"clave\(i)\": \"valor \(i)\",\n" }
+            json += "  \"ultima\": true\n}\n```"
+
+            let cuerpos: [(String, String)] = [
+                ("json pelado", json),
+                ("json con newline al final", json + "\n"),
+                ("json con dos newlines", json + "\n\n"),
+                ("texto y json", "antes\n\n" + json),
+                ("json y texto", json + "\n\ndespués"),
+            ]
+            for (nombre, cuerpo) in cuerpos {
+                var nota = try await store.create(title: "N-\(nombre)", body: "")
+                nota.body = cuerpo
+                let guardada = try await store.save(nota)
+                let leida = try await store.load(id: nota.id)
+                c.equal(leida.body.count, guardada.body.count,
+                        "\(nombre): save devolvió \(guardada.body.count) y load trae \(leida.body.count)")
+                c.equal(leida.body, guardada.body, "\(nombre): y no son el mismo texto")
+            }
+        }
+
         await Runner.test("qué pasa con las hijas cuando la madre se va") { c in
             // Lo que quiero saber antes de decidir el próximo paso: una hija no
             // tiene tab, así que si la madre desaparece la única puerta que le

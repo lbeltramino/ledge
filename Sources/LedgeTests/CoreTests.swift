@@ -636,6 +636,24 @@ enum CoreTests {
                      "an ordinary note still loses its trailing blank lines")
         }
 
+        await Runner.test("un bloque de código al final no corre la línea base") { c in
+            // El bug reportado como "borro el json y vuelve": si lo que se
+            // guarda y lo que se lee de vuelta difieren en un carácter, el
+            // merge cree que otro editó la nota y conserva las dos versiones.
+            for cuerpo in ["```json\n{\n  \"a\": 1\n}\n```",
+                           "antes\n\n```bash\nkubectl get pods\n```",
+                           "```mermaid\ngraph TD\n  A-->B\n```",
+                           "![](resources/img/x.png)"] {
+                var nota = Note(title: "T")
+                nota.body = Frontmatter.normalizedBody(cuerpo)
+                let leida = Frontmatter.parse(Frontmatter.serialize(nota),
+                                              fallbackTitle: "", fallbackID: nota.id)
+                c.equal(leida.body.count, nota.body.count,
+                        "difieren en \(nota.body.count - leida.body.count) caracteres: \(cuerpo.suffix(12).debugDescription)")
+                c.equal(leida.body, nota.body)
+            }
+        }
+
         await Runner.test("what is written and what is read back are the same thing") { c in
             // They disagreed once: the baseline a merge measured against said
             // one thing and the file said another, and typing duplicated the
