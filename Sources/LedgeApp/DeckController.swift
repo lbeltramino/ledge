@@ -239,7 +239,7 @@ final class DeckController {
             root.addSubview(tab, positioned: .below, relativeTo: plusButton)
             return tab
         }
-        if let id = state.noteID, !records.contains(where: { $0.id == id }) {
+        if let id = state.noteID, !records.contains(where: { $0.id == id }), visiting?.id != id {
             // The note that was open has left this deck — archived from
             // somewhere else, moved to another strip, or taken away with the
             // display its strip lived on. Its card has to go with it: dropping
@@ -944,8 +944,30 @@ final class DeckController {
         }
     }
 
+    /// A note this deck is showing that does not live on it.
+    ///
+    /// A child has no tab — that is the whole point of a project costing one
+    /// tab — so it is reached through its mother and shown in her place. The
+    /// card comes in from the same edge as any other; what it belongs to is on
+    /// its own family row, which is also the way back.
+    private var visiting: NoteRecord?
+
+    /// Opens a note with no tab here. Loads it first: it is not in `records`,
+    /// so nothing else on this deck knows anything about it.
+    func visit(_ id: String) {
+        Task {
+            guard let record = try? await store.record(id: id),
+                  let note = try? await store.load(id: id) else { return }
+            bodies[id] = note.body
+            visiting = record
+            preview(id)
+        }
+    }
+
     private func preview(_ id: String) {
-        guard state.isFannedOrBeyond, records.contains(where: { $0.id == id }) else { return }
+        guard state.isFannedOrBeyond,
+              records.contains(where: { $0.id == id }) || visiting?.id == id else { return }
+        if visiting?.id != id { visiting = nil }
         scrollTabIntoView(id)
         cancelCollapse()
         commitPendingSave()
@@ -990,7 +1012,7 @@ final class DeckController {
 
     private func buildCard(for id: String) {
         tearDownCard()
-        guard let record = records.first(where: { $0.id == id }) else { return }
+        guard let record = records.first(where: { $0.id == id }) ?? visiting else { return }
         let view = NoteCardView(record: record, body: bodies[id] ?? "")
         view.onEdit = { [weak self, weak view] text in
             self?.scheduleSave(id: id, body: text, from: view)
@@ -1004,7 +1026,7 @@ final class DeckController {
         view.resizeHandle.onResize = { [weak self] delta in self?.resizeCard(by: delta) }
         view.resizeHandle.onFinished = { [weak self] in self?.commitCardSize(id) }
         view.onColor = { [weak self] color in self?.recolor(id, to: color) }
-        view.onOpenRelative = { [weak self] other in self?.preview(other) }
+        view.onOpenRelative = { [weak self] other in self?.visit(other) }
         view.onToggleOnStrip = { [weak self] out in self?.setOnStrip(id, out) }
         view.textView.titlesForLinking = { [weak self] in
             (self?.records ?? []).map(\.displayTitle)
@@ -1181,7 +1203,12 @@ final class DeckController {
     /// ready to write in. What a followed link lands on.
     func reveal(id: String) async {
         await refresh()
-        guard records.contains(where: { $0.id == id }) else { return }
+        guard records.contains(where: { $0.id == id }) else {
+            // No tab here: a child, reached through its mother.
+            if state == .rest { fanOut(takingFocus: true) }
+            visit(id)
+            return
+        }
         if let float = floating[id] { float.front(); return }
         if state == .rest { fanOut(takingFocus: true) }
         preview(id)

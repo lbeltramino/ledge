@@ -35,6 +35,9 @@ public actor NoteStore {
     /// The notes that belong to this one.
     public func children(of id: String) throws -> [NoteRecord] { try index.children(of: id) }
 
+    /// One note's row, whether or not any strip shows it.
+    public func record(id: String) throws -> NoteRecord? { try index.record(id: id) }
+
     /// Takes a child out to the strip, or puts it back in the folder. It stays
     /// a child either way.
     @discardableResult

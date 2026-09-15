@@ -1299,6 +1299,51 @@ enum SelfTest {
               "the card and the file still agree")
     }
 
+    /// Abrir una hija, que no tiene tab.
+    ///
+    /// El riesgo entero de que un proyecto cueste un solo tab: la card se arma
+    /// desde `records`, y una hija no está ahí. Sin esto, el chip y el
+    /// ⌘-click no hacen nada — la función existe y el camino hasta ella no.
+    static func checkOpeningAChild(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let madre = deck.recordsForTesting.first else {
+            check(false, "no hay notas"); return
+        }
+        let store = FeedStore(folder: folder)
+        guard let entrada = try? store.find(madre.id) else {
+            check(false, "no encuentro la madre"); return
+        }
+        var hija = Note(title: "Hija sin tab", color: .blue)
+        hija.parent = madre.id
+        hija.body = "lo que hay adentro"
+        _ = try? store.write(hija, to: folder.appendingPathComponent("Hija sin tab.md"))
+        _ = entrada
+        await deck.reconcileForTesting(["Hija sin tab.md"])
+        await deck.refresh()
+
+        check(!deck.recordsForTesting.contains { $0.id == hija.id },
+              "la hija no ocupa la tira")
+        check(deck.tabsForTesting.count == deck.recordsForTesting.count,
+              "ni tiene tab: \(deck.tabsForTesting.count) tabs, \(deck.recordsForTesting.count) notas")
+
+        deck.fanOut(takingFocus: false)
+        deck.visit(hija.id)
+        try? await Task.sleep(for: .milliseconds(600))
+        check(deck.debugCardBody()?.contains("lo que hay adentro") == true,
+              "y aun así se abre: \(deck.debugCardBody()?.prefix(30) ?? "nada")")
+        deck.closeNote()
+        await deck.refresh()
+
+        // Y no la cierra el guard que saca las cards huérfanas.
+        deck.visit(hija.id)
+        try? await Task.sleep(for: .milliseconds(600))
+        await deck.refresh()
+        check(deck.debugCardBody()?.contains("lo que hay adentro") == true,
+              "un refresco no la echa de la pantalla")
+        deck.closeNote()
+        await deck.refresh()
+    }
+
     /// An agent writing a diagram into the note you are looking at.
     ///
     /// The whole way through: the command writes the file, the folder watcher
@@ -3315,6 +3360,7 @@ enum SelfTest {
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
+        await checkOpeningAChild(deck: deck, folder: deck.notesFolder)
         await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)
         await checkZoomWithNoteOpen(deck: deck)
