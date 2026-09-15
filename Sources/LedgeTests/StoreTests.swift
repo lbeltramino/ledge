@@ -669,6 +669,25 @@ enum StoreTests {
             c.expect(todas.contains("Modelo de permisos"), "la búsqueda la tiene que ver: \(todas)")
         }
 
+        await Runner.test("una nota que empieza con una línea en blanco la conserva") { c in
+            // El carácter que se perdía: `parse` se come un salto al principio
+            // del cuerpo para descartar el que sigue al `---`. Si el cuerpo
+            // empieza con una línea en blanco propia, se come esa — y desde ahí
+            // la línea base y el archivo difieren en uno, el merge cree que
+            // alguien más editó la nota, y lo que borrás vuelve.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            for cuerpo in ["\nhola", "\n\ndos saltos antes", "\n```json\n{}\n```"] {
+                var nota = try await store.create(title: "N\(cuerpo.count)", body: "")
+                nota.body = cuerpo
+                let guardada = try await store.save(nota)
+                let leida = try await store.load(id: nota.id)
+                c.equal(leida.body.count, guardada.body.count,
+                        "save dio \(guardada.body.count) y load trae \(leida.body.count) para \(cuerpo.debugDescription)")
+                c.equal(leida.body, guardada.body)
+            }
+        }
+
         await Runner.test("lo que devuelve save es lo que devuelve load") { c in
             // La invariante que sostiene el merge: la línea base se toma de lo
             // que save devolvió, y se compara contra lo que load trae. Si

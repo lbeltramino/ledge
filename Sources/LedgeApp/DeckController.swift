@@ -1702,6 +1702,10 @@ extension DeckController {
 
     func debugCardBody() -> String? { card?.textView.string }
     var debugCard: NoteCardView? { card }
+    func debugBaseline(of id: String) -> String? { baselines[id] }
+    func debugFileBody(of id: String) async -> String? {
+        try? await store.load(id: id).body
+    }
     func debugCardDrawings() -> Int { card?.textView.debugMediaCount ?? -1 }
 
     func debugCardMinimumWidth() -> CGFloat? { card?.minimumWidth }

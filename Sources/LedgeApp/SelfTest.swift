@@ -1454,6 +1454,100 @@ enum SelfTest {
         await deck.refresh()
     }
 
+    /// Borrar un bloque grande y que se quede borrado.
+    ///
+    /// Reportado: pegar un JSON de cuatrocientas líneas, querer borrarlo, y que
+    /// "se repita". Es la forma del bug que ya tuvimos una vez — el merge
+    /// re-insertando lo que sacaste porque la línea base y el archivo no
+    /// coinciden — así que vale medirlo con un bloque de ese tamaño y no con
+    /// tres líneas.
+    static func checkDeletingABigBlockSticks(deck: DeckController, folder: URL) async {
+        // Pegado, no escrito en el archivo: es el camino que se reportó, y el
+        // pegado reformatea, fencea y mueve el caret — todo antes de que nadie
+        // haya guardado nada.
+        var minificado = "{"
+        for i in 0..<380 { minificado += "\"clave\(i)\":\"valor \(i)\"," }
+        minificado += "\"ultima\":true}"
+
+        let feed = FeedStore(folder: folder)
+        var nota = Note(title: "Con un json grande", color: .butter)
+        nota.body = "antes del json\n\ndespués del json"
+        _ = try? feed.write(nota, to: folder.appendingPathComponent("Con un json grande.md"))
+        await deck.reconcileForTesting(["Con un json grande.md"])
+        await deck.refresh()
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(nota.id)
+        try? await Task.sleep(for: .milliseconds(400))
+        guard let card = deck.debugCard, card.record.id == nota.id else {
+            check(false, "no se abrió la nota del json"); return
+        }
+        let view = card.textView
+
+        // Un Enter al principio, que es lo que lo disparaba: el cuerpo pasa a
+        // empezar con una línea en blanco, `parse` se la comía, y desde ahí la
+        // línea base y el archivo diferían en un carácter.
+        card.window?.makeFirstResponder(view)
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        view.insertText("\n", replacementRange: view.selectedRange())
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(700))
+
+        // Pegar donde la nota lo pondría: al final.
+        let clip = NSPasteboard(name: .init("ledge.selftest.jsongrande"))
+        clip.clearContents()
+        clip.setString(minificado, forType: .string)
+        view.pasteboard = clip
+        card.window?.makeFirstResponder(view)
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        view.paste(nil)
+        check(view.string.contains("```json"), "el json pegado entra como código")
+        let antes = (view.string as NSString).length
+        check(antes > 6000, "el bloque es grande de verdad: \(antes) caracteres")
+
+        // Y guardado, como pasa en la vida real antes de que lo borres.
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(1000))
+
+        // Seleccionar el bloque entero y borrarlo, que es lo que se hace.
+        let ns = view.string as NSString
+        let desde = ns.range(of: "```json")
+        let hasta = ns.range(of: "```", options: .backwards)
+        guard desde.location != NSNotFound, hasta.location > desde.location else {
+            check(false, "no encontré el bloque"); return
+        }
+        let bloque = NSRange(location: desde.location,
+                             length: NSMaxRange(hasta) - desde.location)
+        card.window?.makeFirstResponder(view)
+        view.setSelectedRange(bloque)
+        view.delete(nil)
+
+        check(!view.string.contains("clave200"),
+              "en pantalla el bloque se fue")
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(1200))
+
+        // Y la invariante que lo causaba, dicha en el idioma del deck.
+        let enElArchivo = await deck.debugFileBody(of: nota.id)
+        check(deck.debugBaseline(of: nota.id) == enElArchivo,
+              "la línea base y el archivo dicen lo mismo "
+              + "(\(deck.debugBaseline(of: nota.id)?.count ?? -1) vs \(enElArchivo?.count ?? -1))")
+
+        let enDisco = (try? String(contentsOf: folder.appendingPathComponent("Con un json grande.md"),
+                                   encoding: .utf8)) ?? ""
+        check(!enDisco.contains("clave200"),
+              "y se fue del archivo, sin volver")
+        check(enDisco.contains("antes del json") && enDisco.contains("después del json"),
+              "sin llevarse lo que estaba alrededor")
+        let repeticiones = view.string.components(separatedBy: "antes del json").count - 1
+        check(repeticiones == 1,
+              "y nada quedó duplicado: «antes del json» aparece \(repeticiones) vez/veces")
+
+        clip.releaseGlobally()
+        deck.closeNote()
+        await cleanUp(["Con un json grande"], deck: deck, folder: folder)
+    }
+
     /// Apretar un enlace a una nota que todavía no existe.
     ///
     /// Por el camino entero, y con la trampa adentro: la nota que se aprieta
@@ -3604,6 +3698,7 @@ enum SelfTest {
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
+        await checkDeletingABigBlockSticks(deck: deck, folder: deck.notesFolder)
         await checkPressingALinkThatDoesNotExistYet(deck: deck, folder: deck.notesFolder)
         await checkCreatingAChildByTyping(deck: deck, folder: deck.notesFolder)
         await checkOpeningAChild(deck: deck, folder: deck.notesFolder)

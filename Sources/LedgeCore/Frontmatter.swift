@@ -141,8 +141,14 @@ public enum Frontmatter {
         }
 
         note.passthrough = passthrough
+        // Joined from the lines *after* the closing `---`, whose own newline the
+        // split already took. Nothing left to trim: the rule that used to drop
+        // a leading newline here was dropping the blank line somebody had
+        // typed at the top of their note, so what was written and what was read
+        // back differed by one character. From there the merge decided another
+        // writer had touched the note and kept both versions — reported as
+        // deleting a block and watching it come back.
         note.body = lines[(close + 1)...].joined(separator: "\n")
-        if note.body.hasPrefix("\n") { note.body.removeFirst() }
         note.body = normalizedBody(note.body)
         return Parsed(note: note, declared: declared)
     }
