@@ -56,6 +56,8 @@ SQLite index beside it is a cache you can delete at any moment.
   cuesta un tab, no seis. La madre lista a sus hijas arriba de los colores, y
   la hija muestra el camino de vuelta y un botón para **sacarla a la tira** si
   después la querés a mano. Nada se crea por escribir: sólo al elegir esa fila.
+  Un enlace se abre apretándolo, como un `- [ ]` se tilda apretándolo; los
+  corchetes siguen siendo texto, y ahí se edita el nombre.
 - **Tags you just type.** `#work` in the body is a tag; `# Heading` is a heading.
   Searchable, clickable, and gone the moment you delete the hashtag.
 - **Checklists.** `- [ ]` is a task. Click the box to tick it, and a finished one

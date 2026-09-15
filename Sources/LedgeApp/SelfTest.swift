@@ -1299,6 +1299,113 @@ enum SelfTest {
               "the card and the file still agree")
     }
 
+    /// Un enlace se abre apretándolo.
+    static func checkLinkOpensOnClick() {
+        let record = NoteRecord(note: Note(title: "Madre"), filename: "m.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: "ver [[Modelo de permisos]] y seguir")
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+        var abiertos: [String] = []
+        view.onOpenLink = { abiertos.append($0) }
+
+        guard let manager = view.layoutManager, let container = view.textContainer else {
+            check(false, "sin layout"); return
+        }
+        manager.ensureLayout(for: container)
+        let nombre = (view.string as NSString).range(of: "Modelo de permisos")
+        let glyphs = manager.glyphRange(forCharacterRange: nombre, actualCharacterRange: nil)
+        var caja = manager.boundingRect(forGlyphRange: glyphs, in: container)
+        caja.origin.x += view.textContainerOrigin.x
+        caja.origin.y += view.textContainerOrigin.y
+        let dentro = NSPoint(x: caja.midX, y: caja.midY)
+
+        func click(_ point: NSPoint, option: Bool = false) {
+            guard let e = NSEvent.mouseEvent(with: .leftMouseDown, location: view.convert(point, to: nil),
+                                             modifierFlags: option ? .option : [], timestamp: 0,
+                                             windowNumber: 0, context: nil, eventNumber: 0,
+                                             clickCount: 1, pressure: 1) else { return }
+            view.mouseDown(with: e)
+        }
+
+        click(dentro)
+        check(abiertos == ["Modelo de permisos"],
+              "un click sobre el enlace abre la nota: \(abiertos)")
+
+        // Pero se tiene que poder editar el nombre a mano: los corchetes
+        // siguen siendo texto común, y ahí se pone el caret.
+        abiertos = []
+        let corchetes = (view.string as NSString).range(of: "[[")
+        let g0 = manager.glyphRange(forCharacterRange: corchetes, actualCharacterRange: nil)
+        var caja0 = manager.boundingRect(forGlyphRange: g0, in: container)
+        caja0.origin.x += view.textContainerOrigin.x
+        caja0.origin.y += view.textContainerOrigin.y
+        click(NSPoint(x: caja0.minX + 2, y: caja0.midY))
+        check(abiertos.isEmpty, "apretar los corchetes no lo abre: deja editar el nombre")
+
+        // Y el texto común sigue siendo texto común.
+        abiertos = []
+        let fuera = (view.string as NSString).range(of: "y seguir")
+        let g2 = manager.glyphRange(forCharacterRange: fuera, actualCharacterRange: nil)
+        var caja2 = manager.boundingRect(forGlyphRange: g2, in: container)
+        caja2.origin.x += view.textContainerOrigin.x
+        caja2.origin.y += view.textContainerOrigin.y
+        click(NSPoint(x: caja2.midX, y: caja2.midY))
+        check(abiertos.isEmpty, "apretar el resto de la nota no abre nada")
+    }
+
+    /// Escribir `[[`, crear la hija, y poder llegar a ella.
+    ///
+    /// El camino entero, por el deck: el selector inserta, el deck crea el
+    /// archivo, y la fila de la madre la ofrece. Los checks anteriores
+    /// probaban cada mitad por separado, que es exactamente cómo se cuela un
+    /// tramo roto.
+    static func checkCreatingAChildByTyping(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let madre = deck.recordsForTesting.first else {
+            check(false, "no hay notas"); return
+        }
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(madre.id)
+        try? await Task.sleep(for: .milliseconds(300))
+        guard let card = deck.debugCard else { check(false, "no se abrió la card"); return }
+        let view = card.textView
+
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        for ch in "\nver [[Una hija por tipeo" {
+            view.insertText(String(ch), replacementRange: view.selectedRange())
+        }
+        check(view.linkPicker.isOpen, "el selector aparece al escribir en una card de verdad")
+        check(view.linkPicker.debugRows.last?.contains("Una hija por tipeo") == true,
+              "ofrece crearla: \(view.linkPicker.debugRows)")
+
+        view.linkPicker.take()
+        check(view.string.contains("[[Una hija por tipeo]]"),
+              "el enlace queda escrito: \(view.string.suffix(30))")
+
+        deck.debugCommit()
+        try? await Task.sleep(for: .milliseconds(900))
+        await deck.refresh()
+
+        // El archivo existe, con su madre.
+        let feed = FeedStore(folder: folder)
+        let hija = (try? feed.notes())?.first { $0.note.title == "Una hija por tipeo" }
+        check(hija != nil, "la nota hija se creó en el disco")
+        check(hija?.note.parent == madre.id,
+              "y pertenece a la madre: \(hija?.note.parent ?? "sin madre")")
+
+        // Y la madre la ofrece, que es cómo se llega.
+        check(!deck.recordsForTesting.contains { $0.title == "Una hija por tipeo" },
+              "no ocupa la tira")
+        try? await Task.sleep(for: .milliseconds(400))
+        check(deck.debugCard?.family.debugLabels.contains("Una hija por tipeo") == true,
+              "la fila de la madre la lista: \(deck.debugCard?.family.debugLabels ?? [])")
+
+        deck.closeNote()
+        await deck.refresh()
+    }
+
     /// Abrir una hija, que no tiene tab.
     ///
     /// El riesgo entero de que un proyecto cueste un solo tab: la card se arma
@@ -3345,6 +3452,7 @@ enum SelfTest {
         checkCopyingKeepsWhatMatters()
         checkFamilyRow()
         checkLinkPicker()
+        checkLinkOpensOnClick()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
@@ -3360,6 +3468,7 @@ enum SelfTest {
         await checkSaving(deck: deck, folder: deck.notesFolder)
         await checkFeeds(deck: deck, folder: deck.notesFolder)
         await checkTypingDoesNotDuplicate(deck: deck, folder: deck.notesFolder)
+        await checkCreatingAChildByTyping(deck: deck, folder: deck.notesFolder)
         await checkOpeningAChild(deck: deck, folder: deck.notesFolder)
         await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)

@@ -1716,8 +1716,18 @@ final class NoteTextView: NSTextView {
         let index = characterIndexForInsertion(at: point)
 
         // ⌘-click follows a link, the way it already does for markdown ones.
-        if event.modifierFlags.contains(.command),
-           let link = Wikilink.link(in: string, at: index) {
+        // A wikilink is a control, not a word.
+        //
+        // The same rule a `- [ ]` box already follows: some glyphs on this
+        // paper do something when you press them. Hiding the one way into a
+        // linked note behind ⌘ made it undiscoverable — reported as "the link
+        // is there and I don't know how to reach the note".
+        //
+        // The brackets themselves are still ordinary text, which is where you
+        // click to edit the name by hand — ⌥ belongs to AppKit's rectangular
+        // selection and taking it would be a worse trade.
+        if let link = Wikilink.link(in: string, at: index),
+           NSLocationInRange(index, link.nameRange) || event.modifierFlags.contains(.command) {
             onOpenLink?(link.name)
             return
         }
@@ -1783,6 +1793,24 @@ final class NoteTextView: NSTextView {
         let ok = super.becomeFirstResponder()
         if ok { onBeginEditing?() }
         return ok
+    }
+
+    /// A pointing hand over every link, because it is something you press.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let manager = layoutManager, let container = textContainer else { return }
+        for link in Wikilink.links(in: string) {
+            let glyphs = manager.glyphRange(forCharacterRange: link.nameRange,
+                                            actualCharacterRange: nil)
+            manager.enumerateEnclosingRects(forGlyphRange: glyphs,
+                                            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                            in: container) { rect, _ in
+                var box = rect
+                box.origin.x += self.textContainerOrigin.x
+                box.origin.y += self.textContainerOrigin.y
+                self.addCursorRect(box, cursor: .pointingHand)
+            }
+        }
     }
 
     override func didChangeText() {
