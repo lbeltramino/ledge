@@ -669,6 +669,32 @@ enum StoreTests {
             c.expect(todas.contains("Modelo de permisos"), "la búsqueda la tiene que ver: \(todas)")
         }
 
+        await Runner.test("qué pasa con las hijas cuando la madre se va") { c in
+            // Lo que quiero saber antes de decidir el próximo paso: una hija no
+            // tiene tab, así que si la madre desaparece la única puerta que le
+            // queda es la búsqueda.
+            let box = Sandbox()
+            let store = try NoteStore(folder: box.url)
+            let madre = try await store.create(title: "Proyecto", body: "")
+            let hija = try await store.createChild(title: "Una hija", of: madre.id)
+
+            _ = try await store.archive(id: madre.id)
+            let conMadreArchivada = try await store.deck().map(\.title)
+            c.expect(!conMadreArchivada.contains("Una hija"),
+                     "archivada la madre, la hija sigue sin tab: \(conMadreArchivada)")
+
+            try await store.delete(id: madre.id)
+            let despues = try await store.deck().map(\.title)
+            c.expect(!despues.contains("Una hija"),
+                     "y borrada la madre, tampoco: \(despues)")
+            c.expect((try? await store.load(id: hija.id)) != nil,
+                     "la nota no se borró — existe, pero no hay cómo llegar")
+            c.equal(try await store.load(id: hija.id).parent, madre.id,
+                    "y sigue apuntando a una madre que ya no está")
+            c.expect(try await store.records().contains { $0.id == hija.id },
+                     "sólo la búsqueda la encuentra")
+        }
+
         await Runner.test("sacarla a la tira no la saca del proyecto") { c in
             let box = Sandbox()
             let store = try NoteStore(folder: box.url)
