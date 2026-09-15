@@ -30,7 +30,23 @@ public enum Fences {
     }
 
     /// The same question for a caret, which has no length of its own.
+    ///
+    /// Also true inside a block that has been opened and not yet closed —
+    /// which is the usual state of a block while somebody is typing one, and
+    /// exactly when offering to link a note would be most unwelcome. Counted
+    /// rather than matched: an odd number of fence lines before the caret means
+    /// it is inside one.
     public static func containsCaret(_ location: Int, in text: NSString) -> Bool {
-        ranges(in: text).contains { NSLocationInRange(location, $0) }
+        if ranges(in: text).contains(where: { NSLocationInRange(location, $0) }) { return true }
+        return marks(before: location, in: text) % 2 == 1
+    }
+
+    private static let markRegex = try? NSRegularExpression(pattern: "^(```|~~~)",
+                                                            options: [.anchorsMatchLines])
+
+    private static func marks(before location: Int, in text: NSString) -> Int {
+        guard let markRegex, location > 0 else { return 0 }
+        return markRegex.numberOfMatches(in: text as String,
+                                         range: NSRange(location: 0, length: min(location, text.length)))
     }
 }

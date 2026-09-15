@@ -688,6 +688,52 @@ enum CoreTests {
                      "el rango del fence tiene que contener su propio texto")
         }
 
+        Runner.suite("Escribiendo un enlace")
+
+        await Runner.test("un [[ abierto se reconoce mientras escribís") { c in
+            let texto = "ver [[perm"
+            guard let abierto = Wikilink.opening(in: texto, at: (texto as NSString).length) else {
+                return c.expect(false, "no lo detectó")
+            }
+            c.equal(abierto.query, "perm")
+            c.equal((texto as NSString).substring(with: abierto.range), "[[perm",
+                    "el rango tiene que ser lo que reemplaza el nombre elegido")
+        }
+
+        await Runner.test("un enlace ya cerrado no vuelve a abrir el selector") { c in
+            let texto = "ver [[Office]] y más"
+            c.expect(Wikilink.opening(in: texto, at: (texto as NSString).length) == nil,
+                     "después de ]] no hay nada abierto")
+        }
+
+        await Runner.test("escribir bash no ofrece enlazar notas") { c in
+            // El caso que hace esto peligroso: `[[` es sintaxis de test en bash.
+            let texto = "```bash\nif [[ -f \"$f\""
+            c.expect(Wikilink.opening(in: texto, at: (texto as NSString).length) == nil,
+                     "dentro de un fence no se ofrece nada")
+        }
+
+        await Runner.test("los candidatos se ordenan por lo más exacto") { c in
+            let titulos = ["Permisos de KMS", "Modelo de permisos", "Office", "Pruebas de carga"]
+            c.equal(Wikilink.matches("perm", in: titulos),
+                    ["Permisos de KMS", "Modelo de permisos"],
+                    "el que empieza con lo que escribiste va primero")
+            c.equal(Wikilink.matches("PERMISOS DE kms", in: titulos), ["Permisos de KMS"],
+                    "mayúsculas y acentos no importan")
+            c.equal(Wikilink.matches("migración", in: ["Migracion del billing"]),
+                    ["Migracion del billing"], "los acentos tampoco del otro lado")
+            c.expect(Wikilink.matches("nada que ver", in: titulos).isEmpty,
+                     "y lo que no matchea, no matchea")
+        }
+
+        await Runner.test("saber si hay que crearla o enlazarla") { c in
+            let titulos = ["Office", "Modelo de permisos"]
+            c.expect(Wikilink.exists("office", in: titulos), "existe aunque cambie la caja")
+            c.expect(!Wikilink.exists("Pruebas de carga", in: titulos),
+                     "y si no existe, hay que ofrecer crearla")
+            c.expect(!Wikilink.exists("", in: titulos), "vacío no es una nota")
+        }
+
         Runner.suite("Pictures nothing points at")
 
         func picture(_ name: String, _ bytes: Int = 1000, daysOld: Double = 30) -> MediaAudit.Picture {
