@@ -26,7 +26,7 @@ public enum Headings {
     public static func all(in text: String) -> [Item] {
         guard let regex else { return [] }
         let source = text as NSString
-        let fenced = fencedRanges(in: source)
+        let fenced = Fences.ranges(in: source)
 
         return regex.matches(in: text, range: NSRange(location: 0, length: source.length))
             .compactMap { match in
@@ -48,14 +48,4 @@ public enum Headings {
     /// Worth offering only when there is something to jump between.
     public static func worthShowing(in text: String) -> Bool { all(in: text).count >= 2 }
 
-    private static let fenceRegex = try? NSRegularExpression(
-        pattern: "^(```|~~~)[^\n]*\n[\\s\\S]*?^\\1[ \t]*$",
-        options: [.anchorsMatchLines])
-
-    private static func fencedRanges(in text: NSString) -> [NSRange] {
-        guard let fenceRegex else { return [] }
-        return fenceRegex.matches(in: text as String,
-                                  range: NSRange(location: 0, length: text.length))
-            .map(\.range)
-    }
 }

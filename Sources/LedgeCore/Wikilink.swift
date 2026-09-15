@@ -21,7 +21,14 @@ public enum Wikilink {
     public static func links(in text: String) -> [Link] {
         guard let regex else { return [] }
         let source = text as NSString
+        // `[[ -f "$f" ]]` in a shell block is a test, not a link to a note
+        // called `-f "$f"`. Without this the highlighter underlined half of
+        // every bash snippet and ⌘-click offered to open it.
+        let fenced = Fences.ranges(in: source)
         return regex.matches(in: text, range: NSRange(location: 0, length: source.length))
+            .filter { match in
+                !fenced.contains { NSIntersectionRange($0, match.range).length > 0 }
+            }
             .map { match in
                 Link(range: match.range, nameRange: match.range(at: 1),
                      name: source.substring(with: match.range(at: 1))

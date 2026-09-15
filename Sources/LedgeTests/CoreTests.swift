@@ -652,6 +652,42 @@ enum CoreTests {
             }
         }
 
+        await Runner.test("a shell test is not a link to a note") { c in
+            // `[[ -f "$f" ]]` is bash. Highlighted as a link it underlined half
+            // of every snippet, and ⌘-click offered to open a note called
+            // `-f "$f"` — in the app whose whole pitch is pasting scripts.
+            let note = """
+            antes [[Office]]
+
+            ```bash
+            if [[ -f "$f" ]]; then
+              echo "[[no soy un enlace]]"
+            fi
+            ```
+
+            después [[Groceries]]
+            """
+            c.equal(Wikilink.names(in: note), ["Office", "Groceries"],
+                    "encontró: \(Wikilink.names(in: note))")
+
+            let dentro = (note as NSString).range(of: "-f ")
+            c.expect(Wikilink.link(in: note, at: dentro.location) == nil,
+                     "⌘-click dentro del fence no debe encontrar un enlace")
+
+            let fuera = (note as NSString).range(of: "Office")
+            c.expect(Wikilink.link(in: note, at: fuera.location) != nil,
+                     "…pero afuera sí")
+        }
+
+        await Runner.test("headings and links ask the same thing about fences") { c in
+            // Dos implementaciones de \"¿dónde están los bloques?\" se separan.
+            let note = "# Real\n\n```sh\n# no es un título\n[[ -z \"$x\" ]]\n```"
+            c.equal(Headings.all(in: note).map(\.text), ["Real"])
+            c.equal(Wikilink.names(in: note), [])
+            c.expect(Fences.contains((note as NSString).range(of: "no es un título"), in: note as NSString),
+                     "el rango del fence tiene que contener su propio texto")
+        }
+
         Runner.suite("Pictures nothing points at")
 
         func picture(_ name: String, _ bytes: Int = 1000, daysOld: Double = 30) -> MediaAudit.Picture {
