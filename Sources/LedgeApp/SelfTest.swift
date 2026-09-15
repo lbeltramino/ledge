@@ -1355,8 +1355,12 @@ enum SelfTest {
 
         check(view.string.contains("```json"),
               "un json de una línea llega como código: \(view.string.prefix(40))")
-        check(view.string.contains("\"throttling_rate_limit\":15"),
+        check(view.string.contains("\"throttling_rate_limit\": 15"),
               "sin perder nada de lo pegado")
+        check(view.string.components(separatedBy: "\n").count > 8,
+              "y acomodado, no una pared de una línea: \(view.string.components(separatedBy: "\n").count) líneas")
+        check(view.string.contains("  \"event\": \"service:action:create\""),
+              "con la sangría de jq")
         scratch.releaseGlobally()
 
         // Y una frase suelta sigue siendo una frase.

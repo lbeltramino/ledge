@@ -71,7 +71,9 @@ SQLite index beside it is a cache you can delete at any moment.
   coloured — instead of the page of headings and bullets that Markdown makes of
   `# comment` and `- name:`. The note takes its name from the snippet:
   `Deployment/api`, `aws_s3_bucket.logs`, `kubectl rollout status`. Pasting
-  prose is still pasting prose.
+  prose is still pasting prose. Un JSON minificado —cuatro
+  kilobytes en una sola línea, sin un solo salto— llega acomodado como lo
+  dejaría `jq`, sin reordenar las claves ni tocar un número.
 - **A note something else keeps up to date.** `ledge`, the command that ships
   inside the app, lets a script or an agent create a note, add checklist items,
   tick them off and append what it found. A note on a feed carries a small mark
@@ -302,7 +304,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 221 unit tests
+swift run ledge-tests                               # 224 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 

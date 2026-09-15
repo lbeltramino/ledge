@@ -27,6 +27,84 @@ public enum Code {
     }
 
     /// What this text is, or nil when it reads as prose.
+    /// A minified JSON payload, laid out the way `jq` lays one out.
+    ///
+    /// Re-indented by walking the characters, not by decoding and re-encoding.
+    /// `JSONSerialization` would hand back a dictionary, and a dictionary has
+    /// no order — the keys would come out shuffled — and its numbers are
+    /// re-formatted on the way out, which turns an id into something that is no
+    /// longer the id you pasted. This only ever adds whitespace, and only
+    /// outside strings, so every byte that meant something still means it.
+    public static func prettyJSON(_ text: String, indent: String = "  ") -> String? {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isJSON(Lines(body)) else { return nil }
+
+        var out = ""
+        var depth = 0
+        var inString = false
+        var escaped = false
+        let characters = Array(body)
+
+        /// The next character that is not a space, from `i` on.
+        func nextMeaningful(after i: Int) -> Character? {
+            var j = i + 1
+            while j < characters.count, characters[j].isWhitespace { j += 1 }
+            return j < characters.count ? characters[j] : nil
+        }
+        func newline(_ level: Int) {
+            out += "\n" + String(repeating: indent, count: max(0, level))
+        }
+
+        var i = 0
+        while i < characters.count {
+            let c = characters[i]
+            if inString {
+                out.append(c)
+                if escaped { escaped = false }
+                else if c == "\\" { escaped = true }
+                else if c == "\"" { inString = false }
+                i += 1
+                continue
+            }
+            switch c {
+            case "\"":
+                inString = true
+                out.append(c)
+            case "{", "[":
+                // An empty one stays on its line, the way `jq` prints it.
+                let closing: Character = c == "{" ? "}" : "]"
+                if nextMeaningful(after: i) == closing {
+                    out.append(c)
+                    out.append(closing)
+                    // Skip whatever whitespace sat between them.
+                    var j = i + 1
+                    while j < characters.count, characters[j] != closing { j += 1 }
+                    i = j + 1
+                    continue
+                }
+                depth += 1
+                out.append(c)
+                newline(depth)
+            case "}", "]":
+                depth -= 1
+                newline(depth)
+                out.append(c)
+            case ",":
+                out.append(c)
+                newline(depth)
+            case ":":
+                out.append(c)
+                out.append(" ")
+            case " ", "\t", "\n", "\r":
+                break   // whitespace between tokens is ours to decide
+            default:
+                out.append(c)
+            }
+            i += 1
+        }
+        return out
+    }
+
     /// A single line that is unmistakably code.
     ///
     /// Most one-line pastes are a sentence, and fencing those would be worse

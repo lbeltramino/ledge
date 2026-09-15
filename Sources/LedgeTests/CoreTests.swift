@@ -705,6 +705,52 @@ enum CoreTests {
             }
         }
 
+        await Runner.test("un json minificado se acomoda como lo haría jq") { c in
+            let json = #"{"b":1,"a":[1,2],"vacio":{},"lista":[],"txt":"con {llaves} y \"comillas\""}"#
+            guard let bonito = Code.prettyJSON(json) else {
+                return c.expect(false, "no lo pudo acomodar")
+            }
+            let esperado = """
+            {
+              "b": 1,
+              "a": [
+                1,
+                2
+              ],
+              "vacio": {},
+              "lista": [],
+              "txt": "con {llaves} y \\"comillas\\""
+            }
+            """
+            c.equal(bonito, esperado, "salió:\n\(bonito)")
+        }
+
+        await Runner.test("acomodar no reordena ni reescribe nada") { c in
+            // Decodificar y volver a codificar daría un diccionario sin orden y
+            // números reformateados: un id deja de ser el id que pegaste.
+            let json = #"{"zeta":1,"alfa":2,"id":"00012345678901234567890","precio":1.50,"grande":9007199254740993}"#
+            guard let bonito = Code.prettyJSON(json) else {
+                return c.expect(false, "no lo pudo acomodar")
+            }
+            let claves = ["zeta", "alfa", "id", "precio", "grande"]
+            var posiciones: [Int] = []
+            for clave in claves {
+                guard let r = bonito.range(of: "\"\(clave)\"") else {
+                    return c.expect(false, "falta \(clave)")
+                }
+                posiciones.append(bonito.distance(from: bonito.startIndex, to: r.lowerBound))
+            }
+            c.equal(posiciones, posiciones.sorted(), "el orden de las claves se conserva")
+            c.expect(bonito.contains("1.50"), "los números quedan como los escribiste")
+            c.expect(bonito.contains("9007199254740993"), "los enteros grandes también")
+            c.expect(bonito.contains("\"00012345678901234567890\""), "y los ids no se tocan")
+        }
+
+        await Runner.test("lo que no es json no se acomoda") { c in
+            c.expect(Code.prettyJSON("no soy json") == nil)
+            c.expect(Code.prettyJSON("{ roto") == nil)
+        }
+
         Runner.suite("Escribiendo un enlace")
 
         await Runner.test("un [[ abierto se reconoce mientras escribís") { c in

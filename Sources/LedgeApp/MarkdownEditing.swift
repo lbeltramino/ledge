@@ -345,8 +345,15 @@ enum MarkdownEditing {
         let found = fenced ? nil : Code.detect(pasted)
         guard fenced || found != nil else { return (false, nil) }
 
+        // A payload that arrived on one line is laid out before it is fenced.
+        // Four kilobytes in a single line is a wall whether or not it is in a
+        // monospace font. Only the minified case: reformatting JSON somebody
+        // had already laid out their own way would be rearranging their
+        // furniture.
+        let body = (!fenced && !pasted.contains("\n") ? Code.prettyJSON(pasted) : nil) ?? pasted
+
         // A fence has to start its own line, and be followed by one.
-        var block = fenced ? pasted : Code.fenced(pasted, language: found!.language)
+        var block = fenced ? body : Code.fenced(body, language: found!.language)
         let atLineStart = selection.location == 0
             || text.substring(with: NSRange(location: selection.location - 1, length: 1)) == "\n"
         if !atLineStart { block = "\n" + block }
