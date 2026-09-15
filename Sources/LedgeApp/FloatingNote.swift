@@ -22,6 +22,15 @@ final class FloatingNote: NSObject {
     var onTitle: ((String) -> Void)?
     var onExpand: (() -> Void)?
     var onColor: ((NoteColor) -> Void)?
+    /// A `[[link]]` was pressed on the desk.
+    var onOpenLink: ((String) -> Void)?
+    /// A chip on the family row: open that note.
+    var onOpenRelative: ((String) -> Void)?
+    /// Out to the strip, or back into the folder.
+    var onToggleOnStrip: ((Bool) -> Void)?
+    /// What the `[[` picker offers, and what it makes.
+    var titlesForLinking: (() -> [String])?
+    var onCreateLinked: ((String, Bool) -> Void)?
     var onArchive: (() -> Void)?
     var onDelete: (() -> Void)?
     /// Pushed back to a screen edge, or dismissed.
@@ -66,6 +75,17 @@ final class FloatingNote: NSObject {
         card.onArchive = { [weak self] in self?.onArchive?() }
         card.onDelete = { [weak self] in self?.onDelete?() }
         card.textView.onEscape = { [weak self] in self?.onRedock?() }
+        // Everything the card offers has to reach the deck from here too. A
+        // note on the desk is the same note: this list going out of step with
+        // the deck's is how the font buttons, and then the links, did nothing
+        // out here while working perfectly on the strip.
+        card.textView.onOpenLink = { [weak self] name in self?.onOpenLink?(name) }
+        card.textView.titlesForLinking = { [weak self] in self?.titlesForLinking?() ?? [] }
+        card.textView.onCreateLinked = { [weak self] name, asChild in
+            self?.onCreateLinked?(name, asChild)
+        }
+        card.onOpenRelative = { [weak self] id in self?.onOpenRelative?(id) }
+        card.onToggleOnStrip = { [weak self] out in self?.onToggleOnStrip?(out) }
         card.resizeHandle.onResize = { [weak self] delta in self?.resize(by: delta) }
         card.resizeHandle.onFinished = { [weak self] in
             guard let self else { return }

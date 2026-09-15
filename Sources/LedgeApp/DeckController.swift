@@ -1267,6 +1267,13 @@ final class DeckController {
         }
         float.shouldRedock = { [weak self] pointer in self?.workspace.strip(near: pointer) != nil }
         float.onColor = { [weak self] color in self?.recolor(id, to: color) }
+        float.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
+        float.onOpenRelative = { [weak self] other in self?.visit(other) }
+        float.onToggleOnStrip = { [weak self] out in self?.setOnStrip(id, out) }
+        float.titlesForLinking = { [weak self] in (self?.records ?? []).map(\.displayTitle) }
+        float.onCreateLinked = { [weak self] name, asChild in
+            self?.createLinked(name, from: id, asChild: asChild)
+        }
         float.onArchive = { [weak self] in self?.redock(id); self?.archive(id) }
         float.onDelete = { [weak self] in self?.confirmDelete(id) }
         floating[id] = float
@@ -1317,6 +1324,10 @@ final class DeckController {
         }
         editor.onTitle = { [weak self] text in self?.rename(id: id, to: text) }
         editor.onOpenLink = { [weak self] name in self?.workspace.open(reference: name) }
+        editor.textView.titlesForLinking = { [weak self] in (self?.records ?? []).map(\.displayTitle) }
+        editor.textView.onCreateLinked = { [weak self] name, asChild in
+            self?.createLinked(name, from: id, asChild: asChild)
+        }
         editor.onClose = { [weak self] in
             self?.editors[id] = nil
             self?.commitPendingSave()

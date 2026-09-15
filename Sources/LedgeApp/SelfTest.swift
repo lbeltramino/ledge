@@ -1299,6 +1299,43 @@ enum SelfTest {
               "the card and the file still agree")
     }
 
+    /// Una nota en el escritorio es la misma nota.
+    ///
+    /// `FloatingNote` reenvía los callbacks de la card uno por uno, y esa lista
+    /// se separa de la del deck en silencio: pasó con los botones de fuente y
+    /// volvió a pasar con los enlaces, que no hacían nada al sacar la nota
+    /// afuera. Esto pregunta por todos, incluidos los del text view — donde
+    /// vive `onOpenLink`, que es justo el que se escapó la segunda vez.
+    static func checkTheDeskGetsEverything() {
+        let record = NoteRecord(note: Note(title: "Prueba"), filename: "f.md",
+                                mtime: 0, size: 0, hash: "")
+        let float = FloatingNote(record: record, title: "Prueba", body: "ver [[Otra]]",
+                                 size: NSSize(width: 420, height: 300))
+
+        // Lo que el deck decide por sí mismo, y una nota suelta no necesita.
+        let propios = [
+            "onBeginEditing",   // foco y tabs del deck; la flotante tiene su ventana
+            "onSuggestedTitle", // el título lo pone el deck al pegar código
+            "onFind",           // ⌘F lo maneja la ventana flotante
+            "onChange",         // la card lo usa internamente
+            "onUnlockTable",    // lo cablea la propia card
+        ]
+        let sueltos = unwired(float.cardView) + unwired(float.cardView.textView)
+        let faltantes = sueltos.filter { !propios.contains($0) }
+        check(faltantes.isEmpty,
+              "una nota en el escritorio pierde: \(faltantes.isEmpty ? "nada" : faltantes.joined(separator: ", "))")
+    }
+
+    /// Los `on…` que nadie escucha.
+    private static func unwired(_ object: Any) -> [String] {
+        Mirror(reflecting: object).children.compactMap { child in
+            guard let label = child.label, label.hasPrefix("on") else { return nil }
+            let value = Mirror(reflecting: child.value)
+            guard value.displayStyle == .optional, value.children.isEmpty else { return nil }
+            return label
+        }
+    }
+
     /// Un enlace se abre apretándolo.
     static func checkLinkOpensOnClick() {
         let record = NoteRecord(note: Note(title: "Madre"), filename: "m.md",
@@ -3453,6 +3490,7 @@ enum SelfTest {
         checkFamilyRow()
         checkLinkPicker()
         checkLinkOpensOnClick()
+        checkTheDeskGetsEverything()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()
