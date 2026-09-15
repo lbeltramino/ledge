@@ -1493,6 +1493,14 @@ enum SelfTest {
         deck.debugCommit()
         try? await Task.sleep(for: .milliseconds(700))
 
+        // Medido acá, que es donde nacía la diferencia. Más adelante el merge
+        // ya reconcilió y la invariante vuelve a cerrar sola — un check puesto
+        // al final pasa con el bug puesto.
+        let trasElEnter = await deck.debugFileBody(of: nota.id)
+        check(deck.debugBaseline(of: nota.id) == trasElEnter,
+              "un Enter al principio no corre la línea base "
+              + "(\(deck.debugBaseline(of: nota.id)?.count ?? -1) vs \(trasElEnter?.count ?? -1))")
+
         // Pegar donde la nota lo pondría: al final.
         let clip = NSPasteboard(name: .init("ledge.selftest.jsongrande"))
         clip.clearContents()
