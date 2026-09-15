@@ -2547,6 +2547,65 @@ enum SelfTest {
         scratch.releaseGlobally()
     }
 
+    /// La fila que dice a qué pertenece una nota.
+    static func checkFamilyRow() {
+        let madreID = "01MADRE000000000000000000"
+        var hija = Note(title: "Modelo de permisos", color: .blue)
+        hija.parent = madreID
+        let hijaRec = NoteRecord(note: hija, filename: "h.md", mtime: 0, size: 0, hash: "")
+
+        // Una nota sin familia no gasta una fila de su papel.
+        let sola = NoteCardView(record: NoteRecord(note: Note(title: "Sola"), filename: "s.md",
+                                                   mtime: 0, size: 0, hash: ""), body: "texto")
+        sola.frame = NSRect(x: 0, y: 0, width: 420, height: 320)
+        sola.layoutSubtreeIfNeeded()
+        check(sola.family.isHidden, "una nota sin madre ni hijas no muestra la fila")
+        let altoSolo = sola.textView.enclosingScrollView?.frame.height ?? 0
+
+        // Una madre lista a sus hijas.
+        let madre = NoteCardView(record: NoteRecord(note: Note(title: "Bedrock en el IDP"),
+                                                    filename: "m.md", mtime: 0, size: 0, hash: ""),
+                                 body: "el proyecto")
+        madre.frame = sola.frame
+        madre.family.show(children: [hijaRec], mother: nil, isOnStrip: false)
+        madre.layoutSubtreeIfNeeded()
+        check(!madre.family.isHidden, "una madre sí la muestra")
+        check(madre.family.debugLabels == ["Modelo de permisos"],
+              "y lista a su hija: \(madre.family.debugLabels)")
+        let altoConFila = madre.textView.enclosingScrollView?.frame.height ?? 0
+        check(altoConFila < altoSolo,
+              String(format: "la fila le saca alto al texto, no lo tapa (%.0f vs %.0f)",
+                     altoConFila, altoSolo))
+        check(madre.family.frame.maxY <= madre.debugChromeFrame.minY + 1,
+              String(format: "y va encima de los colores, sin pisarlos (%.0f vs %.0f)",
+                     madre.family.frame.maxY, madre.debugChromeFrame.minY))
+
+        // Una hija muestra el camino de vuelta y la salida a la tira.
+        let cardHija = NoteCardView(record: hijaRec, body: "quién puede invocar")
+        cardHija.frame = sola.frame
+        cardHija.family.show(children: [], mother: (madreID, "Bedrock en el IDP"), isOnStrip: false)
+        cardHija.layoutSubtreeIfNeeded()
+        check(cardHija.family.debugLabels == ["‹ Bedrock en el IDP", "Sacar a la tira"],
+              "la hija ofrece la vuelta y la salida: \(cardHija.family.debugLabels)")
+
+        // Y lo que hace cada chip, apretado donde se dibuja.
+        var abierto: [String] = []
+        var sacada: [Bool] = []
+        cardHija.onOpenRelative = { abierto.append($0) }
+        cardHija.onToggleOnStrip = { sacada.append($0) }
+        let chips = cardHija.family.debugChips
+        cardHija.family.press(at: NSPoint(x: chips[0].1.midX, y: chips[0].1.midY))
+        check(abierto == [madreID], "el chip de la madre la abre: \(abierto)")
+        cardHija.family.press(at: NSPoint(x: chips[1].1.midX, y: chips[1].1.midY))
+        check(sacada == [true], "y el otro la saca a la tira: \(sacada)")
+
+        // Ya sacada, el mismo botón la guarda.
+        cardHija.family.show(children: [], mother: (madreID, "Bedrock en el IDP"), isOnStrip: true)
+        cardHija.layoutSubtreeIfNeeded()
+        check(cardHija.family.debugLabels.contains("Guardar en la carpeta"),
+              "y una vez afuera ofrece volver: \(cardHija.family.debugLabels)")
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -3136,6 +3195,7 @@ enum SelfTest {
         checkDrawingsArriveFromOutside()
         checkDrawingStaysPutOnEnter()
         checkCopyingKeepsWhatMatters()
+        checkFamilyRow()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

@@ -56,6 +56,12 @@ final class NoteCardView: NSView {
     private var isFinding = false
 
     var onColor: ((NoteColor) -> Void)?
+    /// A chip in the family row was pressed: open that note.
+    var onOpenRelative: ((String) -> Void)?
+    /// Out to the strip, or back into the folder.
+    var onToggleOnStrip: ((Bool) -> Void)?
+
+    let family = FamilyBar()
     var onDelete: (() -> Void)?
     var onArchive: (() -> Void)?
     var onBeginEditing: (() -> Void)?
@@ -195,6 +201,10 @@ final class NoteCardView: NSView {
         chrome.onDelete = { [weak self] in self?.onDelete?() }
         chrome.onArchive = { [weak self] in self?.onArchive?() }
         chrome.onClose = { [weak self] in self?.onClose?() }
+        family.onOpen = { [weak self] id in self?.onOpenRelative?(id) }
+        family.onToggleStrip = { [weak self] out in self?.onToggleOnStrip?(out) }
+        family.isHidden = true
+        addSubview(family)
         addSubview(chrome)
         addSubview(resizeHandle)
         resizeHandle.alphaValue = 0
@@ -349,6 +359,7 @@ final class NoteCardView: NSView {
         textView.textColor = ink.withAlphaComponent(0.92)
         textView.codeCopy.ink = ink
         textView.mediaCopy.ink = ink
+        family.ink = ink
         textView.highlighterPen = MarkerStroke.colour(for: color, dark: dark)
         textView.tablePaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
         textView.tableInk = ink
@@ -407,6 +418,7 @@ final class NoteCardView: NSView {
     }
 
     var debugOutlineOffered: Bool { !outlineButton.isHidden }
+    var debugChromeFrame: NSRect { chrome.frame }
     var debugOutlineButtonFrame: NSRect { outlineButton.frame }
     var debugExpandButtonFrame: NSRect { expandButton.frame }
     var debugTitleFrame: NSRect { titleField.frame }
@@ -578,6 +590,13 @@ final class NoteCardView: NSView {
                                   height: titleHeight)
         chrome.frame = NSRect(x: left, y: bounds.height - pad - NoteChromeBar.height,
                               width: contentWidth, height: NoteChromeBar.height)
+        // Above the colours, and only there when the note has family: a note
+        // with neither mother nor children keeps the room for its text.
+        let familyRoom = family.isHidden ? 0 : FamilyBar.height + 5
+        if !family.isHidden {
+            family.frame = NSRect(x: left, y: chrome.frame.minY - FamilyBar.height - 5,
+                                  width: contentWidth, height: FamilyBar.height)
+        }
 
         // The free corner: the one furthest from the screen edge the card is
         // pinned to.
@@ -593,7 +612,7 @@ final class NoteCardView: NSView {
         }
         scroll.frame = NSRect(x: left, y: top,
                               width: contentWidth,
-                              height: max(0, bounds.height - top - pad - NoteChromeBar.height - 6))
+                              height: max(0, bounds.height - top - pad - NoteChromeBar.height - 6 - familyRoom))
 
         // The index sits over the note, under whatever is above it, and is as
         // tall as its own list. Over rather than beside: a sticky note has no

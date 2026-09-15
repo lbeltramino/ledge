@@ -1004,6 +1004,9 @@ final class DeckController {
         view.resizeHandle.onResize = { [weak self] delta in self?.resizeCard(by: delta) }
         view.resizeHandle.onFinished = { [weak self] in self?.commitCardSize(id) }
         view.onColor = { [weak self] color in self?.recolor(id, to: color) }
+        view.onOpenRelative = { [weak self] other in self?.preview(other) }
+        view.onToggleOnStrip = { [weak self] out in self?.setOnStrip(id, out) }
+        refreshFamily(of: view, id: id)
         view.onArchive = { [weak self] in self?.archive(id) }
         view.onDelete = { [weak self] in self?.confirmDelete(id) }
         view.onStripDrag = { [weak self] in
@@ -1354,6 +1357,33 @@ final class DeckController {
             records = (try? await store.deck(strip: stripTag,
                                              collectingUnassigned: strip.isPrimary,
                                              knownStrips: knownStrips)) ?? records
+        }
+    }
+
+    /// Fills the row above the colours: a mother's children, or a child's way
+    /// back. Read from the index, so it survives editing the text.
+    private func refreshFamily(of view: NoteCardView, id: String) {
+        Task { [weak view] in
+            let children = (try? await store.children(of: id)) ?? []
+            let record = records.first { $0.id == id }
+            var mother: (id: String, title: String)?
+            if let parent = record?.parent,
+               let found = try? await store.load(id: parent) {
+                mother = (parent, found.displayTitle)
+            }
+            guard let view else { return }
+            view.family.show(children: children, mother: mother,
+                             isOnStrip: record?.onStrip ?? false)
+            view.needsLayout = true
+        }
+    }
+
+    /// Out to the strip, or back into the folder. It stays a child either way.
+    private func setOnStrip(_ id: String, _ out: Bool) {
+        Task {
+            _ = try? await store.setOnStrip(id: id, out)
+            await refresh()
+            if let card, card.record.id == id { refreshFamily(of: card, id: id) }
         }
     }
 
