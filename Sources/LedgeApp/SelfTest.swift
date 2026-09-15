@@ -1336,6 +1336,43 @@ enum SelfTest {
         }
     }
 
+    /// Pegar un JSON minificado en una nota.
+    static func checkPastingMinifiedJSON() {
+        let record = NoteRecord(note: Note(title: "Pegar"), filename: "j.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: "antes\n")
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 320)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        let scratch = NSPasteboard(name: .init("ledge.selftest.json"))
+        scratch.clearContents()
+        let json = #"{"id":"3b5a951b","event":"service:action:create","notification":{"slug":"update-trottle-hybrid","parameters":{"throttling_rate_limit":15,"endpoints":[{"path":"/test","method":"GET"}]}}}"#
+        scratch.setString(json, forType: .string)
+        view.pasteboard = scratch
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        view.paste(nil)
+
+        check(view.string.contains("```json"),
+              "un json de una línea llega como código: \(view.string.prefix(40))")
+        check(view.string.contains("\"throttling_rate_limit\":15"),
+              "sin perder nada de lo pegado")
+        scratch.releaseGlobally()
+
+        // Y una frase suelta sigue siendo una frase.
+        //
+        // Preguntado a la decisión, no al texto resultante: si dejo que
+        // `paste` siga de largo cae en `super.paste`, que lee el portapapeles
+        // real de la máquina — y entonces el check mide lo que vos tengas
+        // copiado en vez de medir Ledge.
+        let prosa = NSPasteboard(name: .init("ledge.selftest.prosa"))
+        prosa.clearContents()
+        prosa.setString("me acordé de revisar el throttling del gateway", forType: .string)
+        check(!MarkdownEditing.pasteCode(view, from: prosa).did,
+              "una frase no se encierra en un fence")
+        prosa.releaseGlobally()
+    }
+
     /// Un enlace se abre apretándolo.
     static func checkLinkOpensOnClick() {
         let record = NoteRecord(note: Note(title: "Madre"), filename: "m.md",
@@ -3546,6 +3583,7 @@ enum SelfTest {
         checkFamilyRow()
         checkLinkPicker()
         checkLinkOpensOnClick()
+        checkPastingMinifiedJSON()
         checkTheDeskGetsEverything()
         checkZoomKeys()
         checkShortcuts()

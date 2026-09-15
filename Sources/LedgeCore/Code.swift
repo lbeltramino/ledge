@@ -27,6 +27,22 @@ public enum Code {
     }
 
     /// What this text is, or nil when it reads as prose.
+    /// A single line that is unmistakably code.
+    ///
+    /// Most one-line pastes are a sentence, and fencing those would be worse
+    /// than useless — which is why a paste has to have a newline in it before
+    /// anything here is asked. A minified JSON payload has no newline at all
+    /// (the `\n` inside it are two characters of text), so the one kind of
+    /// snippet this app exists for went in as prose. Reported with four
+    /// kilobytes of API Gateway on one line.
+    ///
+    /// Parsing is the whole test: nothing that is not JSON parses as JSON.
+    public static func isOneLineCode(_ text: String) -> Bool {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.contains("\n"), body.count > 40 else { return false }
+        return isJSON(Lines(body))
+    }
+
     public static func detect(_ text: String) -> Detection? {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return nil }

@@ -688,6 +688,23 @@ enum CoreTests {
                      "el rango del fence tiene que contener su propio texto")
         }
 
+        await Runner.test("un json minificado de una sola línea es código") { c in
+            // Reportado con cuatro kilobytes de API Gateway en una línea: el
+            // pegado exigía un salto de línea para molestarse en mirar, y este
+            // no tiene ninguno — los \\n de adentro son dos caracteres de texto.
+            let json = #"{"id":"3b5a951b-5ffe-4069-9d9f-ec030864c97d","source":"service","event":"service:action:create","notification":{"slug":"update-trottle-hybrid","parameters":{"open_api_yml":"paths:\n  /test-2:\n    get:\n      x-uala-apigateway-method-settings:\n        throttlingRateLimit: 1\n"},"throttling_rate_limit":15}}"#
+            c.expect(!json.contains("\n"), "el payload no tiene ni un salto de línea de verdad")
+            c.expect(Code.isOneLineCode(json), "y aun así es código")
+            c.equal(Code.detect(json)?.language, "json", "reconocido como json")
+
+            // Y lo que no puede pasar: fencear una frase.
+            for prosa in ["esto es una nota común y corriente sobre el deploy de ayer",
+                         "{ pero esto no es json válido",
+                         "{}"] {
+                c.expect(!Code.isOneLineCode(prosa), "no debería ser código: \(prosa)")
+            }
+        }
+
         Runner.suite("Escribiendo un enlace")
 
         await Runner.test("un [[ abierto se reconoce mientras escribís") { c in

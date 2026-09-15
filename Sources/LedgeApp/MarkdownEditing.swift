@@ -324,8 +324,10 @@ enum MarkdownEditing {
     static func pasteCode(_ textView: NSTextView,
                           from pasteboard: NSPasteboard = .general) -> (did: Bool, title: String?) {
         guard let storage = textView.textStorage,
-              let pasted = pasteboard.string(forType: .string),
-              pasted.contains("\n") else { return (false, nil) }
+              let pasted = pasteboard.string(forType: .string) else { return (false, nil) }
+        // A newline is what separates a snippet from a sentence — except for
+        // the one snippet that never has one. See `Code.isOneLineCode`.
+        guard pasted.contains("\n") || Code.isOneLineCode(pasted) else { return (false, nil) }
 
         let selection = textView.selectedRange()
         let text = storage.string as NSString
