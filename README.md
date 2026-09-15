@@ -49,6 +49,13 @@ SQLite index beside it is a cache you can delete at any moment.
   small to have two modes.
 - **Everything in one list.** `⌥⌘A` searches titles, bodies and tags across every
   note, archived ones included.
+- **Notas que pertenecen a otra.** Escribí `[[` y aparecen las notas que
+  podrías estar nombrando, filtradas mientras tipeás, con una última fila que
+  dice qué se crearía. `⏎` la crea **dentro** de la nota en la que estás —
+  sin tab propio, alcanzable desde ella — y `⇧⏎` la crea suelta. Un proyecto
+  cuesta un tab, no seis. La madre lista a sus hijas arriba de los colores, y
+  la hija muestra el camino de vuelta y un botón para **sacarla a la tira** si
+  después la querés a mano. Nada se crea por escribir: sólo al elegir esa fila.
 - **Tags you just type.** `#work` in the body is a tag; `# Heading` is a heading.
   Searchable, clickable, and gone the moment you delete the hashtag.
 - **Checklists.** `- [ ]` is a task. Click the box to tick it, and a finished one
@@ -359,13 +366,16 @@ state: active
 rank: a0V
 tags: [work]
 strip: left-1
+parent: 01K2F3QW8N4Z7YB0PMRTXAGH5J
 created: 2026-08-29T21:06:12Z
 updated: 2026-08-29T21:31:44Z
 ---
 - understand all the apis listed
 ```
 
-`id` is a ULID and never changes, so retitling renames the file without the app
+`parent` is there only on a note that belongs to another one: it is reached
+through that note instead of taking a tab, and `onstrip: true` puts it back on
+the strip without taking it out of the project. `id` is a ULID and never changes, so retitling renames the file without the app
 losing the note. `rank` is a fractional index, so dragging one note in the deck
 rewrites exactly one file instead of every file below it. Keys written by other
 tools are preserved verbatim.
