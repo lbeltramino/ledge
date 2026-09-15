@@ -1006,6 +1006,12 @@ final class DeckController {
         view.onColor = { [weak self] color in self?.recolor(id, to: color) }
         view.onOpenRelative = { [weak self] other in self?.preview(other) }
         view.onToggleOnStrip = { [weak self] out in self?.setOnStrip(id, out) }
+        view.textView.titlesForLinking = { [weak self] in
+            (self?.records ?? []).map(\.displayTitle)
+        }
+        view.textView.onCreateLinked = { [weak self] name, asChild in
+            self?.createLinked(name, from: id, asChild: asChild)
+        }
         refreshFamily(of: view, id: id)
         view.onArchive = { [weak self] in self?.archive(id) }
         view.onDelete = { [weak self] in self?.confirmDelete(id) }
@@ -1375,6 +1381,25 @@ final class DeckController {
             view.family.show(children: children, mother: mother,
                              isOnStrip: record?.onStrip ?? false)
             view.needsLayout = true
+        }
+    }
+
+    /// A name was typed between brackets that no note answers to yet.
+    ///
+    /// Made inside the note you are writing in, because that is what you nearly
+    /// always mean — if you wanted a note of its own you would have pressed the
+    /// plus. Shift says otherwise, and the chip on the child says it again
+    /// afterwards, which is the reversible half of the same decision.
+    private func createLinked(_ name: String, from parent: String, asChild: Bool) {
+        Task {
+            let colour = records.first { $0.id == parent }?.color
+            if asChild {
+                _ = try? await store.createChild(title: name, of: parent, color: colour)
+            } else {
+                _ = try? await store.create(title: name, body: "")
+            }
+            await refresh()
+            if let card, card.record.id == parent { refreshFamily(of: card, id: parent) }
         }
     }
 

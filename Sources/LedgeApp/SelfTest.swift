@@ -2606,6 +2606,109 @@ enum SelfTest {
               "y una vez afuera ofrece volver: \(cardHija.family.debugLabels)")
     }
 
+    /// Escribir `[[` y que ofrezca.
+    static func checkLinkPicker() {
+        let record = NoteRecord(note: Note(title: "Bedrock en el IDP"), filename: "m.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: "el proyecto\n")
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 320)
+        let window = NSWindow(contentRect: card.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.contentView?.addSubview(card)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+        view.titlesForLinking = { ["Modelo de permisos", "Permisos de KMS", "Office",
+                                   "Bedrock en el IDP"] }
+        window.makeFirstResponder(view)
+
+        /// Escribe, letra por letra, como una persona.
+        func escribir(_ text: String) {
+            for ch in text { view.insertText(String(ch), replacementRange: view.selectedRange()) }
+        }
+
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+        check(!view.linkPicker.isOpen, "sin escribir nada, no hay selector")
+
+        escribir("ver [[")
+        check(view.linkPicker.isOpen, "al abrir los corchetes aparece")
+        check(!view.linkPicker.debugRows.contains("Bedrock en el IDP"),
+              "y no se ofrece a sí misma: \(view.linkPicker.debugRows)")
+
+        escribir("perm")
+        check(view.linkPicker.debugRows.prefix(2) == ["Permisos de KMS", "Modelo de permisos"],
+              "filtra y ordena mientras escribís: \(view.linkPicker.debugRows)")
+        check(view.linkPicker.debugRows.last?.hasPrefix("Crear") == true,
+              "y siempre ofrece crear lo que estás escribiendo: \(view.linkPicker.debugRows)")
+
+        // Nada se crea por escribir.
+        var creadas: [(String, Bool)] = []
+        view.onCreateLinked = { creadas.append(($0, $1)) }
+        check(creadas.isEmpty, "escribir no crea nada")
+
+        // Elegir una existente cierra los corchetes.
+        view.linkPicker.move(by: 0)
+        view.linkPicker.take()
+        check(view.string.contains("[[Permisos de KMS]]"),
+              "elegir una la deja enlazada: \(view.string.debugDescription)")
+        check(!view.linkPicker.isOpen, "y cierra el selector")
+        check(creadas.isEmpty, "elegir una que existe no crea nada")
+
+        // Y el caret queda después del enlace, listo para seguir escribiendo.
+        let esperado = (view.string as NSString).range(of: "[[Permisos de KMS]]")
+        check(view.selectedRange().location == NSMaxRange(esperado),
+              "el caret sigue después del enlace")
+
+        // Ahora una que no existe.
+        escribir(" y [[Pruebas de carga")
+        check(view.linkPicker.debugRows == ["Crear “Pruebas de carga”"],
+              "sin matches, sólo la fila que crea: \(view.linkPicker.debugRows)")
+        view.linkPicker.take()
+        check(creadas.count == 1 && creadas[0].0 == "Pruebas de carga" && creadas[0].1,
+              "⏎ la crea dentro de esta nota: \(creadas)")
+        check(view.string.contains("[[Pruebas de carga]]"), "y queda enlazada igual")
+
+        // ⇧⏎ la crea suelta.
+        escribir(" y [[Otra suelta")
+        view.linkPicker.take(shift: true)
+        check(creadas.count == 2 && !creadas[1].1,
+              "⇧⏎ la crea con tab propio: \(creadas)")
+
+        // Las teclas de verdad, por `keyDown`, que es donde vive la
+        // intercepción: apretar `take()` a mano no prueba que ⏎ llegue ahí.
+        func tecla(_ code: UInt16, _ chars: String, shift: Bool = false) {
+            guard let e = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                           modifierFlags: shift ? .shift : [],
+                                           timestamp: 0, windowNumber: window.windowNumber,
+                                           context: nil, characters: chars,
+                                           charactersIgnoringModifiers: chars,
+                                           isARepeat: false, keyCode: code) else { return }
+            view.keyDown(with: e)
+        }
+        escribir(" y [[perm")
+        check(view.linkPicker.isOpen, "el selector está abierto para probar las teclas")
+        let primera = view.linkPicker.debugSelection
+        tecla(125, String(UnicodeScalar(NSDownArrowFunctionKey)!))   // ↓
+        check(view.linkPicker.debugSelection == primera + 1,
+              "la flecha baja mueve la selección: \(view.linkPicker.debugSelection)")
+        let elegida = view.linkPicker.debugRows[view.linkPicker.debugSelection]
+        tecla(36, "\r")                                             // ⏎
+        check(!view.linkPicker.isOpen, "⏎ cierra el selector")
+        check(view.string.contains("[[\(elegida)]]"),
+              "y enlaza la fila que estaba marcada: \(elegida)")
+
+        escribir(" y [[algo")
+        tecla(53, String(UnicodeScalar(27)!))                        // esc
+        check(!view.linkPicker.isOpen, "esc cierra la oferta")
+        check(view.string.hasSuffix("[[algo"), "sin tocar lo que escribiste")
+
+        // Y lo que no puede pasar nunca: ofrecer enlaces mientras escribís bash.
+        view.string = ""
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        escribir("```bash\nif [[ -f \"$f\"")
+        check(!view.linkPicker.isOpen,
+              "dentro de un bloque de código no se ofrece nada")
+    }
+
     /// Every surface that shows a note shows its pictures.
     ///
     /// The same shape as the check about a note on the desk forwarding its
@@ -3196,6 +3299,7 @@ enum SelfTest {
         checkDrawingStaysPutOnEnter()
         checkCopyingKeepsWhatMatters()
         checkFamilyRow()
+        checkLinkPicker()
         checkZoomKeys()
         checkShortcuts()
         checkCodeCopy()

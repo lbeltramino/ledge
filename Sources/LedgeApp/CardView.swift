@@ -201,6 +201,7 @@ final class NoteCardView: NSView {
         chrome.onDelete = { [weak self] in self?.onDelete?() }
         chrome.onArchive = { [weak self] in self?.onArchive?() }
         chrome.onClose = { [weak self] in self?.onClose?() }
+        textView.ownTitle = title
         family.onOpen = { [weak self] id in self?.onOpenRelative?(id) }
         family.onToggleStrip = { [weak self] out in self?.onToggleOnStrip?(out) }
         family.isHidden = true
@@ -360,6 +361,8 @@ final class NoteCardView: NSView {
         textView.codeCopy.ink = ink
         textView.mediaCopy.ink = ink
         family.ink = ink
+        textView.linkInk = ink
+        textView.linkPaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
         textView.highlighterPen = MarkerStroke.colour(for: color, dark: dark)
         textView.tablePaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
         textView.tableInk = ink
@@ -870,6 +873,19 @@ final class NoteTextView: NSTextView {
     /// an editor, so they are caught before `interpretKeyEvents` sees them.
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // While the picker is up it owns the arrows and Return. Everything else
+        // still goes to the note: you are typing a name, after all.
+        if linkPicker.isOpen, let key = event.charactersIgnoringModifiers?.unicodeScalars.first {
+            switch key.value {
+            case UInt32(NSUpArrowFunctionKey):   linkPicker.move(by: -1); return
+            case UInt32(NSDownArrowFunctionKey): linkPicker.move(by: 1); return
+            case 13, 3:  // Return, Enter
+                if linkPicker.take(shift: flags.contains(.shift)) { return }
+            case 27:     // Escape closes the offer, not the note
+                linkPicker.close(); return
+            default: break
+            }
+        }
         if let key = event.charactersIgnoringModifiers?.unicodeScalars.first {
             let isUp = key.value == UInt32(NSUpArrowFunctionKey)
             let isDown = key.value == UInt32(NSDownArrowFunctionKey)
@@ -912,6 +928,12 @@ final class NoteTextView: NSTextView {
         addSubview(codeCopy)
         mediaCopy.onCopy = { [weak self] in _ = self?.copyHoveredMedia() }
         addSubview(mediaCopy)
+        linkPicker.onPick = { [weak self] title in self?.finishLink(with: title) }
+        linkPicker.onCreate = { [weak self] name, asChild in
+            self?.finishLink(with: name)
+            self?.onCreateLinked?(name, asChild)
+        }
+        addSubview(linkPicker)
 
         highlightBar.onClick = { [weak self] in
             guard let self else { return }
@@ -1487,6 +1509,13 @@ final class NoteTextView: NSTextView {
 
     // MARK: - copying a code block
 
+    /// Offers the notes you could mean while you type `[[`.
+    let linkPicker = LinkPicker()
+    /// Asked for the titles that exist, when the picker needs them.
+    var titlesForLinking: (() -> [String])?
+    /// A name was chosen that does not exist yet.
+    var onCreateLinked: ((String, _ asChild: Bool) -> Void)?
+
     let codeCopy = CodeCopyButton()
     /// The block the pointer is over, and the text length that was true when we
     /// found it — cheap enough to redo on every mouse move, but there is no
@@ -1758,7 +1787,65 @@ final class NoteTextView: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
+        offerLinks()
         onChange?()
+    }
+
+    override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity,
+                                   stillSelecting: Bool) {
+        super.setSelectedRange(charRange, affinity: affinity, stillSelecting: stillSelecting)
+        // Moving the caret out of a half-typed link closes the offer. Without
+        // this it follows you around the note.
+        if linkPicker.isOpen, !stillSelecting { offerLinks() }
+    }
+
+    /// Shows the notes that could finish the `[[` being typed, or hides it.
+    func offerLinks() {
+        guard selectedRange().length == 0,
+              let opening = Wikilink.opening(in: string, at: selectedRange().location) else {
+            return linkPicker.close()
+        }
+        let titles = (titlesForLinking?() ?? []).filter { $0 != ownTitle }
+        let found = Wikilink.matches(opening.query, in: titles)
+        let trimmed = opening.query.trimmingCharacters(in: .whitespaces)
+        // Nothing is created by typing: the row only says what would be made.
+        let canCreate = !trimmed.isEmpty && !Wikilink.exists(trimmed, in: titles)
+        linkPicker.show(query: opening.query, titles: found, canCreate: canCreate,
+                        paper: linkPaper, ink: linkInk)
+        placeLinkPicker(under: opening.range)
+    }
+
+    /// Under the brackets, and inside the note: a list that hangs off the edge
+    /// of the paper is a list you cannot read.
+    private func placeLinkPicker(under range: NSRange) {
+        guard !linkPicker.isHidden, let manager = layoutManager, let container = textContainer
+        else { return }
+        manager.ensureLayout(for: container)
+        let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var box = manager.boundingRect(forGlyphRange: glyphs, in: container)
+        box.origin.x += textContainerOrigin.x
+        box.origin.y += textContainerOrigin.y
+        let size = linkPicker.size
+        let x = min(max(0, box.minX), max(0, bounds.width - size.width))
+        linkPicker.frame = NSRect(x: x, y: box.maxY + 2, width: size.width, height: size.height)
+        addSubview(linkPicker, positioned: .above, relativeTo: nil)
+    }
+
+    var linkPaper: NSColor = .white
+    var linkInk: NSColor = .black
+    /// So a note is never offered as a link to itself.
+    var ownTitle: String = ""
+
+    /// Closes the brackets around the name that was chosen.
+    private func finishLink(with name: String) {
+        guard let opening = Wikilink.opening(in: string, at: selectedRange().location) else { return }
+        let replacement = "[[\(name)]]"
+        guard shouldChangeText(in: opening.range, replacementString: replacement) else { return }
+        textStorage?.replaceCharacters(in: opening.range, with: replacement)
+        didChangeText()
+        setSelectedRange(NSRange(location: opening.range.location + (replacement as NSString).length,
+                                 length: 0))
+        linkPicker.close()
     }
 
     override func cancelOperation(_ sender: Any?) {
