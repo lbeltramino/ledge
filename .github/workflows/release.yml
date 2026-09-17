@@ -104,7 +104,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          git checkout -B main origin/main
+          # -f because the step above has already edited the cask in this
+          # checkout. On a first run origin/main agrees with the tag and git
+          # allows the switch; on a re-run origin/main already carries the new
+          # cask, git refuses to overwrite a modified file, and the release can
+          # never be retried — found the one time it had to be. The sed below
+          # rewrites the file anyway, so there is nothing to keep.
+          git checkout -f -B main origin/main
           # The tag was cut from this commit, so the cask is the only change.
           git checkout "${{ github.sha }}" -- . 2>/dev/null || true
           SHA=$(shasum -a 256 "dist/Ledge-${{ steps.version.outputs.tag }}.zip" | cut -d' ' -f1)
