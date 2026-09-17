@@ -2704,6 +2704,142 @@ enum SelfTest {
     }
 
     /// Pasting a picture into a note.
+    /// The loupe on a block that defines a form, and what pressing it asks for.
+    ///
+    /// Through the pointer and through the mark's own action, because the two
+    /// things that have gone wrong before are a mark that is never placed and a
+    /// mark that is placed and wired to nothing. Never through the window: a
+    /// real panel built inside `--selftest` hangs the run.
+    static func checkOpeningAForm() {
+        let note = """
+        Del IDP:
+
+        ```json
+        {
+          "properties": { "db_name": { "type": "string", "title": "DB Name" } },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+            { "type": "Control", "scope": "#/properties/db_name" } ] }
+        }
+        ```
+
+        ```bash
+        kubectl get pods
+        ```
+
+        Después.
+        """
+        let record = NoteRecord(note: Note(title: "Formulario"), filename: "f.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 760)
+        let window = NSWindow(contentRect: card.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.contentView?.addSubview(card)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        // Nothing is drawn on the paper for a form: that is the whole change.
+        check(view.debugMediaFrames.isEmpty,
+              "a form is not drawn under its block: \(view.debugMediaFrames.count) drawings")
+
+        guard let layoutManager = view.layoutManager, let container = view.textContainer else {
+            check(false, "the text view has no layout"); return
+        }
+        layoutManager.ensureLayout(for: container)
+
+        func rect(_ needle: String) -> NSRect {
+            let range = (view.string as NSString).range(of: needle)
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var r = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+            r.origin.x += view.textContainerOrigin.x
+            r.origin.y += view.textContainerOrigin.y
+            return r
+        }
+
+        // What the press asks for, caught before it can build a window.
+        var asked: MediaWindow.Subject?
+        view.onOpenDrawing = { asked = $0 }
+
+        let onForm = rect("\"uiSchema\"")
+        view.updateCodeCopy(at: NSPoint(x: onForm.midX, y: onForm.midY))
+        check(!view.codeLoupe.isHidden, "a JSON block with a uiSchema offers the loupe")
+        if let whole = view.codeBlockRectForTesting, !view.codeLoupe.isHidden {
+            let mark = view.codeLoupe.frame
+            check(mark.maxX <= whole.maxX && mark.minX > whole.midX,
+                  "the loupe sits at the right-hand end of the block: \(mark.minX) in \(whole)")
+            check(abs(mark.minY - whole.minY) < 12, "…at its top: \(mark.minY) vs \(whole.minY)")
+            check(!mark.intersects(view.codeCopy.frame),
+                  "…beside the copy mark, not on top of it: \(mark) vs \(view.codeCopy.frame)")
+        }
+
+        // Pressed the way it is pressed, rather than by calling the method it
+        // happens to be wired to.
+        view.codeLoupe.mouseDown(with: NSEvent.mouseEvent(
+            with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+            clickCount: 1, pressure: 1) ?? NSEvent())
+        if case .form(let source)? = asked {
+            check(source.contains("uiSchema"), "pressing it asks for this block's form")
+        } else {
+            check(false, "pressing the loupe asked for \(String(describing: asked))")
+        }
+
+        // An ordinary code block has the copy mark and no loupe.
+        asked = nil
+        let onBash = rect("kubectl get pods")
+        view.updateCodeCopy(at: NSPoint(x: onBash.midX, y: onBash.midY))
+        check(view.codeCopyFrameForTesting != nil, "a shell block still offers the copy mark")
+        check(view.codeLoupe.isHidden, "…and no loupe, because there is no form in it")
+
+        let outside = rect("Después")
+        view.updateCodeCopy(at: NSPoint(x: outside.midX, y: outside.midY))
+        check(view.codeLoupe.isHidden, "pointing at prose hides the loupe")
+
+        window.contentView?.subviews.forEach { $0.removeFromSuperview() }
+    }
+
+    /// Zooming redraws rather than stretches.
+    ///
+    /// The view on its own, with no window around it — which is also the check
+    /// that it can be built that way, since a panel inside `--selftest` hangs.
+    static func checkZoomingADrawing() {
+        let source = """
+        { "properties": { "a": { "type": "string", "title": "Alpha" } },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+            { "type": "Control", "scope": "#/properties/a" } ] } }
+        """
+        let view = MediaZoomView()
+        view.configure(.form(source), ink: .black, paper: .white, dark: false)
+
+        guard let atOne = view.debugContentSize else {
+            check(false, "a form drew nothing at 1×"); return
+        }
+        check(atOne.width > 100 && atOne.height > 40, "the form has a size: \(atOne)")
+
+        view.zoomIn()
+        guard let bigger = view.debugContentSize else {
+            check(false, "a form drew nothing after zooming in"); return
+        }
+        check(bigger.width > atOne.width, "zooming in widens it: \(bigger.width) vs \(atOne.width)")
+        // Both dimensions, because a form laid out wider at the same type size
+        // would grow sideways only — and the complaint that started this was
+        // that the text was too small, not that the columns were too narrow.
+        check(bigger.height > atOne.height,
+              "…and makes it taller, so the type grew too: \(bigger.height) vs \(atOne.height)")
+        check(view.frame.size == bigger, "the view takes the size of what it drew")
+
+        view.zoomToActualSize()
+        check(view.debugContentSize.map { abs($0.width - atOne.width) < 1 } == true,
+              "back to 1× is back to the size it started")
+
+        // The stops hold, so a wheel that runs away cannot ask for a 40000 pt
+        // bitmap.
+        for _ in 0..<40 { view.zoomIn() }
+        check(view.zoom <= MediaZoomView.maximum + 0.001, "zoom stops at \(MediaZoomView.maximum)")
+        for _ in 0..<80 { view.zoomOut() }
+        check(view.zoom >= MediaZoomView.minimum - 0.001, "…and at \(MediaZoomView.minimum)")
+    }
+
     static func checkPastingAPicture() {
         let record = NoteRecord(note: Note(title: "Pegando"), filename: "p.md",
                                 mtime: 0, size: 0, hash: "")
@@ -3841,6 +3977,8 @@ enum SelfTest {
         checkMediaOnEverySurface()
         checkMediaSurvivesTyping()
         checkCopyingADrawing()
+        checkOpeningAForm()
+        checkZoomingADrawing()
         checkPastingAPicture()
         checkDiagramsTheSkillPromises()
         checkDrawingAtTheEnd()

@@ -210,6 +210,11 @@ final class NoteCardView: NSView {
         addSubview(resizeHandle)
         resizeHandle.alphaValue = 0
 
+        // Wired on the card rather than by each of the three things that host
+        // one: what the window needs is the note's title and its colours, and
+        // the card is the one that has both.
+        textView.onOpenDrawing = { [weak self] subject in self?.openDrawing(subject) }
+
         outline.isHidden = true
         outline.onPick = { [weak self] item in self?.jump(to: item) }
         outline.onClose = { [weak self] in self?.hideOutline() }
@@ -360,6 +365,8 @@ final class NoteCardView: NSView {
         textView.textColor = ink.withAlphaComponent(0.92)
         textView.codeCopy.ink = ink
         textView.mediaCopy.ink = ink
+        textView.codeLoupe.ink = ink
+        textView.mediaLoupe.ink = ink
         family.ink = ink
         textView.linkInk = ink
         textView.linkPaper = Palette.paper(color, dark: dark, tint: jitter.paperTint)
@@ -381,6 +388,24 @@ final class NoteCardView: NSView {
     /// ⌘F inside a note. The matches are drawn with the same marker stroke as a
     /// highlight, in a different pen, so searching looks like the rest of the
     /// app rather than like a system find bar on a sticky note.
+    /// Opens a drawing in the window that zooms one, on this note's paper and
+    /// in this note's ink — a form drawn in the system's greys on a coral note
+    /// would look like somebody else's dialog.
+    private func openDrawing(_ subject: MediaWindow.Subject) {
+        let dark = isDark
+        let what: String
+        switch subject {
+        case .picture(let url): what = url.lastPathComponent
+        case .diagram: what = "diagrama"
+        case .form: what = "formulario"
+        }
+        MediaWindow.show(subject,
+                         title: title.isEmpty ? what : "\(title) — \(what)",
+                         ink: Palette.ink(dark: dark),
+                         paper: Palette.paper(color, dark: dark, tint: jitter.paperTint),
+                         dark: dark)
+    }
+
     // MARK: - the headings, as somewhere to jump
 
     /// Shown only when the note has somewhere to jump between, so an ordinary
@@ -996,8 +1021,12 @@ final class NoteTextView: NSTextView {
 
         codeCopy.onCopy = { [weak self] in self?.copyHoveredBlock() }
         addSubview(codeCopy)
+        codeLoupe.onOpen = { [weak self] in _ = self?.openHoveredForm() }
+        addSubview(codeLoupe)
         mediaCopy.onCopy = { [weak self] in _ = self?.copyHoveredMedia() }
         addSubview(mediaCopy)
+        mediaLoupe.onOpen = { [weak self] in _ = self?.openHoveredMedia() }
+        addSubview(mediaLoupe)
         linkPicker.onPick = { [weak self] title in self?.finishLink(with: title) }
         linkPicker.onCreate = { [weak self] name, asChild in
             self?.finishLink(with: name)
@@ -1256,7 +1285,7 @@ final class NoteTextView: NSTextView {
     func refreshMedia() {
         guard let storage = textStorage, let container = textContainer,
               container.size.width > 1 else { return }
-        let items = Media.all(in: string)
+        let items = Media.all(in: string).filter(\.kind.isInline)
         let available = max(80, container.size.width - 4)
         mediaWidth = container.size.width
         let scale = window?.backingScaleFactor ?? 2
@@ -1374,13 +1403,9 @@ final class NoteTextView: NSTextView {
             lastOrigin = .diagram(source)
             return .picture(image)
 
-        case .form(let source):
-            guard let image = MediaStore.form(source, available: available, scale: scale,
-                                              ink: tableInk, font: formFont) else {
-                return .missing("this uiSchema could not be drawn")
-            }
-            lastOrigin = .form(source)
-            return .picture(image)
+        case .form:
+            // Never reached: a form is not drawn on the paper. See `isInline`.
+            return .missing("")
         }
     }
 
@@ -1401,7 +1426,7 @@ final class NoteTextView: NSTextView {
         guard let manager = layoutManager, let container = textContainer,
               container.size.width > 1 else { return }
         manager.ensureLayout(for: container)
-        let items = Media.all(in: string)
+        let items = Media.all(in: string).filter(\.kind.isInline)
         for (location, view) in mediaViews {
             guard let item = items.first(where: { $0.range.location == location }),
                   let height = mediaHeights[location] else { continue }
@@ -1502,7 +1527,15 @@ final class NoteTextView: NSTextView {
     /// clipboard — the file itself for a picture, and the diagram drawn at its
     /// own size for a diagram.
     let mediaCopy = CodeCopyButton()
+    /// Beside it: the way to open the drawing in a window where it can be made
+    /// bigger. Two marks, always in the same order — copy on the right where it
+    /// has always been, the loupe to its left.
+    let mediaLoupe = LoupeButton()
     private var hoveredMedia: MediaView?
+
+    /// Asked to open something in the media window. The view knows what was
+    /// pressed; the card knows the note's colours and its title.
+    var onOpenDrawing: ((MediaWindow.Subject) -> Void)?
 
     /// Shows the mark over the drawing under `point`. True when there is one,
     /// so the code block's own mark can stand down: a mermaid block is a fenced
@@ -1519,14 +1552,18 @@ final class NoteTextView: NSTextView {
         let corner = NSPoint(x: view.frame.minX + picture.maxX - CodeCopyButton.size - inset,
                              y: view.frame.minY + picture.minY + inset)
         mediaCopy.setFrameOrigin(corner)
+        mediaLoupe.setFrameOrigin(NSPoint(x: corner.x - LoupeButton.size - 4, y: corner.y))
         if mediaCopy.isHidden {
             mediaCopy.forget()
             mediaCopy.isHidden = false
-            // Over the drawing, not under it. The mark is made once when the
+            mediaLoupe.forget()
+            mediaLoupe.isHidden = false
+            // Over the drawing, not under it. The marks are made once when the
             // view is built and the drawings are added as the note is read, so
-            // it starts out behind them — shown, positioned correctly, and
+            // they start out behind them — shown, positioned correctly, and
             // completely invisible.
             addSubview(mediaCopy, positioned: .above, relativeTo: nil)
+            addSubview(mediaLoupe, positioned: .above, relativeTo: nil)
         }
         return true
     }
@@ -1535,7 +1572,21 @@ final class NoteTextView: NSTextView {
         guard !mediaCopy.isHidden else { return }
         mediaCopy.isHidden = true
         mediaCopy.forget()
+        mediaLoupe.isHidden = true
+        mediaLoupe.forget()
         hoveredMedia = nil
+    }
+
+    /// The drawing under the pointer, in a window of its own.
+    @discardableResult
+    func openHoveredMedia() -> Bool {
+        guard let origin = hoveredMedia?.origin else { return false }
+        switch origin {
+        case .file(let url): onOpenDrawing?(.picture(url))
+        case .diagram(let source): onOpenDrawing?(.diagram(source))
+        case .form(let source): onOpenDrawing?(.form(source))
+        }
+        return true
     }
 
     /// The drawing under the pointer, on the clipboard.
@@ -1604,6 +1655,9 @@ final class NoteTextView: NSTextView {
     var onCreateLinked: ((String, _ asChild: Bool) -> Void)?
 
     let codeCopy = CodeCopyButton()
+    /// Beside it on a block that defines a form: the only way to see the form,
+    /// since it is not drawn on the paper.
+    let codeLoupe = LoupeButton()
     /// The block the pointer is over, and the text length that was true when we
     /// found it — cheap enough to redo on every mouse move, but there is no
     /// reason to.
@@ -1641,7 +1695,8 @@ final class NoteTextView: NSTextView {
     /// the mark has to be placed again whenever the text is drawn.
     override func viewWillDraw() {
         super.viewWillDraw()
-        guard !codeCopy.isHidden || !mediaCopy.isHidden, let window else { return }
+        guard !codeCopy.isHidden || !mediaCopy.isHidden || !codeLoupe.isHidden,
+              let window else { return }
         let inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         let point = convert(inWindow, from: nil)
         if updateMediaCopy(at: point) { return hideCodeCopy() }
@@ -1677,7 +1732,37 @@ final class NoteTextView: NSTextView {
             codeCopy.forget()
             codeCopy.isHidden = false
         }
+
+        // A block that defines a form gets a second mark beside the first. The
+        // form is not drawn under it — this is the only way to it.
+        let source = text.substring(with: block.body)
+        if formSource(source) != nil {
+            codeLoupe.setFrameOrigin(NSPoint(x: rect.maxX - CodeCopyButton.size - LoupeButton.size - inset - 4,
+                                             y: rect.minY + inset * 0.7))
+            if codeLoupe.isHidden {
+                codeLoupe.forget()
+                codeLoupe.isHidden = false
+            }
+        } else if !codeLoupe.isHidden {
+            codeLoupe.isHidden = true
+            codeLoupe.forget()
+        }
     }
+
+    /// The block's text, when it is JSON with a form in it.
+    ///
+    /// Answered from a one-entry memo rather than parsed again: this is called
+    /// from `viewWillDraw`, so without it a note with a form in it would parse
+    /// its JSON on every frame the mark is visible.
+    private func formSource(_ source: String) -> String? {
+        if lastFormAnswer?.source == source { return lastFormAnswer?.isForm == true ? source : nil }
+        let isForm = source.contains("uiSchema") || source.contains("elements")
+            ? UISchema.find(in: source) != nil
+            : false
+        lastFormAnswer = (source, isForm)
+        return isForm ? source : nil
+    }
+    private var lastFormAnswer: (source: String, isForm: Bool)?
 
     /// The block's rectangle, widened to the text container: the right margin
     /// beside a short line is still part of the block you are pointing at.
@@ -1692,10 +1777,24 @@ final class NoteTextView: NSTextView {
     }
 
     func hideCodeCopy() {
+        if !codeLoupe.isHidden {
+            codeLoupe.isHidden = true
+            codeLoupe.forget()
+        }
         guard !codeCopy.isHidden else { return }
         codeCopy.isHidden = true
         codeCopy.forget()
         hoveredBlock = nil
+    }
+
+    /// The form defined by the block under the pointer, in a window of its own.
+    @discardableResult
+    func openHoveredForm() -> Bool {
+        guard let storage = textStorage, let block = hoveredBlock,
+              let source = formSource((storage.string as NSString).substring(with: block.body))
+        else { return false }
+        onOpenDrawing?(.form(source))
+        return true
     }
 
     /// The block under the pointer, on the clipboard, without its fences.

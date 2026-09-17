@@ -225,6 +225,35 @@ enum MediaStore {
         }
     }
 
+    /// A picture at a chosen width, for the window that zooms one.
+    ///
+    /// Not `image(at:available:scale:)`: that one fits into the room a note has
+    /// and never goes past the file's own pixels, which is right on paper and
+    /// wrong the moment somebody asks to look closer. Here the width asked for
+    /// is the width drawn, and past the file's resolution it is the file being
+    /// enlarged — which is what zooming into a picture has always meant.
+    static func picture(at url: URL, width: CGFloat, scale: CGFloat) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let native = pixelSize(of: source), native.width > 0 else { return nil }
+        let wanted = max(1, width)
+        let size = NSSize(width: wanted, height: (native.height * wanted / native.width).rounded())
+
+        // Never decode more than the file holds: past that, the enlargement is
+        // done when it is drawn and asking ImageIO for more pixels than exist
+        // only costs memory.
+        let longest = min(max(native.width, native.height),
+                          (max(size.width, size.height) * max(1, scale)).rounded(.up))
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(longest),
+        ]
+        guard let raster = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return NSImage(cgImage: raster, size: size)
+    }
+
     // MARK: - diagrams
 
     /// A mermaid block, laid out and drawn by swift-mermaid and rasterised at
