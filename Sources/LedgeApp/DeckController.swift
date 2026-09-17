@@ -629,8 +629,15 @@ final class DeckController {
     }
 
     private func layoutCard() {
-        guard let card, let id = state.noteID,
-              let tab = tabs.first(where: { $0.record.id == id }) else { return }
+        // A note with no tab of its own grows out of its mother's — which is
+        // the whole design: a project costs one tab, and the child comes out of
+        // it. Without this the card was built with the child inside it and
+        // never given a frame, so it was there at zero by zero and the strip
+        // looked like it had ignored the press.
+        let anchor = tabs.first { $0.record.id == state.noteID }
+            ?? visiting?.parent.flatMap { parent in tabs.first { $0.record.id == parent } }
+            ?? tabs.first
+        guard let card, state.noteID != nil, let tab = anchor else { return }
         let bounds = root.bounds
         card.mirrored = mirrored
         card.horizontal = horizontal

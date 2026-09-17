@@ -1765,6 +1765,16 @@ enum SelfTest {
         check(deck.debugCardBody()?.contains("lo que hay en la hija") == true,
               "apretar el chip abre la hija: \(deck.debugCardBody()?.prefix(24) ?? "nada")")
 
+        // Y —lo que faltaba— en algún lado donde se vea. La card se posiciona
+        // contra el tab de su nota, y una hija no tiene tab: se construía con
+        // la hija adentro y se quedaba en cero por cero. Desde afuera eso es
+        // idéntico a que el click no hiciera nada, que es como se reportó.
+        let marco = deck.cardFrame ?? .zero
+        check(marco.width > 100 && marco.height > 60,
+              String(format: "y la card de la hija tiene tamaño (%.0f×%.0f)", marco.width, marco.height))
+        check(marco.maxX > 0 && marco.maxY > 0 && marco.minY < deck.panelFrame.height,
+              "y está dentro del panel, no en una esquina invisible: \(marco)")
+
         if let abierta = deck.debugCard {
             abierta.layoutSubtreeIfNeeded()
             check(abierta.family.debugLabels.contains(where: { $0.hasPrefix("‹") }),

@@ -140,6 +140,7 @@ final class FamilyBar: NSView {
     /// Split out from `mouseDown` so a check can press a chip where it is drawn
     /// rather than assert about rectangles and hope the two agree.
     func press(at point: NSPoint) {
+
         guard let chip = chips.first(where: { $0.rect.contains(point) }) else { return }
         if let id = chip.id { onOpen?(id) } else { onToggleStrip?(!isOut) }
     }
