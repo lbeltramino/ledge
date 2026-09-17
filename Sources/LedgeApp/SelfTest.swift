@@ -1788,6 +1788,15 @@ enum SelfTest {
         check(deck.debugCanDetach(hija.id),
               "una hija se puede sacar de la tira como cualquier otra nota")
 
+        // Volver a la madre desde la hija abre la madre, no una segunda copia
+        // de ella: `visiting` sólo es para notas que la tira no tiene.
+        deck.visit(madre.id)
+        try? await Task.sleep(for: .milliseconds(700))
+        check(deck.debugVisiting == nil,
+              "volver a una nota con tab no la deja marcada como visitada: \(deck.debugVisiting ?? "nil")")
+        check(deck.debugCardBody() != nil && deck.debugCardTitle() == madre.displayTitle,
+              "y la card abierta es la madre: \(deck.debugCardTitle() ?? "ninguna")")
+
         deck.closeNote()
         await cleanUp(["Hija del chip"], deck: deck, folder: folder)
     }

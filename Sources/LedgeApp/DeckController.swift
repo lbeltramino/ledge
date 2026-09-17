@@ -974,11 +974,20 @@ final class DeckController {
     }
 
     func visit(_ id: String) {
+        // Already on the desk? Then that *is* the note, and building a second
+        // card for it makes two of something there is one of — reported as
+        // pressing the way back and getting a copy of the mother.
+        // `reveal` has always known this; this way in did not.
+        if let float = floating[id] { float.front(); return }
+
         Task {
             guard let record = try? await store.record(id: id),
                   let note = try? await store.load(id: id) else { return }
             bodies[id] = note.body
-            visiting = record
+            // Only a note the strip does not have needs to be carried: leaving
+            // `visiting` pointing at one that has a tab makes the card hang off
+            // the wrong one later.
+            visiting = records.contains { $0.id == id } ? nil : record
             preview(id)
         }
     }
@@ -1731,6 +1740,8 @@ extension DeckController {
     func debugCardBody() -> String? { card?.textView.string }
     var debugCard: NoteCardView? { card }
     func debugFloating(_ id: String) -> FloatingNote? { floating[id] }
+    var debugVisiting: String? { visiting?.id }
+    func debugCardTitle() -> String? { card?.title }
     /// Whether `detach` would do anything — everything it needs, without the
     /// window it would open. Creating a real floating panel inside the self
     /// test hangs it, and a check that hangs the suite is worse than none.
