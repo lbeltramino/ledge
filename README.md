@@ -49,15 +49,20 @@ SQLite index beside it is a cache you can delete at any moment.
   small to have two modes.
 - **Everything in one list.** `⌥⌘A` searches titles, bodies and tags across every
   note, archived ones included.
-- **Notas que pertenecen a otra.** Escribí `[[` y aparecen las notas que
-  podrías estar nombrando, filtradas mientras tipeás, con una última fila que
-  dice qué se crearía. `⏎` la crea **dentro** de la nota en la que estás —
-  sin tab propio, alcanzable desde ella — y `⇧⏎` la crea suelta. Un proyecto
-  cuesta un tab, no seis. La madre lista a sus hijas arriba de los colores, y
-  la hija muestra el camino de vuelta y un botón para **sacarla a la tira** si
-  después la querés a mano. Nada se crea por escribir: sólo al elegir esa fila.
-  Un enlace se abre apretándolo, como un `- [ ]` se tilda apretándolo; los
-  corchetes siguen siendo texto, y ahí se edita el nombre.
+- **Notes that belong to another one.** Type `[[` and the notes you could mean
+  appear, narrowed as you type, with a last row that says what would be made.
+  `⏎` makes that note **inside** the one you are in — no tab of its own,
+  reached through it — and `⇧⏎` makes it a note of its own. A project costs one
+  tab, not six. The note that keeps others lists them above the colours, and
+  each of those shows the way back and a button to **put it out on the strip**
+  if you later want it to hand. Nothing is created by typing: only by taking
+  that row.
+
+<p align="center">
+  <img src="docs/linking.png" width="308" alt="A note with the picker open under a half-typed [[perm: two notes it could mean, and a row that would create one">
+  <img src="docs/project.png" width="308" alt="A note listing the three notes it keeps, as chips above its colours">
+</p>
+
 - **Tags you just type.** `#work` in the body is a tag; `# Heading` is a heading.
   Searchable, clickable, and gone the moment you delete the hashtag.
 - **Checklists.** `- [ ]` is a task. Click the box to tick it, and a finished one
@@ -71,9 +76,9 @@ SQLite index beside it is a cache you can delete at any moment.
   coloured — instead of the page of headings and bullets that Markdown makes of
   `# comment` and `- name:`. The note takes its name from the snippet:
   `Deployment/api`, `aws_s3_bucket.logs`, `kubectl rollout status`. Pasting
-  prose is still pasting prose. Un JSON minificado —cuatro
-  kilobytes en una sola línea, sin un solo salto— llega acomodado como lo
-  dejaría `jq`, sin reordenar las claves ni tocar un número.
+  prose is still pasting prose. A minified JSON — four kilobytes on one
+  line, without a single break — arrives laid out the way `jq` would leave it,
+  with the keys in the order they came in and not a number rewritten.
 - **A note something else keeps up to date.** `ledge`, the command that ships
   inside the app, lets a script or an agent create a note, add checklist items,
   tick them off and append what it found. A note on a feed carries a small mark
@@ -89,6 +94,13 @@ SQLite index beside it is a cache you can delete at any moment.
   text. Type a bracket or a quote with something selected and it wraps rather
   than replaces. `⌥↑` and `⌥↓` move the line you are on, renumbering the list
   behind you.
+- **The keys an editor gives you.** Home and End go to the start and end of the
+  line, instead of scrolling the note and leaving the caret where it was, which
+  is what macOS does by default. Home twice is column zero — the first stop is
+  the first thing that is not a space, because the line you wanted the start of
+  is usually a task or a nested item. `⌘Home` and `⌘End` are the note, Page Up
+  and Page Down take the caret with them, and all of them hold Shift to select.
+  What VS Code does on a Mac, so there is nothing to unlearn.
 - **A highlighter.** `==like this==`, drawn as a marker swipe rather than a
   coloured rectangle — it overshoots, wobbles and presses harder where it
   started. Yellow, or pink on a yellow note. Select words and the pen appears
@@ -109,6 +121,11 @@ SQLite index beside it is a cache you can delete at any moment.
   defines it, with the source still there to change. Drawn with CoreGraphics by
   [swift-mermaid](https://github.com/Australware/swift-mermaid): no JavaScript,
   no WebView, no network.
+
+<p align="center">
+  <img src="docs/diagram.png" width="430" alt="A note whose mermaid block is drawn as a flowchart underneath, with the fence still there above it">
+</p>
+
 - **Paste a screenshot.** ⌘V with a picture on the clipboard writes it into
   `resources/img/` and drops the reference in, on a line of its own. A file
   copied in Finder is copied across as it is; pixels copied out of an app are
@@ -124,12 +141,22 @@ SQLite index beside it is a cache you can delete at any moment.
   dashes. It is locked: a click is not an edit. Press the padlock and it becomes
   the text that defines it, with an open padlock to put it back. One wider than
   the note scrolls sideways, and the edge fades to say so.
+
+<p align="center">
+  <img src="docs/table.png" width="430" alt="A three-column table drawn on a green note, ruled and aligned, with a small padlock at its corner">
+</p>
+
 - **The headings, as somewhere to jump.** A note with two headings or more
   offers a small index beside the button that opens the editor: the outline,
   indented by level, click one and you are there. A long one scrolls under the
   wheel, cut off at the edge the way the deck is. Nothing is written into the
   note — no `[TOC]`, no markers to go stale — and a `# comment` inside a code
   block is a comment, not a heading.
+
+<p align="center">
+  <img src="docs/outline.png" width="430" alt="The headings of a note listed over it, indented by level">
+</p>
+
 - **Drop things on the edge.** Drag a selection out of any app, or a text file
   out of the Finder, and let it go over the strip: the deck comes out to meet it
   and the stripe lights up. It arrives read the same way a paste is, so a
@@ -138,8 +165,10 @@ SQLite index beside it is a cache you can delete at any moment.
 - **Find in a note.** `⌘F`, then `⌘G` to step through. Matches are struck in the
   same marker, in a pen that is neither the highlighter nor the paper, with the
   one you are on pressed harder.
-- **Links between notes.** `[[Another note]]` — ⌘-click follows it, and if no
-  such note exists yet, following it makes one.
+- **Links between notes.** `[[Another note]]` — press the name and you are
+  there, the way pressing a `- [ ]` ticks it; ⌘-click anywhere in the link does
+  the same. The brackets stay ordinary text, which is where you click to edit
+  the name by hand. If no such note exists yet, following the link makes one.
 - **Capture what you copied.** `⌥⌘V` turns the clipboard into a note.
 - **Reachable from anything.** `ledge://new?title=…&text=…`, `ledge://open?title=…`
   and `ledge://search?q=…`, so a Shortcut or a script can put things here.

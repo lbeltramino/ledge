@@ -68,6 +68,153 @@ enum Renderer {
         }
     }
 
+    /// A project: the mother, with what she keeps along the bottom.
+    static func project() -> NSImage {
+        let size = NSSize(width: 430, height: 330)
+        return image(size: size) { _ in
+            var note = Note(title: "Bedrock en el IDP", color: .butter)
+            note.body = """
+            La idea es exponerlo como una dependencia más,
+            no como un servicio aparte.
+
+            - [x] hablar con seguridad
+            - [/] escribir el módulo
+            - [ ] medir la latencia
+
+            El detalle está en [[Modelo de permisos]].
+            """
+            let record = NoteRecord(note: note, filename: "Bedrock en el IDP.md",
+                                    mtime: 0, size: 0, hash: "")
+            let card = NoteCardView(record: record, body: note.body)
+            card.appearance = NSAppearance(named: .aqua)
+            card.frame = NSRect(origin: .zero, size: size)
+            card.textView.string = note.body
+
+            let hijas = ["Modelo de permisos": NoteColor.blue,
+                         "Terraform del gateway": .green,
+                         "Pruebas de carga": .lavender]
+            let registros = hijas.map { nombre, color -> NoteRecord in
+                var hija = Note(title: nombre, color: color)
+                hija.parent = note.id
+                return NoteRecord(note: hija, filename: "\(nombre).md", mtime: 0, size: 0, hash: "")
+            }.sorted { $0.title < $1.title }
+            card.family.show(children: registros, mother: nil, isOnStrip: false)
+            card.applyColors()
+            draw(card, at: .zero)
+        }
+    }
+
+    /// Linking as you type: the notes you could mean, and the one you would make.
+    static func linking() -> NSImage {
+        let size = NSSize(width: 430, height: 300)
+        return image(size: size) { _ in
+            var note = Note(title: "Incidente 4/9", color: .coral)
+            note.body = """
+            21:04 alertó la latencia del gateway.
+            21:11 rollback del ESM.
+
+            Ver [[perm
+            """
+            let record = NoteRecord(note: note, filename: "Incidente.md",
+                                    mtime: 0, size: 0, hash: "")
+            let card = NoteCardView(record: record, body: note.body)
+            card.appearance = NSAppearance(named: .aqua)
+            card.frame = NSRect(origin: .zero, size: size)
+            card.textView.string = note.body
+            card.applyColors()
+            card.layoutSubtreeIfNeeded()
+
+            let view = card.textView
+            view.titlesForLinking = { ["Modelo de permisos", "Permisos de KMS", "Office"] }
+            view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+            view.offerLinks()
+            card.layoutSubtreeIfNeeded()
+            draw(card, at: .zero)
+        }
+    }
+
+    /// A diagram in a note: the fence still there, the drawing under it.
+    static func diagram() -> NSImage {
+        let size = NSSize(width: 430, height: 385)
+        return image(size: size) { _ in
+            var note = Note(title: "Deploy del gateway", color: .blue)
+            note.body = """
+            El camino que hace un release:
+
+            ```mermaid
+            flowchart LR
+              A[push] --> B[CI]
+              B --> C{tests}
+              C -->|ok| D[deploy]
+              C -->|falla| E[rollback]
+            ```
+            """
+            draw(card(note, size: size, filename: "Deploy.md") { card in
+                card.textView.refreshMedia()
+            }, at: .zero)
+        }
+    }
+
+    /// A table, drawn — and the note still says pipes and dashes.
+    static func table() -> NSImage {
+        let size = NSSize(width: 430, height: 235)
+        return image(size: size) { _ in
+            var note = Note(title: "Capacidad", color: .green)
+            note.body = """
+            | Servicio | Réplicas | p99 |
+            |---|---:|:---:|
+            | gateway | 6 | 180 ms |
+            | permisos | 3 | 42 ms |
+            | billing | 2 | 310 ms |
+            """
+            draw(card(note, size: size, filename: "Capacidad.md") { card in
+                card.textView.refreshTables()
+            }, at: .zero)
+        }
+    }
+
+    /// The headings of a long note, as somewhere to jump.
+    static func outline() -> NSImage {
+        let size = NSSize(width: 430, height: 300)
+        return image(size: size) { _ in
+            var note = Note(title: "Runbook del ESM", color: .lavender)
+            note.body = """
+            # Runbook del ESM
+
+            ## Síntomas
+            La latencia del gateway se va por encima de 2 s.
+
+            ## Qué mirar
+            ### Métricas
+            ### Logs
+
+            ## Rollback
+            """
+            draw(card(note, size: size, filename: "Runbook.md") { card in
+                card.debugOpenOutline()
+            }, at: .zero)
+        }
+    }
+
+    /// A card laid out the way the app lays one out, ready to be drawn.
+    ///
+    /// The extra pass is not ceremony: tables, drawings and the outline are all
+    /// put in place from the text view's layout, so they need the card to have
+    /// a size before they are asked for, and a second layout after.
+    private static func card(_ note: Note, size: NSSize, filename: String,
+                             _ then: (NoteCardView) -> Void = { _ in }) -> NoteCardView {
+        let record = NoteRecord(note: note, filename: filename, mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note.body)
+        card.appearance = NSAppearance(named: .aqua)
+        card.frame = NSRect(origin: .zero, size: size)
+        card.textView.string = note.body
+        card.applyColors()
+        card.layoutSubtreeIfNeeded()
+        then(card)
+        card.layoutSubtreeIfNeeded()
+        return card
+    }
+
     static func run(into directory: URL) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -77,7 +224,12 @@ enum Renderer {
         write(palette(), to: directory.appendingPathComponent("palette.png"))
         write(icon(size: 512), to: directory.appendingPathComponent("icon.png"))
         write(syntax(), to: directory.appendingPathComponent("syntax.png"))
-        print("rendered 6 images into \(directory.path)")
+        write(project(), to: directory.appendingPathComponent("project.png"))
+        write(linking(), to: directory.appendingPathComponent("linking.png"))
+        write(diagram(), to: directory.appendingPathComponent("diagram.png"))
+        write(table(), to: directory.appendingPathComponent("table.png"))
+        write(outline(), to: directory.appendingPathComponent("outline.png"))
+        print("rendered 11 images into \(directory.path)")
     }
 
     enum DeckState { case rest, fanned, open }
