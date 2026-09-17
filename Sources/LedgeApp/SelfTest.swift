@@ -1730,6 +1730,51 @@ enum SelfTest {
         await cleanUp(["Una hija por tipeo"], deck: deck, folder: folder)
     }
 
+    /// Apretar el chip de una hija, que es cómo se llega a ella.
+    ///
+    /// Reportado como "hago click y no me muestra la nota": sí la mostraba,
+    /// pero la hija aparecía sin fila de familia — sin camino de vuelta y sin
+    /// nada que dijera dónde estabas. Con una hija vacía, eso se ve idéntico a
+    /// que no hubiera pasado nada.
+    static func checkFamilyChipOpensTheChild(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let madre = deck.recordsForTesting.first else { check(false, "no hay notas"); return }
+        let feed = FeedStore(folder: folder)
+        var hija = Note(title: "Hija del chip", color: .blue)
+        hija.parent = madre.id
+        hija.body = "lo que hay en la hija"
+        _ = try? feed.write(hija, to: folder.appendingPathComponent("Hija del chip.md"))
+        await deck.reconcileForTesting(["Hija del chip.md"])
+        await deck.refresh()
+
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(madre.id)
+        try? await Task.sleep(for: .milliseconds(600))
+        guard let card = deck.debugCard, card.record.id == madre.id else {
+            check(false, "no se abrió la madre"); return
+        }
+        card.layoutSubtreeIfNeeded()
+        check(card.family.debugLabels.contains("Hija del chip"),
+              "la madre lista a su hija: \(card.family.debugLabels)")
+
+        guard let chip = card.family.debugChips.first(where: { $0.2 == "Hija del chip" }) else {
+            check(false, "no encuentro el chip"); return
+        }
+        card.family.press(at: NSPoint(x: chip.1.midX, y: chip.1.midY))
+        try? await Task.sleep(for: .milliseconds(800))
+        check(deck.debugCardBody()?.contains("lo que hay en la hija") == true,
+              "apretar el chip abre la hija: \(deck.debugCardBody()?.prefix(24) ?? "nada")")
+
+        if let abierta = deck.debugCard {
+            abierta.layoutSubtreeIfNeeded()
+            check(abierta.family.debugLabels.contains(where: { $0.hasPrefix("‹") }),
+                  "y la hija muestra el camino de vuelta: \(abierta.family.debugLabels)")
+        }
+
+        deck.closeNote()
+        await cleanUp(["Hija del chip"], deck: deck, folder: folder)
+    }
+
     /// Abrir una hija, que no tiene tab.
     ///
     /// El riesgo entero de que un proyecto cueste un solo tab: la card se arma
@@ -3048,6 +3093,8 @@ enum SelfTest {
         check(!madre.family.isHidden, "una madre sí la muestra")
         check(madre.family.debugLabels == ["Modelo de permisos"],
               "y lista a su hija: \(madre.family.debugLabels)")
+        check(madre.family.debugWords == ["Contiene"],
+              "con una palabra que dice qué son, o el chip no se explica solo: \(madre.family.debugWords)")
         let altoConFila = madre.textView.enclosingScrollView?.frame.height ?? 0
         check(altoConFila < altoSolo,
               String(format: "la fila le saca alto al texto, no lo tapa (%.0f vs %.0f)",
@@ -3798,6 +3845,7 @@ enum SelfTest {
         await checkDeletingABigBlockSticks(deck: deck, folder: deck.notesFolder)
         await checkPressingALinkThatDoesNotExistYet(deck: deck, folder: deck.notesFolder)
         await checkCreatingAChildByTyping(deck: deck, folder: deck.notesFolder)
+        await checkFamilyChipOpensTheChild(deck: deck, folder: deck.notesFolder)
         await checkOpeningAChild(deck: deck, folder: deck.notesFolder)
         await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)

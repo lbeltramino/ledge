@@ -1269,6 +1269,10 @@ final class DeckController {
         float.onColor = { [weak self] color in self?.recolor(id, to: color) }
         float.onOpenLink = { [weak self] name in self?.workspace.open(link: name) }
         float.onOpenRelative = { [weak self] other in self?.visit(other) }
+        // The row is filled where the deck builds its card; a note pulled onto
+        // the desk builds its own, so it has to be filled here too — otherwise
+        // the chips vanish the moment you take the note off the strip.
+        refreshFamily(of: float.cardView, id: id)
         float.onToggleOnStrip = { [weak self] out in self?.setOnStrip(id, out) }
         float.titlesForLinking = { [weak self] in (self?.records ?? []).map(\.displayTitle) }
         float.onCreateLinked = { [weak self] name, asChild in
@@ -1409,7 +1413,12 @@ final class DeckController {
     private func refreshFamily(of view: NoteCardView, id: String) {
         Task { [weak view] in
             let children = (try? await store.children(of: id)) ?? []
-            let record = records.first { $0.id == id }
+            // A child is not in `records` — that is the whole point of it not
+            // taking a tab — so without this the note you just opened has no
+            // mother, no way back, and nothing saying where you are. With an
+            // empty child that looks exactly like nothing having happened,
+            // which is how it was reported.
+            let record = records.first { $0.id == id } ?? visiting
             var mother: (id: String, title: String)?
             if let parent = record?.parent,
                let found = try? await store.load(id: parent) {
@@ -1702,6 +1711,7 @@ extension DeckController {
 
     func debugCardBody() -> String? { card?.textView.string }
     var debugCard: NoteCardView? { card }
+    func debugFloating(_ id: String) -> FloatingNote? { floating[id] }
     func debugBaseline(of id: String) -> String? { baselines[id] }
     func debugFileBody(of id: String) async -> String? {
         try? await store.load(id: id).body

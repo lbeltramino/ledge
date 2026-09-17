@@ -17,6 +17,7 @@ final class FamilyBar: NSView {
     var onToggleStrip: ((Bool) -> Void)?
 
     private var chips: [(id: String?, rect: NSRect, label: String, colour: NoteColor?)] = []
+    private var labels: [(rect: NSRect, text: String)] = []
     private var hovered: Int?
     private var tracking: NSTrackingArea?
 
@@ -51,9 +52,18 @@ final class FamilyBar: NSView {
     override func layout() {
         super.layout()
         chips = []
+        labels = []
         var x: CGFloat = 0
         let pad: CGFloat = 7
         let gap: CGFloat = 5
+
+        /// Not a chip: a word, so the row reads as a sentence about the note.
+        func addLabel(_ text: String) {
+            let width = ceil(Self.measure(text, font: Self.labelFont) + 6)
+            guard x + width <= bounds.width else { return }
+            labels.append((NSRect(x: x, y: 0, width: width, height: Self.height), text))
+            x += width + 3
+        }
 
         func add(_ label: String, id: String?, colour: NoteColor?) {
             let width = ceil(Self.measure(label) + pad * 2 + (colour != nil ? 12 : 0))
@@ -62,6 +72,9 @@ final class FamilyBar: NSView {
             x += width + gap
         }
 
+        // A word in front, because a chip on its own does not say what it is.
+        // Reported exactly that way: "what is this Hol button?"
+        if !children.isEmpty, mother == nil { addLabel("Contiene") }
         if let mother {
             add("‹ " + mother.title, id: mother.id, colour: nil)
             // The way out, on the child itself, where you can see what you are
@@ -71,12 +84,23 @@ final class FamilyBar: NSView {
         for child in children { add(child.displayTitle, id: child.id, colour: child.color) }
     }
 
-    private static func measure(_ label: String) -> CGFloat {
+    private static func measure(_ label: String, font: NSFont = FamilyBar.font) -> CGFloat {
         (label as NSString).size(withAttributes: [.font: font]).width
     }
     private static let font = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+    private static let labelFont = NSFont.systemFont(ofSize: 9.5, weight: .medium)
 
     override func draw(_ dirtyRect: NSRect) {
+        for label in labels {
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: Self.labelFont,
+                .foregroundColor: ink.withAlphaComponent(0.45),
+            ]
+            let size = (label.text as NSString).size(withAttributes: attributes)
+            (label.text as NSString).draw(at: NSPoint(x: label.rect.minX,
+                                                      y: label.rect.midY - size.height / 2),
+                                          withAttributes: attributes)
+        }
         for (i, chip) in chips.enumerated() {
             let lifted = hovered == i
             ink.withAlphaComponent(lifted ? 0.16 : 0.09).setFill()
@@ -126,4 +150,5 @@ final class FamilyBar: NSView {
 
     var debugChips: [(String?, NSRect, String)] { chips.map { ($0.id, $0.rect, $0.label) } }
     var debugLabels: [String] { chips.map(\.label) }
+    var debugWords: [String] { labels.map(\.text) }
 }
