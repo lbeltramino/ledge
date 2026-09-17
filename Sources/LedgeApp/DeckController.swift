@@ -961,6 +961,18 @@ final class DeckController {
 
     /// Opens a note with no tab here. Loads it first: it is not in `records`,
     /// so nothing else on this deck knows anything about it.
+    /// The record for a note this deck is showing, whether or not the strip has
+    /// one for it.
+    ///
+    /// A child has no tab, so it is not in `records` — and by now four separate
+    /// places have assumed it would be: building the card, filling the family
+    /// row, laying the card out, and pulling it onto the desk. Each one failed
+    /// silently and looked like a different bug. One place to ask, so the fifth
+    /// does not.
+    func shownRecord(_ id: String) -> NoteRecord? {
+        records.first { $0.id == id } ?? (visiting?.id == id ? visiting : nil)
+    }
+
     func visit(_ id: String) {
         Task {
             guard let record = try? await store.record(id: id),
@@ -1019,7 +1031,7 @@ final class DeckController {
 
     private func buildCard(for id: String) {
         tearDownCard()
-        guard let record = records.first(where: { $0.id == id }) ?? visiting else { return }
+        guard let record = shownRecord(id) else { return }
         let view = NoteCardView(record: record, body: bodies[id] ?? "")
         view.onEdit = { [weak self, weak view] text in
             self?.scheduleSave(id: id, body: text, from: view)
@@ -1248,7 +1260,7 @@ final class DeckController {
     /// so it comes away under the pointer. Its tab stays in the deck, dimmed.
     fileprivate func detach(_ id: String) {
         guard floating[id] == nil,
-              let card, let record = records.first(where: { $0.id == id }) else { return }
+              let card, let record = shownRecord(id) else { return }
 
         var onScreen = panel.convertToScreen(root.convert(card.frame, to: nil))
         // A card that was fine against an edge may be too narrow once it grows
@@ -1425,7 +1437,7 @@ final class DeckController {
             // mother, no way back, and nothing saying where you are. With an
             // empty child that looks exactly like nothing having happened,
             // which is how it was reported.
-            let record = records.first { $0.id == id } ?? visiting
+            let record = shownRecord(id)
             var mother: (id: String, title: String)?
             if let parent = record?.parent,
                let found = try? await store.load(id: parent) {
@@ -1719,6 +1731,12 @@ extension DeckController {
     func debugCardBody() -> String? { card?.textView.string }
     var debugCard: NoteCardView? { card }
     func debugFloating(_ id: String) -> FloatingNote? { floating[id] }
+    /// Whether `detach` would do anything — everything it needs, without the
+    /// window it would open. Creating a real floating panel inside the self
+    /// test hangs it, and a check that hangs the suite is worse than none.
+    func debugCanDetach(_ id: String) -> Bool {
+        floating[id] == nil && card != nil && shownRecord(id) != nil
+    }
     func debugBaseline(of id: String) -> String? { baselines[id] }
     func debugFileBody(of id: String) async -> String? {
         try? await store.load(id: id).body

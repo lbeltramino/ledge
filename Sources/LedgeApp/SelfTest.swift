@@ -1781,6 +1781,13 @@ enum SelfTest {
                   "y la hija muestra el camino de vuelta: \(abierta.family.debugLabels)")
         }
 
+        // Y se la puede tratar como a cualquier nota: arrastrarla fuera de la
+        // tira. `detach` buscaba la ficha en `records`, donde una hija nunca
+        // está, así que quedaba pegada al borde sin poder moverse ni
+        // agrandarse — reportado exactamente así.
+        check(deck.debugCanDetach(hija.id),
+              "una hija se puede sacar de la tira como cualquier otra nota")
+
         deck.closeNote()
         await cleanUp(["Hija del chip"], deck: deck, folder: folder)
     }
