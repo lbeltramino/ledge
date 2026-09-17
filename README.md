@@ -304,7 +304,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 227 unit tests
+swift run ledge-tests                               # 231 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -448,6 +448,10 @@ change for that to work.
 | `⌘F` | Find in this note |
 | `⌘G` `⇧⌘G` | Next match, previous match |
 | `⇥` `⇧⇥` | Nest a list item, or take it back out |
+| `Home` `End` | Start and end of the line — pressed twice, Home goes to column zero |
+| `⇧Home` `⇧End` | Select to there |
+| `⌘Home` `⌘End` | Start and end of the note |
+| `PgUp` `PgDn` | A screenful, with the caret |
 | `⌥↑` `⌥↓` | Move the line, or the selected lines |
 | `⌥⇧↓` | Duplicate them |
 | `⌘+` `⌘-` `⌘0` | Bigger, smaller, back to normal |

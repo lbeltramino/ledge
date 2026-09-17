@@ -886,6 +886,36 @@ final class NoteTextView: NSTextView {
             default: break
             }
         }
+        // Home, End and the page keys, the way an editor means them.
+        //
+        // macOS sends all four to the scrollers: the page moves and the caret
+        // stays where it was. That is the platform convention, and it is the
+        // one thing here that is worth breaking — this is a note you write code
+        // into, and Home meaning "the top of the note" is never what was meant.
+        if let key = event.charactersIgnoringModifiers?.unicodeScalars.first,
+           !flags.contains(.control) {
+            let extending = flags.contains(.shift)
+            let toDocument = flags.contains(.command)
+            switch key.value {
+            case UInt32(NSHomeFunctionKey):
+                move(to: toDocument ? 0 : Navigation.lineStart(in: string, from: caretForMoving),
+                     extending: extending)
+                return
+            case UInt32(NSEndFunctionKey):
+                move(to: toDocument ? (string as NSString).length
+                                    : Navigation.lineEnd(in: string, from: caretForMoving),
+                     extending: extending)
+                return
+            case UInt32(NSPageUpFunctionKey):
+                movePage(down: false, extending: extending)
+                return
+            case UInt32(NSPageDownFunctionKey):
+                movePage(down: true, extending: extending)
+                return
+            default: break
+            }
+        }
+
         if let key = event.charactersIgnoringModifiers?.unicodeScalars.first {
             let isUp = key.value == UInt32(NSUpArrowFunctionKey)
             let isDown = key.value == UInt32(NSDownArrowFunctionKey)
@@ -899,6 +929,46 @@ final class NoteTextView: NSTextView {
                MarkdownEditing.duplicateLines(self) { return }
         }
         super.keyDown(with: event)
+    }
+
+    /// The end of the selection that moves when you hold Shift: the other one
+    /// stays put, which is what makes ⇧Home after ⇧↓ do the sensible thing.
+    private var caretForMoving: Int {
+        let selection = selectedRange()
+        return selection.length == 0 ? selection.location : selection.location
+    }
+
+    /// Puts the caret somewhere, or drags the selection there.
+    private func move(to target: Int, extending: Bool) {
+        let selection = selectedRange()
+        guard extending else {
+            setSelectedRange(NSRange(location: target, length: 0))
+            scrollRangeToVisible(selectedRange())
+            return
+        }
+        // Anchored on the far end, so holding Shift grows the selection instead
+        // of replacing it.
+        let anchor = target < selection.location ? NSMaxRange(selection) : selection.location
+        let from = min(anchor, target)
+        setSelectedRange(NSRange(location: from, length: abs(target - anchor)))
+        scrollRangeToVisible(NSRange(location: target, length: 0))
+    }
+
+    /// A screenful, with the caret — not the scrollers on their own.
+    private func movePage(down: Bool, extending: Bool) {
+        guard let manager = layoutManager, let container = textContainer else { return }
+        manager.ensureLayout(for: container)
+        let caret = caretForMoving
+        let glyph = manager.glyphIndexForCharacter(at: min(caret, max(0, (string as NSString).length)))
+        var line = manager.lineFragmentRect(forGlyphAt: min(glyph, max(0, manager.numberOfGlyphs - 1)),
+                                            effectiveRange: nil)
+        line.origin.x += textContainerOrigin.x
+        line.origin.y += textContainerOrigin.y
+
+        let page = (enclosingScrollView?.contentView.bounds.height ?? bounds.height) - line.height
+        let target = NSPoint(x: line.midX, y: line.midY + (down ? page : -page))
+        let index = characterIndexForInsertion(at: target)
+        move(to: index, extending: extending)
     }
 
     /// Typing a bracket or a quote with a selection wraps it.

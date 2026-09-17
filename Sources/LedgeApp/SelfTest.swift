@@ -1377,6 +1377,94 @@ enum SelfTest {
         prosa.releaseGlobally()
     }
 
+    /// Las teclas de navegación, como las espera alguien que viene de VS Code.
+    ///
+    /// macOS manda Home, End y las de página a los scrollers: la página se
+    /// mueve y el caret se queda. Es la convención del sistema, y es la única
+    /// que esta app rompe a propósito.
+    static func checkEditorKeys() {
+        let cuerpo = "primera línea\n    - una tarea indentada\nuna línea más larga para probar\n"
+            + (4...20).map { "línea \($0)" }.joined(separator: "\n")
+        let record = NoteRecord(note: Note(title: "Teclas"), filename: "k.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: cuerpo)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 220)
+        let window = NSWindow(contentRect: card.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.contentView?.addSubview(card)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+        window.makeFirstResponder(view)
+        let ns = view.string as NSString
+
+        func press(_ code: UInt16, _ scalar: Int, shift: Bool = false, command: Bool = false) {
+            var flags: NSEvent.ModifierFlags = []
+            if shift { flags.insert(.shift) }
+            if command { flags.insert(.command) }
+            let chars = String(UnicodeScalar(UInt32(scalar))!)
+            guard let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                                           timestamp: 0, windowNumber: window.windowNumber,
+                                           context: nil, characters: chars,
+                                           charactersIgnoringModifiers: chars,
+                                           isARepeat: false, keyCode: code) else { return }
+            view.keyDown(with: e)
+        }
+        let HOME: (UInt16, Int) = (115, 0xF729)
+        let END: (UInt16, Int) = (119, 0xF72B)
+        let PGUP: (UInt16, Int) = (116, 0xF72C)
+        let PGDN: (UInt16, Int) = (121, 0xF72D)
+
+        // Home, en una línea indentada: dos paradas.
+        let tarea = ns.range(of: "una tarea")
+        let tinta = ns.range(of: "- una tarea").location
+        let cero = ns.range(of: "    - una").location
+        view.setSelectedRange(NSRange(location: tarea.location + 4, length: 0))
+        press(HOME.0, HOME.1)
+        check(view.selectedRange().location == tinta,
+              "Home va al primer carácter con tinta, no al principio de la nota")
+        press(HOME.0, HOME.1)
+        check(view.selectedRange().location == cero, "y de ahí a la columna cero")
+
+        // End, en su propia línea.
+        view.setSelectedRange(NSRange(location: tarea.location + 4, length: 0))
+        press(END.0, END.1)
+        check(view.selectedRange().location == NSMaxRange(ns.range(of: "una tarea indentada")),
+              "End va al final de la línea, no al de la nota")
+
+        // Con Shift, seleccionan en vez de saltar.
+        view.setSelectedRange(NSRange(location: tarea.location + 4, length: 0))
+        press(HOME.0, HOME.1, shift: true)
+        let sel = view.selectedRange()
+        check(sel.length == tarea.location + 4 - tinta && sel.location == tinta,
+              "⇧Home selecciona hasta el inicio de la línea: \(sel)")
+        view.setSelectedRange(NSRange(location: tarea.location + 4, length: 0))
+        press(END.0, END.1, shift: true)
+        check(view.selectedRange().location == tarea.location + 4
+                && view.selectedRange().length > 0,
+              "⇧End selecciona hasta el final de la línea: \(view.selectedRange())")
+
+        // ⌘Home y ⌘End: la nota entera.
+        view.setSelectedRange(NSRange(location: tarea.location + 4, length: 0))
+        press(HOME.0, HOME.1, command: true)
+        check(view.selectedRange().location == 0, "⌘Home va al principio de la nota")
+        press(END.0, END.1, command: true)
+        check(view.selectedRange().location == ns.length, "⌘End al final")
+
+        // Página: mueve el caret, que es lo que macOS no hace.
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        press(PGDN.0, PGDN.1)
+        let trasPagina = view.selectedRange().location
+        check(trasPagina > 0, "PageDown mueve el caret, no sólo la vista: quedó en \(trasPagina)")
+        check(trasPagina < ns.length, "…una pantalla, no hasta el final")
+        press(PGUP.0, PGUP.1)
+        check(view.selectedRange().location < trasPagina, "y PageUp lo trae de vuelta")
+
+        // Lo que ya andaba bien no se tocó.
+        view.setSelectedRange(NSRange(location: tarea.location + 4, length: 0))
+        view.moveToLeftEndOfLine(nil)
+        check(view.selectedRange().location == cero, "⌘← sigue yendo al inicio de la línea")
+    }
+
     /// Un enlace se abre apretándolo.
     static func checkLinkOpensOnClick() {
         let record = NoteRecord(note: Note(title: "Madre"), filename: "m.md",
@@ -3689,6 +3777,7 @@ enum SelfTest {
         checkFamilyRow()
         checkLinkPicker()
         checkLinkOpensOnClick()
+        checkEditorKeys()
         checkPastingMinifiedJSON()
         checkTheDeskGetsEverything()
         checkZoomKeys()

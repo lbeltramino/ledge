@@ -769,6 +769,47 @@ enum CoreTests {
             c.expect(Code.prettyJSON("{ roto") == nil)
         }
 
+        Runner.suite("Home y End")
+
+        await Runner.test("Home va al primer carácter con tinta, y recién después a la columna cero") { c in
+            let texto = "hola\n    - una tarea indentada\nfin"
+            let tarea = (texto as NSString).range(of: "una tarea")
+            // Desde el medio de la línea, al primer carácter que no es blanco.
+            let primerTinta = (texto as NSString).range(of: "- una tarea").location
+            c.equal(Navigation.lineStart(in: texto, from: tarea.location + 4), primerTinta)
+            // Estando ahí, a la columna cero.
+            let columnaCero = (texto as NSString).range(of: "    - una").location
+            c.equal(Navigation.lineStart(in: texto, from: primerTinta), columnaCero)
+            // Y desde la columna cero vuelve a la tinta: dos paradas, no una.
+            c.equal(Navigation.lineStart(in: texto, from: columnaCero), primerTinta)
+        }
+
+        await Runner.test("una línea sin sangría tiene una sola parada") { c in
+            let texto = "hola mundo"
+            c.equal(Navigation.lineStart(in: texto, from: 5), 0)
+            c.equal(Navigation.lineStart(in: texto, from: 0), 0, "y quedarse quieto, no saltar a otro lado")
+        }
+
+        await Runner.test("End se queda en su línea, no salta a la siguiente") { c in
+            let texto = "primera\nsegunda\ntercera"
+            let segunda = (texto as NSString).range(of: "segunda")
+            c.equal(Navigation.lineEnd(in: texto, from: segunda.location + 2),
+                    NSMaxRange(segunda), "el final es antes del salto de línea")
+            // La última línea no termina en salto y también tiene que andar.
+            let tercera = (texto as NSString).range(of: "tercera")
+            c.equal(Navigation.lineEnd(in: texto, from: tercera.location),
+                    (texto as NSString).length)
+        }
+
+        await Runner.test("una línea en blanco no rompe nada") { c in
+            let texto = "arriba\n\nabajo"
+            let vacia = 7
+            c.equal(Navigation.lineStart(in: texto, from: vacia), vacia)
+            c.equal(Navigation.lineEnd(in: texto, from: vacia), vacia)
+            c.equal(Navigation.lineStart(in: "", from: 0), 0, "ni una nota vacía")
+            c.equal(Navigation.lineEnd(in: "", from: 0), 0)
+        }
+
         Runner.suite("Escribiendo un enlace")
 
         await Runner.test("un [[ abierto se reconoce mientras escribís") { c in
