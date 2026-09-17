@@ -157,15 +157,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            index + 2 < CommandLine.arguments.count {
             let json = (try? String(contentsOfFile: CommandLine.arguments[index + 1],
                                     encoding: .utf8)) ?? ""
-            let width = CommandLine.arguments.count > index + 3
-                ? CGFloat(Double(CommandLine.arguments[index + 3]) ?? 420) : 420
-            if let image = MediaStore.form(json, available: width, scale: 2,
-                                           ink: .black, font: .systemFont(ofSize: 13)),
+            // Through the zoom view, so this previews exactly what the window
+            // shows rather than something drawn a second way.
+            let zoom = CommandLine.arguments.count > index + 3
+                ? CGFloat(Double(CommandLine.arguments[index + 3]) ?? 1) : 1
+            let preview = MediaZoomView()
+            preview.configure(.form(json), ink: .black, paper: .white, dark: false)
+            while preview.zoom < zoom - 0.001 { preview.zoomIn() }
+            if let image = preview.debugContent,
                let tiff = image.tiffRepresentation,
                let rep = NSBitmapImageRep(data: tiff),
                let png = rep.representation(using: .png, properties: [:]) {
                 try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[index + 2]))
-                print("drew \(Int(image.size.width))×\(Int(image.size.height))")
+                print("drew \(Int(image.size.width))×\(Int(image.size.height)) at \(preview.zoom)×")
             } else {
                 print("no form in that JSON")
             }

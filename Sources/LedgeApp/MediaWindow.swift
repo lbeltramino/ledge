@@ -182,8 +182,33 @@ final class MediaZoomView: NSView {
         case "-": zoomOut()
         case "0": zoomToFit()
         case "1": zoomToActualSize()
+        case "c": copyToClipboard()
         default: super.keyDown(with: event)
         }
+    }
+
+    /// ⌘C takes the drawing, at a size worth pasting.
+    ///
+    /// Not what is on screen: you may be looking at it at 40% to see the whole
+    /// thing, and what you want in the ticket is the drawing, legible. So it is
+    /// drawn once more at twice life size, the same bargain the copy mark on
+    /// the paper makes.
+    @discardableResult
+    func copyToClipboard(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard let subject else { return false }
+        let image: NSImage?
+        switch subject {
+        case .form(let source):
+            image = MediaStore.formForCopying(source, ink: ink, font: .systemFont(ofSize: 13))
+        case .diagram(let source):
+            image = MediaStore.diagramForCopying(source, dark: dark)
+        case .picture(let url):
+            image = NSImage(contentsOf: url)
+        }
+        guard let image else { return false }
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
+        return true
     }
 
     // MARK: - drawing
@@ -225,4 +250,5 @@ final class MediaZoomView: NSView {
     }
 
     var debugContentSize: NSSize? { content?.size }
+    var debugContent: NSImage? { content }
 }

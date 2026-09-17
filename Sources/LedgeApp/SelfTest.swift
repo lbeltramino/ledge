@@ -2649,6 +2649,23 @@ enum SelfTest {
         check(frames[0].contains(NSPoint(x: mark.midX, y: mark.midY)),
               "and it sits on the drawing, not beside it")
 
+        // The loupe comes with it: the same offer a form's block makes, on a
+        // picture. Asked for as "that icon, to open them in a modal and zoom".
+        check(!view.mediaLoupe.isHidden, "a picture offers the loupe as well")
+        check(!view.mediaLoupe.frame.intersects(mark),
+              "…beside the copy mark, not over it: \(view.mediaLoupe.frame) vs \(mark)")
+        check(frames[0].contains(NSPoint(x: view.mediaLoupe.frame.midX,
+                                         y: view.mediaLoupe.frame.midY)),
+              "…and on the drawing too")
+        var askedFor: MediaWindow.Subject?
+        view.onOpenDrawing = { askedFor = $0 }
+        view.mediaLoupe.onOpen?()
+        if case .picture(let url)? = askedFor {
+            check(url.lastPathComponent == "big.png", "pressing it asks for this picture: \(url)")
+        } else {
+            check(false, "pressing the picture's loupe asked for \(String(describing: askedFor))")
+        }
+
         // On top of the drawing, not under it. The mark is made once at set-up
         // and the drawings are added later, so it ends up behind them in the
         // subview order — visible to every check that asks whether it is shown,
@@ -2838,6 +2855,19 @@ enum SelfTest {
         check(view.zoom <= MediaZoomView.maximum + 0.001, "zoom stops at \(MediaZoomView.maximum)")
         for _ in 0..<80 { view.zoomOut() }
         check(view.zoom >= MediaZoomView.minimum - 0.001, "…and at \(MediaZoomView.minimum)")
+
+        // ⌘C in the window takes the drawing, and takes it at a readable size
+        // rather than at whatever zoom you happened to be looking at.
+        view.zoomOut(); view.zoomOut()
+        let scratch = NSPasteboard(name: .init("ledge.selftest.zoom"))
+        check(view.copyToClipboard(to: scratch), "⌘C copies the form")
+        let copied = NSImage(pasteboard: scratch)
+        check(copied != nil, "…as a picture")
+        if let copied, let onScreen = view.debugContentSize {
+            check(copied.size.width > onScreen.width,
+                  "…at a size worth pasting, not the 20% you were looking at: "
+                  + "\(copied.size.width) vs \(onScreen.width)")
+        }
     }
 
     static func checkPastingAPicture() {
