@@ -1,6 +1,6 @@
 cask "ledge" do
   version "0.18.1"
-  sha256 "b85d9e050266f9e18a91e8322e9168633e049418b257cd75d2006c1d39ce6599"
+  sha256 "b2bb4e3b157bc0eb773437f4dc0ae70a5a2e0b51df2865741850dc50cb98c56c"
 
   url "https://github.com/lbeltramino/ledge/releases/download/v#{version}/Ledge-v#{version}.zip"
   name "Ledge"
