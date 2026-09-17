@@ -21,7 +21,7 @@ final class MediaView: NSView {
     /// copied from its file at full quality — what you want when you paste it
     /// somewhere else is the picture, not the thumbnail a note happened to
     /// draw.
-    enum Origin { case file(URL), diagram(String) }
+    enum Origin { case file(URL), diagram(String), form(String) }
     var origin: Origin?
 
     private var content: Content = .missing("")

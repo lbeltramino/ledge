@@ -1565,5 +1565,159 @@ enum CoreTests {
                          "\(language) produced no tokens at all")
             }
         }
+
+        Runner.suite("UISchema — a form read out of a block of JSON")
+
+        let bare = """
+        { "type": "VerticalLayout", "elements": [
+          { "type": "Control", "scope": "#/properties/name" } ] }
+        """
+
+        await Runner.test("a bare uiSchema, with no properties beside it, is still a form") { c in
+            guard let form = UISchema.find(in: bare) else { return c.expect(false, "no form") }
+            guard case .vertical(let children) = form.root, children.count == 1 else {
+                return c.expect(false, "expected one child, got \(form.root)")
+            }
+            guard case .control(let control) = children[0] else {
+                return c.expect(false, "expected a control")
+            }
+            // Nothing to resolve against, so the label is the scope made readable.
+            c.equal(control.name, "Name")
+            c.expect(control.field == nil, "there were no properties to find a field in")
+        }
+
+        await Runner.test("uiSchema and properties side by side resolve to titles") { c in
+            let json = """
+            { "properties": { "db_name": { "type": "string", "title": "DB Name" } },
+              "uiSchema": { "type": "VerticalLayout", "elements": [
+                { "type": "Control", "scope": "#/properties/db_name" } ] } }
+            """
+            guard let form = UISchema.find(in: json),
+                  case .vertical(let children) = form.root,
+                  case .control(let control) = children[0] else {
+                return c.expect(false, "no form")
+            }
+            c.equal(control.field?.title, "DB Name")
+            c.equal(control.field?.type, "string")
+        }
+
+        await Runner.test("a whole payload is searched, and its name comes with it") { c in
+            let json = """
+            { "name": "RDS Aurora", "slug": "rds-aurora",
+              "attributes": { "schema": {
+                "required": ["account_id"],
+                "properties": { "account_id": { "type": "string", "title": "AWS Account ID" } },
+                "uiSchema": { "type": "VerticalLayout", "elements": [
+                  { "type": "Control", "scope": "#/properties/account_id" } ] } } } }
+            """
+            guard let form = UISchema.find(in: json),
+                  case .vertical(let children) = form.root,
+                  case .control(let control) = children[0] else {
+                return c.expect(false, "the form two levels down was not found")
+            }
+            c.equal(form.title, "RDS Aurora", "the payload's own name labels the drawing")
+            c.equal(control.field?.title, "AWS Account ID")
+            c.expect(control.field?.isRequired == true, "required is a list beside properties")
+        }
+
+        await Runner.test("a scope that points at nothing is a control with no field") { c in
+            let json = """
+            { "properties": { "db_name": { "type": "string" } },
+              "uiSchema": { "type": "VerticalLayout", "elements": [
+                { "type": "Control", "scope": "#/properties/db_nane" } ] } }
+            """
+            guard let form = UISchema.find(in: json),
+                  case .vertical(let children) = form.root,
+                  case .control(let control) = children[0] else {
+                return c.expect(false, "no form")
+            }
+            // The typo is the thing the drawing exists to show: it has to
+            // survive as a control rather than being dropped.
+            c.expect(control.field == nil, "a typo'd scope must not resolve")
+            c.equal(control.scope, "#/properties/db_nane")
+            c.expect(form.warnings.contains { $0.contains("db_name") },
+                     "the property nothing placed should be named: \(form.warnings)")
+        }
+
+        await Runner.test("additionalProperties inside properties is called out") { c in
+            let json = """
+            { "properties": { "additionalProperties": false,
+                              "a": { "type": "string" } },
+              "uiSchema": { "type": "VerticalLayout", "elements": [
+                { "type": "Control", "scope": "#/properties/a" } ] } }
+            """
+            guard let form = UISchema.find(in: json) else { return c.expect(false, "no form") }
+            c.expect(form.warnings.contains { $0.contains("additionalProperties") },
+                     "got \(form.warnings)")
+            // And it is not reported as an unplaced field on top of that.
+            c.expect(!form.warnings.contains { $0.contains("never placed") },
+                     "additionalProperties is not a field to place: \(form.warnings)")
+        }
+
+        await Runner.test("visibleOn present and empty is hidden; absent is not") { c in
+            let json = """
+            { "properties": { "a": { "type": "string", "visibleOn": [] },
+                              "b": { "type": "string" },
+                              "c": { "type": "string", "visibleOn": ["read"] } },
+              "uiSchema": { "type": "VerticalLayout", "elements": [
+                { "type": "Control", "scope": "#/properties/a" },
+                { "type": "Control", "scope": "#/properties/b" },
+                { "type": "Control", "scope": "#/properties/c" } ] } }
+            """
+            guard let form = UISchema.find(in: json),
+                  case .vertical(let children) = form.root else {
+                return c.expect(false, "no form")
+            }
+            let hidden = children.compactMap { element -> Bool? in
+                guard case .control(let control) = element else { return nil }
+                return control.field?.isHidden
+            }
+            c.equal(hidden, [true, false, false])
+        }
+
+        await Runner.test("JSON with no uiSchema in it is not a form") { c in
+            c.expect(UISchema.find(in: #"{"a": 1, "b": [2, 3]}"#) == nil)
+            c.expect(UISchema.find(in: "not json at all") == nil)
+            c.expect(UISchema.find(in: "") == nil)
+        }
+
+        await Runner.test("a Label keeps its sentence and loses its markdown") { c in
+            let json = """
+            { "type": "VerticalLayout", "elements": [
+              { "type": "Label", "text": "Uses **IAM** — see [the docs](https://example.com/x).",
+                "options": { "format": "markdown" } } ] }
+            """
+            guard let form = UISchema.find(in: json),
+                  case .vertical(let children) = form.root,
+                  case .note(let text) = children[0] else {
+                return c.expect(false, "no label")
+            }
+            c.equal(text, "Uses IAM — see the docs.")
+        }
+
+        await Runner.test("a block of JSON in a note is found as something to draw") { c in
+            let note = """
+            Pegué esto del IDP:
+
+            ```json
+            \(bare)
+            ```
+
+            y abajo sigo escribiendo.
+            """
+            let items = Media.all(in: note)
+            c.equal(items.count, 1, "expected one drawable, got \(items.map(\.kind))")
+            if case .form(let source)? = items.first?.kind {
+                c.expect(source.contains("VerticalLayout"), "the whole block is the source")
+            } else {
+                c.expect(false, "expected a form, got \(String(describing: items.first?.kind))")
+            }
+        }
+
+        await Runner.test("ordinary JSON in a note stays ordinary JSON") { c in
+            let note = "```json\n{\"replicas\": 3}\n```"
+            c.equal(Media.all(in: note).count, 0, "a config block is not a form")
+        }
+
     }
 }

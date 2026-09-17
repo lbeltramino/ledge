@@ -196,6 +196,51 @@ enum Renderer {
         }
     }
 
+    /// A uiSchema in a note, drawn as the form it describes.
+    ///
+    /// Not in `run` yet: at 430 pt the JSON that defines the form is forty
+    /// lines of text and the drawing lands below the bottom of the card. It
+    /// becomes a README image the day a fenced block can be folded.
+    static func form() -> NSImage {
+        let size = NSSize(width: 430, height: 1250)
+        return image(size: size) { _ in
+            var note = Note(title: "Nueva dependencia", color: .coral)
+            note.body = """
+            Probando el alta:
+
+            ```json
+            {
+              "name": "Redis",
+              "required": ["cluster"],
+              "properties": {
+                "cluster": { "type": "string", "title": "Cluster",
+                             "description": "Dónde vive la instancia" },
+                "tls": { "type": "boolean", "title": "TLS" },
+                "tier": { "type": "string", "title": "Tier",
+                          "enum": ["cache", "session", "queue"] },
+                "eviction": { "type": "string", "title": "Eviction",
+                              "readOnly": true }
+              },
+              "uiSchema": {
+                "type": "VerticalLayout",
+                "elements": [
+                  { "type": "Group", "label": "Conexión", "elements": [
+                    { "type": "Control", "scope": "#/properties/cluster" },
+                    { "type": "HorizontalLayout", "elements": [
+                      { "type": "Control", "scope": "#/properties/tier" },
+                      { "type": "Control", "scope": "#/properties/tls" } ] } ] },
+                  { "type": "Control", "scope": "#/properties/evicton" }
+                ]
+              }
+            }
+            ```
+            """
+            draw(card(note, size: size, filename: "Redis.md") { card in
+                card.textView.refreshMedia()
+            }, at: .zero)
+        }
+    }
+
     /// A card laid out the way the app lays one out, ready to be drawn.
     ///
     /// The extra pass is not ceremony: tables, drawings and the outline are all

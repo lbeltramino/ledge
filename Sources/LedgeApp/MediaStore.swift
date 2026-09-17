@@ -273,4 +273,32 @@ enum MediaStore {
     static func canDraw(_ source: String) -> Bool {
         (try? Mermaid.render(source)) != nil
     }
+
+    // MARK: - forms
+
+    /// A JSONForms uiSchema drawn as the form it describes, at the width it
+    /// will appear. Cached on everything the drawing depends on, because this
+    /// is asked for again on every relayout of the note.
+    static func form(_ source: String, available: CGFloat, scale: CGFloat,
+                     ink: NSColor, font: NSFont) -> NSImage? {
+        guard let form = UISchema.find(in: source) else { return nil }
+        let width = max(1, available)
+        let backing = max(1, scale)
+        let key = "form|\(Int(width))|\(Int(backing))|\(Int(font.pointSize * 10))"
+            + "|\(ink.hashValue)|\(source.hashValue)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+
+        guard let image = FormDraw.image(form, available: width, scale: backing,
+                                         ink: ink, font: font) else { return nil }
+        cache.setObject(image, forKey: key,
+                        cost: Int(image.size.width * backing * image.size.height * backing * 4))
+        return image
+    }
+
+    /// The form at a size worth pasting into a ticket, rather than at the width
+    /// of a sticky note. Same bargain as `diagramForCopying`.
+    static func formForCopying(_ source: String, ink: NSColor, font: NSFont) -> NSImage? {
+        guard let form = UISchema.find(in: source) else { return nil }
+        return FormDraw.image(form, available: 620, scale: 2, ink: ink, font: font)
+    }
 }

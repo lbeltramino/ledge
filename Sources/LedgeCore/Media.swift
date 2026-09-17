@@ -14,6 +14,10 @@ public enum Media {
         case image(path: String)
         /// A ```` ```mermaid ```` block: the source between the fences.
         case diagram(source: String)
+        /// A block of JSON with a JSONForms `uiSchema` somewhere in it, drawn
+        /// as the form it describes. The source is the whole block: finding the
+        /// uiSchema inside it is `UISchema`'s job, not this one's.
+        case form(source: String)
     }
 
     public struct Item: Equatable, Sendable {
@@ -64,8 +68,9 @@ public enum Media {
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-            // A fenced mermaid block, drawn from the source between the fences.
-            if isDiagramFence(trimmed) {
+            // A fenced block that draws something: mermaid, or JSON with a
+            // form in it.
+            if let fence = drawableFence(trimmed) {
                 var end = index + 1
                 while end < lines.count,
                       lines[end].trimmingCharacters(in: .whitespaces) != "```" {
@@ -76,11 +81,12 @@ public enum Media {
                 if end < lines.count {
                     let source = lines[(index + 1)..<end].joined(separator: "\n")
                     let last = starts[end] + (lines[end] as NSString).length
-                    if !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let kind = fence.kind(source) {
                         found.append(Item(range: NSRange(location: starts[index],
                                                          length: last - starts[index]),
-                                          kind: .diagram(source: source),
-                                          alt: "diagram"))
+                                          kind: kind,
+                                          alt: fence.rawValue))
                     }
                     index = end + 1
                     continue
@@ -107,10 +113,48 @@ public enum Media {
         return found
     }
 
-    private static func isDiagramFence(_ trimmed: String) -> Bool {
-        guard trimmed.hasPrefix("```") else { return false }
-        let tag = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased()
-        return tag == "mermaid"
+    /// The fences that draw something, and what each one draws.
+    enum Fence: String {
+        case mermaid
+        case form = "json"
+
+        /// What this block turns into, or nil when it turns into nothing.
+        ///
+        /// A mermaid block is always a diagram — that is what the tag means.
+        /// A JSON block is ordinary JSON until it is found to contain a
+        /// `uiSchema`, which is the whole point: you paste a payload out of an
+        /// IDP without tagging it anything special, and the form appears.
+        func kind(_ source: String) -> Kind? {
+            switch self {
+            case .mermaid: return .diagram(source: source)
+            case .form:
+                // A scan before the parse: this runs over every fenced block on
+                // every keystroke and a note can be mostly JSON, so anything
+                // that cannot be a form should cost one pass over the string
+                // rather than a parse.
+                //
+                // Both words, not just `uiSchema`: a block written by hand to
+                // try a layout out *is* a uiSchema and never contains the word.
+                // Gating on it alone silently dropped the one case this was
+                // built for.
+                guard source.contains("uiSchema") || source.contains("elements"),
+                      UISchema.find(in: source) != nil else { return nil }
+                return .form(source: source)
+            }
+        }
+    }
+
+    private static func drawableFence(_ trimmed: String) -> Fence? {
+        guard trimmed.hasPrefix("```") else { return nil }
+        switch trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased() {
+        case "mermaid": return .mermaid
+        // `jsonforms` and `uischema` for a block written by hand that is only a
+        // uiSchema; `json` because that is what a pasted payload gets tagged,
+        // and asking someone to retag it would be asking them to know about
+        // this feature before they can find it.
+        case "json", "jsonforms", "uischema": return .form
+        default: return nil
+        }
     }
 
     /// Where a note's pictures live: one folder beside the notes, so the whole

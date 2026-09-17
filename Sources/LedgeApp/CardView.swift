@@ -1072,6 +1072,10 @@ final class NoteTextView: NSTextView {
     var tablePaper: NSColor = .white
     var tableInk: NSColor = .black
 
+    /// A drawn form follows the note's own type size, so ⌘+ makes the wireframe
+    /// bigger along with everything else rather than leaving it stranded.
+    var formFont: NSFont { font ?? .systemFont(ofSize: 13) }
+
     /// True when this table is showing its pipes because you asked it to.
     func isTableUnlocked(_ table: Tables.Table) -> Bool {
         guard let unlockedTableAt else { return false }
@@ -1369,6 +1373,14 @@ final class NoteTextView: NSTextView {
             }
             lastOrigin = .diagram(source)
             return .picture(image)
+
+        case .form(let source):
+            guard let image = MediaStore.form(source, available: available, scale: scale,
+                                              ink: tableInk, font: formFont) else {
+                return .missing("this uiSchema could not be drawn")
+            }
+            lastOrigin = .form(source)
+            return .picture(image)
         }
     }
 
@@ -1543,6 +1555,11 @@ final class NoteTextView: NSTextView {
         case .diagram(let source):
             guard let image = MediaStore.diagramForCopying(source,
                                                            dark: effectiveAppearance.isDark)
+            else { return false }
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
+        case .form(let source):
+            guard let image = MediaStore.formForCopying(source, ink: tableInk, font: formFont)
             else { return false }
             pasteboard.clearContents()
             pasteboard.writeObjects([image])
