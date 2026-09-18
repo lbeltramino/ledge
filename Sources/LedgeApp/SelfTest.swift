@@ -1742,6 +1742,49 @@ enum SelfTest {
         await cleanUp(["Una hija por tipeo"], deck: deck, folder: folder)
     }
 
+    /// Una hija que aparece desde afuera mientras la madre ya está abierta.
+    ///
+    /// Reportado así: "agregué el parent a mano en el markdown de las notas que
+    /// se olvidaron de que eran hijas, pero en la card madre no aparecen los
+    /// botones — al cerrar y abrir Ledge sí aparecen". Cerrar y abrir
+    /// reconstruye las cards, que era lo único que corría la consulta.
+    ///
+    /// La hija arreglaba sola porque su botón sale de `parent`, un campo de su
+    /// propia fila; los chips de la madre salen de una consulta sobre las demás
+    /// notas. Lo mismo le pasa a un agente escribiendo con `ledge`, o a un
+    /// sync trayendo una hija nueva.
+    static func checkFamilyFollowsTheFolder(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let madre = deck.recordsForTesting.first else { check(false, "no hay notas"); return }
+        deck.fanOut(takingFocus: false)
+        deck.previewForTesting(madre.id)
+        try? await Task.sleep(for: .milliseconds(600))
+        guard let card = deck.debugCard, card.record.id == madre.id else {
+            check(false, "no se abrió la madre"); return
+        }
+        check(!card.family.debugLabels.contains("Hija de afuera"),
+              "la madre todavía no tiene esta hija: \(card.family.debugLabels)")
+
+        // Escrita por fuera de la app, como la escribiría `ledge`, un sync, o
+        // alguien editando el markdown a mano.
+        let feed = FeedStore(folder: folder)
+        var hija = Note(title: "Hija de afuera", color: .green)
+        hija.parent = madre.id
+        _ = try? feed.write(hija, to: folder.appendingPathComponent("Hija de afuera.md"))
+        await deck.reconcileForTesting(["Hija de afuera.md"])
+        await deck.refresh()
+        try? await Task.sleep(for: .milliseconds(600))
+
+        // La misma card: si se reconstruyó, esto no prueba nada — reconstruir
+        // es lo que ya hacía cerrar y abrir la app.
+        check(deck.debugCard === card, "la madre siguió abierta, no se reconstruyó")
+        check(card.family.debugLabels.contains("Hija de afuera"),
+              "y la lista sin reiniciar: \(card.family.debugLabels)")
+
+        deck.closeNote()
+        await cleanUp(["Hija de afuera"], deck: deck, folder: folder)
+    }
+
     /// Apretar el chip de una hija, que es cómo se llega a ella.
     ///
     /// Reportado como "hago click y no me muestra la nota": sí la mostraba,
@@ -4188,6 +4231,7 @@ enum SelfTest {
         await checkPressingALinkThatDoesNotExistYet(deck: deck, folder: deck.notesFolder)
         await checkCreatingAChildByTyping(deck: deck, folder: deck.notesFolder)
         await checkFamilyChipOpensTheChild(deck: deck, folder: deck.notesFolder)
+        await checkFamilyFollowsTheFolder(deck: deck, folder: deck.notesFolder)
         await checkOpeningAChild(deck: deck, folder: deck.notesFolder)
         await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)

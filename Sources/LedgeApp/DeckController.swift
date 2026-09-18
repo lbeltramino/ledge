@@ -196,9 +196,25 @@ final class DeckController {
             Settings.markSeen(open, at: record.updated)
         }
         rebuildTabs()
+        // The family row has to follow the folder as well.
+        //
+        // A child's own card reads `parent` off its own record and so came
+        // right by itself; a mother's chips come from a query over every other
+        // note, and that query only ever ran when her card was built. So a note
+        // that gained or lost a child while it was on screen — an agent with
+        // `ledge`, a sync, a hand-edited file — kept showing what was true when
+        // you opened it. Reported as "I fixed the children and the mother still
+        // shows no buttons".
+        refreshFamilies()
         pill.colors = records.map(\.color)
         applyLayout(animated: false)
         await prefetchBodies()
+    }
+
+    /// Every card on screen, asked again who belongs to whom.
+    private func refreshFamilies() {
+        if let card { refreshFamily(of: card, id: card.record.id) }
+        for (id, float) in floating { refreshFamily(of: float.cardView, id: id) }
     }
 
     /// Bodies are read after the deck is already on screen, so opening the fan
