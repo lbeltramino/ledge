@@ -1714,6 +1714,40 @@ enum CoreTests {
             }
         }
 
+        await Runner.test("a note with CRLF endings still draws its blocks") { c in
+            // A file that came through anything Windows-shaped. `\r` is not in
+            // `.whitespaces`, so "```json\r" was never "```json" and nothing in
+            // such a note was ever drawn.
+            let note = "Del IDP:\r\n\r\n```json\r\n\(bare.replacingOccurrences(of: "\n", with: "\r\n"))\r\n```\r\n"
+            let items = Media.all(in: note)
+            c.equal(items.count, 1, "expected the form, got \(items.map(\.kind))")
+        }
+
+        await Runner.test("a block fenced in more than three backticks is found") { c in
+            // CommonMark allows any run of three or more, and `Code.fenced`
+            // writes a longer one when the snippet contains a line of
+            // backticks. Reading only three meant such a block was never
+            // recognised, and its close — which is just as long — was never
+            // found either, so the rest of the note read as being inside it.
+            let note = """
+            antes
+
+            ````json
+            \(bare)
+            ````
+
+            después
+            """
+            let items = Media.all(in: note)
+            c.equal(items.count, 1, "expected the form, got \(items.map(\.kind))")
+            // And the end really was found: a block that swallowed the rest of
+            // the note would reach past "después".
+            if let item = items.first {
+                c.expect(!(note as NSString).substring(with: item.range).contains("después"),
+                         "el bloque termina en su cierre, no al final de la nota")
+            }
+        }
+
         await Runner.test("ordinary JSON in a note stays ordinary JSON") { c in
             let note = "```json\n{\"replicas\": 3}\n```"
             c.equal(Media.all(in: note).count, 0, "a config block is not a form")

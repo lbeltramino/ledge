@@ -75,14 +75,22 @@ public enum Media {
         var index = 0
         while index < lines.count {
             let line = lines[index]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Newlines as well as spaces: a file with CRLF endings leaves a
+            // carriage return on the end of every line, and "```json\r" is not
+            // "```json". Nothing here would have drawn in such a file.
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
             // A fenced block that draws something: mermaid, or JSON with a
             // form in it.
             if let fence = drawableFence(trimmed) {
+                // Closed by a run of backticks at least as long as the one that
+                // opened it, which is what CommonMark says and what `Code`
+                // writes: a snippet containing a line of backticks is fenced in
+                // four or more, and looking for exactly three never found the
+                // end of it.
+                let opener = trimmed.prefix { $0 == "`" }.count
                 var end = index + 1
-                while end < lines.count,
-                      lines[end].trimmingCharacters(in: .whitespaces) != "```" {
+                while end < lines.count, !isClosingFence(lines[end], opener: opener) {
                     end += 1
                 }
                 // An unterminated fence is someone in the middle of typing one,
@@ -153,9 +161,16 @@ public enum Media {
         }
     }
 
+    private static func isClosingFence(_ line: String, opener: Int) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ticks = trimmed.prefix { $0 == "`" }.count
+        return ticks >= opener && trimmed.dropFirst(ticks).isEmpty
+    }
+
     private static func drawableFence(_ trimmed: String) -> Fence? {
-        guard trimmed.hasPrefix("```") else { return nil }
-        switch trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces).lowercased() {
+        let ticks = trimmed.prefix { $0 == "`" }.count
+        guard ticks >= 3 else { return nil }
+        switch trimmed.dropFirst(ticks).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "mermaid": return .mermaid
         // `jsonforms` and `uischema` for a block written by hand that is only a
         // uiSchema; `json` because that is what a pasted payload gets tagged,
