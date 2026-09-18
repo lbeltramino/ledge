@@ -1785,6 +1785,62 @@ enum SelfTest {
         await cleanUp(["Hija de afuera"], deck: deck, folder: folder)
     }
 
+    /// Una hija es una nota como cualquier otra: dibuja lo que dibuja
+    /// cualquiera, y se abre en el editor como cualquiera.
+    ///
+    /// Reportado: "en las notas hijas no funciona el render de los formularios,
+    /// y tampoco el botón para ir a la ventana de edición". Las dos cosas
+    /// salen del mismo lugar — una hija no está en `records`, porque eso es lo
+    /// que la hace no ocupar un tab, y todo lo que la busca ahí no la encuentra.
+    static func checkAChildIsAnOrdinaryNote(deck: DeckController, folder: URL) async {
+        await deck.refresh()
+        guard let madre = deck.recordsForTesting.first else { check(false, "no hay notas"); return }
+
+        let feed = FeedStore(folder: folder)
+        var hija = Note(title: "Hija con formulario", color: .lavender)
+        hija.parent = madre.id
+        hija.body = """
+        Probando:
+
+        ```json
+        { "properties": { "a": { "type": "string", "title": "Alpha" } },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+            { "type": "Control", "scope": "#/properties/a" } ] } }
+        ```
+        """
+        _ = try? feed.write(hija, to: folder.appendingPathComponent("Hija con formulario.md"))
+        await deck.reconcileForTesting(["Hija con formulario.md"])
+        await deck.refresh()
+
+        guard let id = (try? feed.notes())?.first(where: { $0.note.title == "Hija con formulario" })?
+            .note.id else {
+            check(false, "no se creó la hija"); return
+        }
+
+        deck.fanOut(takingFocus: false)
+        deck.visit(id)
+        try? await Task.sleep(for: .milliseconds(900))
+        guard let card = deck.debugCard, card.record.id == id else {
+            check(false, "no se abrió la hija: \(deck.debugCard?.record.id ?? "ninguna")"); return
+        }
+
+        check(!card.textView.string.isEmpty, "la hija llega con su texto")
+        check(card.textView.debugMediaCount == 1,
+              "el formulario se dibuja en una hija igual que en cualquier nota: "
+              + "\(card.textView.debugMediaCount) dibujos")
+
+        // Y el botón que abre el editor grande.
+        deck.debugCloseEditors()
+        deck.expandCurrent()
+        try? await Task.sleep(for: .milliseconds(300))
+        check(deck.debugEditorIDs.contains(id),
+              "el botón de editar abre la hija: \(deck.debugEditorIDs)")
+        deck.debugCloseEditors()
+
+        deck.closeNote()
+        await cleanUp(["Hija con formulario"], deck: deck, folder: folder)
+    }
+
     /// Apretar el chip de una hija, que es cómo se llega a ella.
     ///
     /// Reportado como "hago click y no me muestra la nota": sí la mostraba,
@@ -4232,6 +4288,7 @@ enum SelfTest {
         await checkCreatingAChildByTyping(deck: deck, folder: deck.notesFolder)
         await checkFamilyChipOpensTheChild(deck: deck, folder: deck.notesFolder)
         await checkFamilyFollowsTheFolder(deck: deck, folder: deck.notesFolder)
+        await checkAChildIsAnOrdinaryNote(deck: deck, folder: deck.notesFolder)
         await checkOpeningAChild(deck: deck, folder: deck.notesFolder)
         await checkAgentDiagramArrives(deck: deck, folder: deck.notesFolder)
         await checkExternalWriteToClosedNote(deck: deck, folder: deck.notesFolder)

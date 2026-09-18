@@ -1364,7 +1364,11 @@ final class DeckController {
     /// The same note with room to think in.
     func expand(_ id: String) {
         if let existing = editors[id], existing.isVisible { existing.show(); return }
-        guard let record = records.first(where: { $0.id == id }) ?? archivedCache[id] else { return }
+        // `shownRecord`, not `records`: a child is deliberately not on the
+        // strip, so looking for it there found nothing and the button that
+        // opens the editor did nothing at all. The same oversight the family
+        // row had, in the one other place that asks who a note is.
+        guard let record = shownRecord(id) ?? archivedCache[id] else { return }
         let title = floating[id] != nil ? record.displayTitle : (card?.title ?? record.displayTitle)
         let editor = NoteEditorWindow(record: record, title: title, body: bodies[id] ?? "")
         editor.onEdit = { [weak self, weak editor] text in
@@ -1755,6 +1759,8 @@ extension DeckController {
 
     func debugCardBody() -> String? { card?.textView.string }
     var debugCard: NoteCardView? { card }
+    var debugEditorIDs: [String] { Array(editors.keys) }
+    func debugCloseEditors() { editors.values.forEach { $0.close() }; editors = [:] }
     func debugFloating(_ id: String) -> FloatingNote? { floating[id] }
     var debugVisiting: String? { visiting?.id }
     func debugCardTitle() -> String? { card?.title }
