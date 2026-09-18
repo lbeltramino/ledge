@@ -315,17 +315,22 @@ enum MediaStore {
     /// will appear. Cached on everything the drawing depends on, because this
     /// is asked for again on every relayout of the note.
     static func form(_ source: String, available: CGFloat, scale: CGFloat,
-                     ink: NSColor) -> NSImage? {
+                     ink: NSColor, dark: Bool) -> NSImage? {
+        let backing = max(1, scale)
+        // Keyed on the room asked for rather than on the width that comes out
+        // of it, so a hit answers without parsing. It used to parse first to
+        // work the width out, which put a JSON parse on every keystroke in a
+        // note that has a form — twice, since the caller asks once to measure
+        // and once to draw.
+        let key = "form|\(Int(available))|\(Int(backing))|\(dark)|\(ink.hashValue)"
+            + "|\(source.hashValue)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+
         guard let form = UISchema.find(in: source) else { return nil }
         // Never wider than the form asks for: a note twice as wide as the form
         // needs should leave room around it, not blow the type up to 30 pt.
         let width = min(FormDraw.naturalWidth(of: form), max(1, available))
-        let backing = max(1, scale)
-        let key = "form|\(Int(width))|\(Int(backing))|\(ink.hashValue)|\(source.hashValue)"
-            as NSString
-        if let hit = cache.object(forKey: key) { return hit }
-
-        guard let image = FormDraw.image(form, width: width, scale: backing, ink: ink)
+        guard let image = FormDraw.image(form, width: width, scale: backing, ink: ink, dark: dark)
         else { return nil }
         cache.setObject(image, forKey: key,
                         cost: Int(image.size.width * backing * image.size.height * backing * 4))
@@ -334,9 +339,10 @@ enum MediaStore {
 
     /// The form at a size worth pasting into a ticket, rather than at the width
     /// of a sticky note. Same bargain as `diagramForCopying`.
-    static func formForCopying(_ source: String, ink: NSColor) -> NSImage? {
+    static func formForCopying(_ source: String, ink: NSColor, dark: Bool) -> NSImage? {
         guard let form = UISchema.find(in: source) else { return nil }
-        return FormDraw.image(form, width: FormDraw.naturalWidth(of: form), scale: 2, ink: ink)
+        return FormDraw.image(form, width: FormDraw.naturalWidth(of: form), scale: 2,
+                              ink: ink, dark: dark)
     }
 
     /// The width a form wants, for whoever has to decide whether it fits.

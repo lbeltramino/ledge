@@ -152,31 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // TEMPORARY, for iterating on the form drawing against real payloads.
-        if let index = CommandLine.arguments.firstIndex(of: "--render-form"),
-           index + 2 < CommandLine.arguments.count {
-            let json = (try? String(contentsOfFile: CommandLine.arguments[index + 1],
-                                    encoding: .utf8)) ?? ""
-            // Through the zoom view, so this previews exactly what the window
-            // shows rather than something drawn a second way.
-            let zoom = CommandLine.arguments.count > index + 3
-                ? CGFloat(Double(CommandLine.arguments[index + 3]) ?? 1) : 1
-            let preview = MediaZoomView()
-            preview.configure(.form(json), ink: .black, paper: .white, dark: false)
-            while preview.zoom < zoom - 0.001 { preview.zoomIn() }
-            if let image = preview.debugContent,
-               let tiff = image.tiffRepresentation,
-               let rep = NSBitmapImageRep(data: tiff),
-               let png = rep.representation(using: .png, properties: [:]) {
-                try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[index + 2]))
-                print("drew \(Int(image.size.width))×\(Int(image.size.height)) at \(preview.zoom)×")
-            } else {
-                print("no form in that JSON")
-            }
-            NSApp.terminate(nil)
-            return
-        }
-
         if CommandLine.arguments.contains("--selftest") {
             AppDelegate.writeSelfTestFixtures()
             // and never inherit whatever layout this machine happens to have

@@ -15,6 +15,12 @@ import LedgeCore
 /// and the drawing is those shapes.
 enum FormDraw {
 
+    /// The colour a form marks something out in, given the note's ink — for
+    /// the check that it is never anything but that ink.
+    static func attentionColour(ink: NSColor, dark: Bool) -> NSColor {
+        Pen(ink: ink, dark: dark).attention
+    }
+
     // MARK: - what the walk emits
 
     private enum Shape {
@@ -37,16 +43,26 @@ enum FormDraw {
     /// So: laid out at these sizes, always, and scaled once at the end.
     private struct Pen {
         let ink: NSColor
+        let dark: Bool
 
         var faint: NSColor { ink.withAlphaComponent(0.42) }
         var mid: NSColor { ink.withAlphaComponent(0.62) }
         var strong: NSColor { ink.withAlphaComponent(0.85) }
         var rule: NSColor { ink.withAlphaComponent(0.16) }
         var well: NSColor { ink.withAlphaComponent(0.05) }
-        /// The one colour that is not the note's ink. A scope pointing at
-        /// nothing is the reason to look at this drawing at all, so it is
-        /// allowed to shout.
-        var alarm: NSColor { NSColor.systemRed.withAlphaComponent(0.85) }
+        /// What is worth looking at twice — in the note's own ink, like
+        /// everything else here.
+        ///
+        /// It was red, then indigo. Both were wrong for the same reason: a
+        /// colour of its own belongs to no note, so it does not change when the
+        /// note's colour does and it fights whichever paper it lands on. (Red
+        /// also measured 2.0 to one against coral, which is barely legible —
+        /// the one thing worth reading, in the one colour you could not.)
+        ///
+        /// So there is no second colour. What marks something out is weight and
+        /// the ⚠ beside it, which survive every scheme because they are not
+        /// colours at all.
+        var attention: NSColor { ink.withAlphaComponent(0.9) }
 
         var small: NSFont { .systemFont(ofSize: 13) }
         var label: NSFont { .systemFont(ofSize: 14, weight: .medium) }
@@ -64,7 +80,7 @@ enum FormDraw {
     /// bitmap. Under its natural width it shrinks; above it, it grows, which is
     /// what the window that zooms one asks for.
     static func image(_ form: UISchema.Form, width: CGFloat, scale: CGFloat,
-                      ink: NSColor) -> NSImage? {
+                      ink: NSColor, dark: Bool) -> NSImage? {
         // Narrow the layout before shrinking the type. Given 350 pt for a form
         // that would like 468, laying it out at 350 gives two columns of 151 pt
         // with the text at its proper size; laying it out at 468 and scaling
@@ -73,16 +89,34 @@ enum FormDraw {
         // way.
         let wanted = max(0.05, width)
         let layout = max(minimumWidth, min(wanted, naturalWidth(of: form)))
-        let pen = Pen(ink: ink)
+        let pen = Pen(ink: ink, dark: dark)
 
         var shapes: [Shape] = []
         let height = walk(form, width: layout, pen: pen, into: &shapes)
         guard height > 1 else { return nil }
 
-        let shrink = wanted / layout
-        let size = NSSize(width: (layout * shrink).rounded(),
+        var shrink = wanted / layout
+        var size = NSSize(width: (layout * shrink).rounded(),
                           height: (height * shrink).rounded())
-        let backing = max(1, scale)
+
+        // A ceiling on the bitmap, because a form is as tall as it needs to be
+        // and the window that zooms one multiplies both sides. A long payload
+        // at 8× comes to half a gigabyte of pixels in a single allocation, and
+        // nothing else in this app allocates like that.
+        //
+        // Density goes first — at that size there is nothing left to resolve —
+        // and only then the drawing itself.
+        var backing = max(1, scale)
+        if size.width * size.height * backing * backing > Self.pixelBudget, backing > 1 {
+            backing = 1
+        }
+        let pixels = size.width * size.height * backing * backing
+        if pixels > Self.pixelBudget {
+            let over = (Self.pixelBudget / pixels).squareRoot()
+            shrink *= over
+            size = NSSize(width: (layout * shrink).rounded(), height: (height * shrink).rounded())
+        }
+        guard size.width >= 1, size.height >= 1 else { return nil }
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: Int(size.width * backing), pixelsHigh: Int(size.height * backing),
@@ -153,6 +187,13 @@ enum FormDraw {
     /// drawing is scaled. Below this a two-column row stops being two columns
     /// of anything.
     private static let column: CGFloat = 210
+
+    /// The most pixels one drawing may be rasterised into: eight million,
+    /// which is 32 MB and about a 2000 by 2000 point drawing at retina
+    /// density. Everything this app draws normally is a fraction of it — a
+    /// form on a note is around two million — and what it exists for is the
+    /// zoomed window, where the two sides multiply.
+    private static let pixelBudget: CGFloat = 8 * 1024 * 1024
 
     /// One column, with its padding: narrower than this and the type has to
     /// give way instead.
@@ -298,10 +339,11 @@ enum FormDraw {
         case .unknown(let type):
             let height = pen.label.pointSize * 2.2
             shapes.append(.box(NSRect(x: x, y: y, width: width, height: height),
-                               radius: 4, fill: nil, stroke: pen.alarm, dashed: true))
-            shapes.append(.text(type, NSRect(x: x + 8, y: centred(pen.label, in: y, height: height),
-                                             width: width - 16, height: pen.label.pointSize * 1.4),
-                                pen.label, pen.alarm, wrap: false))
+                               radius: 4, fill: nil, stroke: pen.attention, dashed: true))
+            shapes.append(.text("⚠ " + type,
+                                NSRect(x: x + 8, y: centred(pen.label, in: y, height: height),
+                                       width: width - 16, height: pen.label.pointSize * 1.4),
+                                pen.label, pen.attention, wrap: false))
             return height
         }
     }
@@ -317,13 +359,19 @@ enum FormDraw {
             // A scope that resolves to nothing, drawn as the scope itself:
             // that string is the thing that has to change.
             _ = line(control.name.isEmpty ? "Control" : control.name, x: x, y: y,
-                     width: width, font: pen.label, colour: pen.alarm, into: &shapes)
+                     width: width, font: pen.label, colour: pen.attention, into: &shapes)
             let box = NSRect(x: x, y: y + labelHeight, width: width, height: boxHeight)
-            shapes.append(.box(box, radius: 4, fill: nil, stroke: pen.alarm, dashed: true))
+            shapes.append(.box(box, radius: 4, fill: nil, stroke: pen.attention, dashed: true))
             shapes.append(.text(control.scope.isEmpty ? "no scope" : control.scope,
                                 NSRect(x: box.minX + 7, y: centred(pen.small, in: box.minY, height: boxHeight),
-                                       width: box.width - 14, height: pen.small.pointSize * 1.4),
-                                pen.small, pen.alarm, wrap: false))
+                                       width: box.width - 26, height: pen.small.pointSize * 1.4),
+                                pen.small, pen.attention, wrap: false))
+            // Read-only fields are dashed as well, so without a colour of its
+            // own this needs a mark to tell them apart.
+            shapes.append(.text("⚠", NSRect(x: box.maxX - 18,
+                                            y: centred(pen.small, in: box.minY, height: boxHeight),
+                                            width: 14, height: pen.small.pointSize * 1.4),
+                                pen.small, pen.attention, wrap: false))
             return labelHeight + boxHeight
         }
 

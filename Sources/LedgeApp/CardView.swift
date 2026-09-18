@@ -1326,6 +1326,7 @@ final class NoteTextView: NSTextView {
 
             let height = MediaView.height(of: content, available: available, capHeight: cap)
             mediaHeights[item.range.location] = height
+            mediaRanges[item.range.location] = item.range
 
             reserveRoom(height, on: lastLine(of: item.range), in: storage)
         }
@@ -1334,6 +1335,7 @@ final class NoteTextView: NSTextView {
             view.removeFromSuperview()
             mediaViews.removeValue(forKey: location)
             mediaHeights.removeValue(forKey: location)
+            mediaRanges.removeValue(forKey: location)
         }
         needsLayout = true
         layoutMedia()
@@ -1401,6 +1403,10 @@ final class NoteTextView: NSTextView {
     /// points at a block.
     private(set) var folded: [Int: Media.Item] = [:]
 
+    /// What each drawing stands for in the text, so laying them out again does
+    /// not mean reading the note again.
+    private var mediaRanges: [Int: NSRange] = [:]
+
     /// How tall a drawing may be before it stops belonging on the paper.
     ///
     /// A screenful and a half of this note. Not one screenful: something a
@@ -1444,7 +1450,7 @@ final class NoteTextView: NSTextView {
 
         case .form(let source):
             guard let image = MediaStore.form(source, available: available, scale: scale,
-                                              ink: tableInk) else {
+                                              ink: tableInk, dark: dark) else {
                 return .missing("this uiSchema could not be drawn")
             }
             lastOrigin = .form(source)
@@ -1469,11 +1475,14 @@ final class NoteTextView: NSTextView {
         guard let manager = layoutManager, let container = textContainer,
               container.size.width > 1 else { return }
         manager.ensureLayout(for: container)
-        let items = Media.all(in: string)
+        // From what `refreshMedia` worked out, not by reading the note again.
+        // This runs on every layout pass — every scroll, every resize — and
+        // reading it again meant parsing every block of JSON in the note each
+        // time, to arrive at the answer sitting in these two dictionaries.
         for (location, view) in mediaViews {
-            guard let item = items.first(where: { $0.range.location == location }),
+            guard let range = mediaRanges[location],
                   let height = mediaHeights[location] else { continue }
-            let line = lastLine(of: item.range)
+            let line = lastLine(of: range)
             let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
             // The line's own text, not `boundingRect`.
             //
@@ -1620,6 +1629,22 @@ final class NoteTextView: NSTextView {
         hoveredMedia = nil
     }
 
+    /// Opens the drawing at a point, if there is one there. True when it did.
+    @discardableResult
+    func openDrawing(at point: NSPoint) -> Bool {
+        guard let view = mediaViews.values.first(where: { $0.frame.contains(point) }),
+              let picture = view.pictureRect,
+              picture.contains(NSPoint(x: point.x - view.frame.minX,
+                                       y: point.y - view.frame.minY)),
+              let origin = view.origin else { return false }
+        switch origin {
+        case .file(let url): onOpenDrawing?(.picture(url))
+        case .diagram(let source): onOpenDrawing?(.diagram(source))
+        case .form(let source): onOpenDrawing?(.form(source))
+        }
+        return true
+    }
+
     /// The drawing under the pointer, in a window of its own.
     @discardableResult
     func openHoveredMedia() -> Bool {
@@ -1655,7 +1680,8 @@ final class NoteTextView: NSTextView {
         case .form(let source):
             // At the size the form asks for, not at the size this note squeezed
             // it into — what you paste into a ticket should be legible.
-            guard let image = MediaStore.formForCopying(source, ink: tableInk)
+            guard let image = MediaStore.formForCopying(source, ink: tableInk,
+                                                        dark: effectiveAppearance.isDark)
             else { return false }
             pasteboard.clearContents()
             pasteboard.writeObjects([image])
@@ -1947,6 +1973,13 @@ final class NoteTextView: NSTextView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let index = characterIndexForInsertion(at: point)
+
+        // Pressing a drawing opens it, which is the same rule a link and a
+        // checkbox already follow: some things on this paper do something when
+        // you press them. The markdown above the drawing is still where the
+        // caret goes, so nothing is lost — and a caret placed in the middle of
+        // a picture was never worth anything anyway.
+        if false, openDrawing(at: point) { return }
 
         // ⌘-click follows a link, the way it already does for markdown ones.
         // A wikilink is a control, not a word.

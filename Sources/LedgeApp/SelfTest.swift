@@ -170,6 +170,18 @@ enum SelfTest {
                 check(contrastRatio(ink, over) >= 4.5,
                       String(format: "…and the words stay readable through it (%.1f:1)",
                              contrastRatio(ink, over)))
+
+                // A drawn form has no colour of its own: what it marks out is
+                // marked out in this note's ink. Two colours of its own have
+                // been tried and both had the same fault — they belong to no
+                // note, so they do not change when the note's colour does.
+                let attention = FormDraw.attentionColour(ink: ink, dark: dark)
+                check(colourDistance(attention.withAlphaComponent(1), ink) < 0.001,
+                      String(format: "a %@ note's form marks up in the note's own ink",
+                             note.rawValue))
+                check(contrastRatio(attention.withAlphaComponent(1),
+                                    Palette.paper(note, dark: dark)) >= 4.5,
+                      "…which is readable on its paper, as the words are")
             }
         }
     }
@@ -2649,6 +2661,28 @@ enum SelfTest {
         check(frames[0].contains(NSPoint(x: mark.midX, y: mark.midY)),
               "and it sits on the drawing, not beside it")
 
+        // Pressing the drawing itself opens it, the way pressing a link or a
+        // checkbox does something.
+        //
+        // Through the point, not through a synthesised `mouseDown`: handing
+        // AppKit a mouse-down on a text view starts its tracking loop, which
+        // waits for a mouse-up that a check never sends and hangs the whole
+        // run. That is how this was first written, and the hang went unnoticed
+        // because the line above it was read and the end of the run was not.
+        // `openDrawing(at:)` is the first thing `mouseDown` calls and takes the
+        // same point it computes.
+        var pressed: MediaWindow.Subject?
+        view.onOpenDrawing = { pressed = $0 }
+        check(view.openDrawing(at: NSPoint(x: frames[0].midX, y: frames[0].midY)),
+              "pressing a drawn picture opens it")
+        if case .picture? = pressed {} else {
+            check(false, "…and asks for the picture, got \(String(describing: pressed))")
+        }
+        // And pressing the paper beside it does not.
+        pressed = nil
+        check(!view.openDrawing(at: NSPoint(x: frames[0].midX, y: max(0, frames[0].minY - 30))),
+              "pressing the text above a drawing still belongs to the text")
+
         // The loupe comes with it: the same offer a form's block makes, on a
         // picture. Asked for as "that icon, to open them in a modal and zoom".
         check(!view.mediaLoupe.isHidden, "a picture offers the loupe as well")
@@ -2878,9 +2912,9 @@ enum SelfTest {
               "…and makes it taller, so the type grew too: \(bigger.height) vs \(atOne.height)")
         check(view.frame.size == bigger, "the view takes the size of what it drew")
 
-        view.zoomToActualSize()
+        view.zoomToNaturalWidth()
         check(view.debugContentSize.map { abs($0.width - atOne.width) < 1 } == true,
-              "back to 1× is back to the size it started")
+              "back to its own width is back to the size it started")
 
         // The stops hold, so a wheel that runs away cannot ask for a 40000 pt
         // bitmap.
@@ -2892,10 +2926,10 @@ enum SelfTest {
         // The size keys arrive as events read by the key monitor, not as a
         // `keyDown` on this view — so the check hands it the same thing the
         // monitor would, including the `+` a Spanish keyboard actually sends.
-        view.zoomToActualSize()
+        view.zoomToNaturalWidth()
         guard let before = view.debugContentSize else { check(false, "nothing drawn"); return }
         for characters in ["+", "="] {
-            view.zoomToActualSize()
+            view.zoomToNaturalWidth()
             guard let event = NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0,
                 windowNumber: 0, context: nil, characters: characters,
@@ -2907,6 +2941,62 @@ enum SelfTest {
             view.apply(command)
             check((view.debugContentSize?.width ?? 0) > before.width,
                   "⌘\(characters) makes the drawing bigger, not the app")
+        }
+
+        // The window being resized redraws the form at the new width, which is
+        // what makes dragging its edge do anything at all.
+        // In a real scroll view in a real window, resized the way a window is
+        // resized. A hand-made clip view proved this worked while dragging the
+        // window's edge did nothing: the drawing was capped at its own width,
+        // and the only thing that knew the difference was the real thing.
+        // Resized past the width the form asks for, which is where this broke.
+        //
+        // An earlier version of this check only ever narrowed the clip, and
+        // passed while dragging the real window's edge outwards did nothing:
+        // the drawing was capped at its own width and growing was the case
+        // nothing looked at. A real NSScrollView would be closer to the truth
+        // still, but building one in here hangs the run the same way a panel
+        // does, so the rule is checked where it is decided instead.
+        let clip = NSClipView(frame: NSRect(x: 0, y: 0, width: 300, height: 400))
+        clip.documentView = view
+        view.rebuild()
+        guard let atFirst = view.debugContentSize else { check(false, "nothing drawn"); return }
+
+        clip.setFrameSize(NSSize(width: 560, height: 400))
+        guard let wider = view.debugContentSize else { check(false, "nothing after resizing"); return }
+        check(wider.width > atFirst.width + 10,
+              "a wider window draws the form wider, past its own width: "
+              + "\(wider.width) vs \(atFirst.width)")
+        check(wider.height > atFirst.height,
+              "…and taller with it, so the type grew rather than the columns")
+
+        clip.setFrameSize(NSSize(width: 300, height: 400))
+        check(view.debugContentSize.map { abs($0.width - atFirst.width) < 3 } == true,
+              "…and a narrower one puts it back: "
+              + "\(view.debugContentSize?.width ?? -1) vs \(atFirst.width)")
+        clip.documentView = nil
+
+        // The ceiling on one bitmap. A form is as tall as it needs to be and
+        // the window multiplies both sides, so without this a long payload at
+        // 8× is half a gigabyte in one allocation.
+        let long = """
+        { "properties": { \((1...60).map { "\"f\($0)\": {\"type\":\"string\",\"title\":\"Field \($0)\"}" }.joined(separator: ",")) },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+            \((1...60).map { "{\"type\":\"Control\",\"scope\":\"#/properties/f\($0)\"}" }.joined(separator: ",")) ] } }
+        """
+        let big = MediaZoomView()
+        big.configure(.form(long), ink: .black, paper: .white, dark: false)
+        for _ in 0..<40 { big.zoomIn() }
+        if let pixels = big.debugPixels {
+            let megabytes = Double(pixels * 4) / (1024 * 1024)
+            check(megabytes < 48,
+                  String(format: "a long form zoomed all the way stays a sane bitmap (%.0f MB)",
+                         megabytes))
+            check(megabytes > 4,
+                  String(format: "…and is still drawn large, not clipped to nothing (%.0f MB)",
+                         megabytes))
+        } else {
+            check(false, "a long form zoomed all the way drew nothing at all")
         }
 
         // ⌘C in the window takes the drawing, and takes it at a readable size

@@ -130,6 +130,56 @@ turned out to be different from what anyone expected. A diagram on every append
 is decoration, and the rule below about not writing a transcript applies to
 pictures too.
 
+## When the answer is a form, draw that
+
+A block of JSON with a JSONForms `uiSchema` in it is **drawn as the form it
+describes** — groups as boxes, `HorizontalLayout` as columns, each `Control` as
+a labelled field carrying its type and its description, an `enum` as something
+you pick from, a `boolean` as a checkbox. Useful when the task is about a
+schema: a dependency in an IDP, a catalogue entry, anything with a
+`properties` + `uiSchema` pair.
+
+You do not need a special fence. A plain ```` ```json ```` block is drawn if a
+`uiSchema` is found anywhere inside it, which means a payload pasted or piped
+straight out of an API is drawn with nothing rewritten:
+
+````bash
+{ echo '```json'; curl -s "$IDP/dependencies/rds-aurora"; echo '```'; } \
+  | ledge append "$ID"
+````
+
+Three shapes all work: the whole payload with the form buried at
+`attributes.schema`, an object with `uiSchema` and `properties` side by side,
+and a bare uiSchema with no properties at all — which is what trying a layout
+out looks like before the fields exist. Without properties the labels come from
+the last segment of each `scope`.
+
+### What it is worth saying
+
+Two things are marked with a ⚠ in the note's own ink, and they are the reason
+to draw the form rather than describe it:
+
+- a `scope` that resolves to no property, drawn with the scope itself inside
+  the field — that string is what has to change
+- under the form: a property defined and never placed by any control, and an
+  `additionalProperties` sitting *inside* `properties`, where JSON Schema reads
+  it as a field and the rule it was meant to be is simply absent
+
+If you are proposing a uiSchema, append it and say what the drawing shows. If
+you are reading one the user already has, the warnings are worth repeating in
+words — they are easy to miss in 300 lines of JSON.
+
+### What it is not
+
+A wireframe. Nothing takes the caret, nothing validates, and `rule` /
+`condition` are not evaluated. Do not tell the user their form "works" because
+it drew.
+
+A form too tall for the note is not drawn on the paper: its block carries a
+mark that opens it in a window that zooms. That is normal and not a failure —
+but it does mean a 300-line payload is something they have to open, so say
+what matters about it in words rather than relying on the drawing.
+
 ## Reading it back
 
 ```bash

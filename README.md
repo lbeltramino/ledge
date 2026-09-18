@@ -126,6 +126,29 @@ SQLite index beside it is a cache you can delete at any moment.
   <img src="docs/diagram.png" width="430" alt="A note whose mermaid block is drawn as a flowchart underneath, with the fence still there above it">
 </p>
 
+- **Forms, from a uiSchema.** A block of JSON with a JSONForms `uiSchema` in it
+  is drawn as the form it describes: groups as boxes, `HorizontalLayout` as
+  columns, each field with its type and its description, an `enum` as something
+  you pick from. It redraws while you type, which is the part a round trip
+  through a front end does not give you. No special fence — a payload pasted
+  out of an API is drawn with nothing rewritten, and so is a bare uiSchema
+  typed by hand to try a layout out. Two things are marked: a `scope` that
+  resolves to nothing, shown as the scope itself because that string is what
+  has to change, and, under the form, a property defined and never placed. It
+  is a wireframe and says so: nothing takes the caret and nothing validates.
+
+<p align="center">
+  <img src="docs/form.png" width="430" alt="A note whose JSON block is drawn underneath as a form with a group, a required field and a select">
+</p>
+
+- **A drawing, at a size you can read.** Press a picture, a diagram or a form
+  and it opens in a window of its own that scrolls and zooms — `⌘+`, `⌘-`, `⌘0`
+  to fit, `⌘1` for life size, pinch, and `⌘C` to take it. Zoom is a redraw and
+  not a stretch: at 4× a form is laid out again with type four times the size
+  and a photograph is decoded from its file. Drag the window wider and the
+  drawing follows. Anything taller than a screenful and a half of the note is
+  not drawn on the paper at all — its block carries the mark that opens it,
+  which is how a 300-line payload stays a note rather than becoming one.
 - **Paste a screenshot.** ⌘V with a picture on the clipboard writes it into
   `resources/img/` and drops the reference in, on a line of its own. A file
   copied in Finder is copied across as it is; pixels copied out of an app are
@@ -298,9 +321,12 @@ It was 12 MB when this table was first written and is 13.8 MB now, measured from
 outside the process with `vmmap --summary` after eighteen idle seconds. Pictures
 and diagrams cost nothing until a note that has one is open: about 0.4 MB of
 that figure is the diagram code being mapped, and a 2000×1500 photograph adds
-1.4 MB while you are looking at it rather than the 11.4 MB it weighs decoded. For
-comparison, on the machine that number came from: Notes 103 MB, Chrome 281 MB,
-Safari 496 MB.
+1.4 MB while you are looking at it rather than the 11.4 MB it weighs decoded. A
+drawn form on a note is under 2 MB of pixels, and one never rasterises into more
+than 32 MB however far it is zoomed: a form is as tall as it needs to be and the
+window multiplies both sides, so a long one at 8× would otherwise be half a
+gigabyte in a single allocation. For comparison, on the machine that number
+came from: Notes 103 MB, Chrome 281 MB, Safari 496 MB.
 
 `--diagnose` will tell you about 16 MB, and that is not the same measurement:
 it prints the footprint *after* compiling every highlighting rule, resolving
@@ -333,7 +359,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 231 unit tests
+swift run ledge-tests                               # 241 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -496,7 +522,8 @@ change for that to work.
 ## Markdown it understands
 
 Headings, bold, italic, quotes, bullets, numbered lists, tasks, tags, links
-between notes, and links out. For code, all three of Markdown's forms: inline
+between notes, links out, tables, and — drawn rather than highlighted —
+` ```mermaid ` blocks and JSON with a JSONForms `uiSchema` in it. For code, all three of Markdown's forms: inline
 `` ` ``, fenced ``` ``` ``` and `~~~`, and four-space indented blocks — which is
 what you get from pasting a terminal. A nested list item also starts with four
 spaces and is deliberately not treated as code.

@@ -114,7 +114,7 @@ final class MediaWindow: NSPanel {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags == .command else { return false }
         switch event.charactersIgnoringModifiers {
-        case "1": window.zoomView.zoomToActualSize()
+        case "1": window.zoomView.zoomToNaturalWidth()
         case "c": window.zoomView.copyToClipboard()
         default: return false
         }
@@ -135,10 +135,41 @@ final class MediaZoomView: NSView {
     private var dark = false
     private var content: NSImage?
 
-    /// The width that `zoom == 1` means. For the two drawn things it is a
-    /// readable column; for a picture it is the picture's own pixels, so 1 is
-    /// life size and the number in the title means something.
-    private var baseWidth: CGFloat = 620
+    /// The drawing's own width: what a picture's file holds, what a form asks
+    /// for, what a diagram wants. `zoom == 1` never goes past it.
+    private var natural: CGFloat = 620
+
+    /// The width `zoom == 1` draws at: the window's.
+    ///
+    /// Reading the window rather than a number fixed when it opened is what
+    /// makes dragging the window's edge do anything — the drawing is laid out
+    /// again at the new width, narrower or wider.
+    ///
+    /// It used to stop at the drawing's own width, on the reasoning that type
+    /// twice life size is silly. But a window you have deliberately made bigger
+    /// is a request for a bigger drawing, and capping it meant dragging the
+    /// edge outwards did nothing at all — reported exactly that way. A picture
+    /// still stops at its own pixels, because past those there is nothing more
+    /// to show and ⌘+ is there for when you want it anyway.
+    private var baseWidth: CGFloat {
+        // The inset is for the scroller that may appear over the drawing, and
+        // it belongs only to the case where there is a window at all: with no
+        // superview this has to answer exactly the drawing's own width, or
+        // "life size" is four points off it.
+        guard let room = superview.map({ $0.bounds.width - 4 }) else { return natural }
+        return max(140, capsAtNatural ? min(room, natural) : room)
+    }
+
+    /// Whether this is something with a size of its own to respect.
+    private var capsAtNatural: Bool {
+        if case .picture = subject { return true }
+        return false
+    }
+
+    /// The last width drawn at, so a rebuild that changes nothing does not run.
+    /// Autohiding scrollers make this necessary: a redraw can take the room
+    /// that decided it, and two of those in a row is a loop.
+    private var lastDrawnAt: CGFloat = 0
 
     private(set) var zoom: CGFloat = 1
 
@@ -148,13 +179,29 @@ final class MediaZoomView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    /// Redraw when the window is resized. The clip view is what actually
+    /// changes size, so that is what is watched.
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification,
+                                                  object: nil)
+        guard let clip = superview else { return }
+        clip.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(roomChanged),
+                                               name: NSView.frameDidChangeNotification,
+                                               object: clip)
+    }
+
+    @objc private func roomChanged() { rebuild() }
+
     func configure(_ subject: MediaWindow.Subject, ink: NSColor, paper: NSColor, dark: Bool) {
         self.subject = subject
         self.ink = ink
         self.paper = paper
         self.dark = dark
         self.zoom = 1
-        self.baseWidth = Self.naturalWidth(of: subject)
+        self.natural = Self.naturalWidth(of: subject)
+        self.lastDrawnAt = 0
         rebuild()
     }
 
@@ -174,15 +221,14 @@ final class MediaZoomView: NSView {
 
     func zoomIn() { set(zoom * 1.25) }
     func zoomOut() { set(zoom / 1.25) }
-    func zoomToActualSize() { set(1) }
+
 
     /// The zoom at which the whole drawing fits the window, which is what you
     /// want the moment something is taller than the screen.
     func zoomToFit() {
-        guard let clip = superview as? NSClipView, let content else { return }
-        let scale = min(clip.bounds.width / (content.size.width / zoom),
-                        clip.bounds.height / (content.size.height / zoom))
-        set(scale)
+        guard let clip = superview, let content, content.size.height > 0 else { return }
+        // Width already fits at 1×, so this is only ever about the height.
+        set(min(1, zoom * clip.bounds.height / content.size.height))
     }
 
     private func set(_ wanted: CGFloat) {
@@ -191,6 +237,10 @@ final class MediaZoomView: NSView {
         zoom = next
         rebuild()
     }
+
+    /// Life size: a picture at its own pixels, a drawing at the width it asks
+    /// for — whatever the window happens to be.
+    func zoomToNaturalWidth() { set(natural / baseWidth) }
 
     override func magnify(with event: NSEvent) { set(zoom * (1 + event.magnification)) }
 
@@ -223,7 +273,7 @@ final class MediaZoomView: NSView {
         let image: NSImage?
         switch subject {
         case .form(let source):
-            image = MediaStore.formForCopying(source, ink: ink)
+            image = MediaStore.formForCopying(source, ink: ink, dark: dark)
         case .diagram(let source):
             image = MediaStore.diagramForCopying(source, dark: dark)
         case .picture(let url):
@@ -243,6 +293,8 @@ final class MediaZoomView: NSView {
     func rebuild() {
         guard let subject else { return }
         let width = baseWidth * zoom
+        guard abs(width - lastDrawnAt) > 1 else { return }
+        lastDrawnAt = width
         let backing = window?.backingScaleFactor ?? 2
 
         switch subject {
@@ -250,7 +302,7 @@ final class MediaZoomView: NSView {
             // Straight to the drawing: `MediaStore.form` never draws wider than
             // the form asks for, and here going wider is the whole point.
             content = UISchema.find(in: source).flatMap {
-                FormDraw.image($0, width: width, scale: backing, ink: ink)
+                FormDraw.image($0, width: width, scale: backing, ink: ink, dark: dark)
             }
         case .diagram(let source):
             content = MediaStore.diagram(source, available: width, scale: backing, dark: dark)
@@ -278,4 +330,10 @@ final class MediaZoomView: NSView {
 
     var debugContentSize: NSSize? { content?.size }
     var debugContent: NSImage? { content }
+
+    /// What the drawing actually costs, in pixels rather than in points — the
+    /// only number that says how much memory it took.
+    var debugPixels: Int? {
+        content?.representations.first.map { $0.pixelsWide * $0.pixelsHigh }
+    }
 }

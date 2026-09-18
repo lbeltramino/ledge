@@ -197,38 +197,28 @@ enum Renderer {
     }
 
     /// A uiSchema in a note, drawn as the form it describes.
+    ///
+    /// The JSON is deliberately short. A real payload is three hundred lines
+    /// and the picture would be a wall of text with a form peeking out of the
+    /// bottom, which is true of that payload and says nothing about this.
     static func form() -> NSImage {
-        let size = NSSize(width: 430, height: 900)
+        let size = NSSize(width: 430, height: 820)
         return image(size: size) { _ in
             var note = Note(title: "Nueva dependencia", color: .coral)
             note.body = """
-            Probando el alta:
-
             ```json
-            {
-              "name": "Redis",
-              "required": ["cluster"],
+            { "required": ["cluster"],
               "properties": {
                 "cluster": { "type": "string", "title": "Cluster",
                              "description": "Dónde vive la instancia" },
-                "tls": { "type": "boolean", "title": "TLS" },
                 "tier": { "type": "string", "title": "Tier",
-                          "enum": ["cache", "session", "queue"] },
-                "eviction": { "type": "string", "title": "Eviction",
-                              "readOnly": true }
-              },
-              "uiSchema": {
-                "type": "VerticalLayout",
-                "elements": [
-                  { "type": "Group", "label": "Conexión", "elements": [
-                    { "type": "Control", "scope": "#/properties/cluster" },
-                    { "type": "HorizontalLayout", "elements": [
-                      { "type": "Control", "scope": "#/properties/tier" },
-                      { "type": "Control", "scope": "#/properties/tls" } ] } ] },
-                  { "type": "Control", "scope": "#/properties/evicton" }
-                ]
-              }
-            }
+                          "enum": ["cache", "session"] },
+                "tls": { "type": "boolean", "title": "TLS" } },
+              "uiSchema": { "type": "Group", "label": "Conexión", "elements": [
+                { "type": "Control", "scope": "#/properties/cluster" },
+                { "type": "HorizontalLayout", "elements": [
+                  { "type": "Control", "scope": "#/properties/tier" },
+                  { "type": "Control", "scope": "#/properties/tls" } ] } ] } }
             ```
             """
             draw(card(note, size: size, filename: "Redis.md") { card in
