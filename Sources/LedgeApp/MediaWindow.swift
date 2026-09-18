@@ -164,8 +164,9 @@ final class MediaZoomView: NSView {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let size = MediaStore.pixelSize(of: source) else { return 620 }
             return max(120, size.width)
-        // A column wide enough that a two-column row is still two columns.
-        case .diagram, .form: return 620
+        case .form(let source): return MediaStore.formWidth(source) ?? 620
+        // A column wide enough that a diagram's own text is not shrunk.
+        case .diagram: return 620
         }
     }
 
@@ -222,7 +223,7 @@ final class MediaZoomView: NSView {
         let image: NSImage?
         switch subject {
         case .form(let source):
-            image = MediaStore.formForCopying(source, ink: ink, font: .systemFont(ofSize: 13))
+            image = MediaStore.formForCopying(source, ink: ink)
         case .diagram(let source):
             image = MediaStore.diagramForCopying(source, dark: dark)
         case .picture(let url):
@@ -246,8 +247,11 @@ final class MediaZoomView: NSView {
 
         switch subject {
         case .form(let source):
-            content = MediaStore.form(source, available: width, scale: backing, ink: ink,
-                                      font: .systemFont(ofSize: 13 * zoom))
+            // Straight to the drawing: `MediaStore.form` never draws wider than
+            // the form asks for, and here going wider is the whole point.
+            content = UISchema.find(in: source).flatMap {
+                FormDraw.image($0, width: width, scale: backing, ink: ink)
+            }
         case .diagram(let source):
             content = MediaStore.diagram(source, available: width, scale: backing, dark: dark)
         case .picture(let url):

@@ -1021,7 +1021,7 @@ final class NoteTextView: NSTextView {
 
         codeCopy.onCopy = { [weak self] in self?.copyHoveredBlock() }
         addSubview(codeCopy)
-        codeLoupe.onOpen = { [weak self] in _ = self?.openHoveredForm() }
+        codeLoupe.onOpen = { [weak self] in _ = self?.openHoveredBlockDrawing() }
         addSubview(codeLoupe)
         mediaCopy.onCopy = { [weak self] in _ = self?.copyHoveredMedia() }
         addSubview(mediaCopy)
@@ -1282,14 +1282,33 @@ final class NoteTextView: NSTextView {
     func refreshMedia() {
         guard let storage = textStorage, let container = textContainer,
               container.size.width > 1 else { return }
-        let items = Media.all(in: string).filter(\.kind.isInline)
+        let items = Media.all(in: string)
         let available = max(80, container.size.width - 4)
         mediaWidth = container.size.width
+        folded = [:]
         let scale = window?.backingScaleFactor ?? 2
         let dark = effectiveAppearance.isDark
         var seen: Set<Int> = []
 
         for item in items {
+            // Whether a drawing goes on the paper is a question about its size,
+            // not about what kind of thing it is. One that would not fit in the
+            // note is not drawn at all: it is reached through the mark on the
+            // block that defines it, where it opens at a size worth reading.
+            // A drawing from a fenced block is measured at its own height, not
+            // at the height a picture would be squashed to — that cap was what
+            // made a tall form unreadable instead of folding it.
+            let cap = item.kind.isFenced ? CGFloat.greatestFiniteMagnitude
+                                         : MediaStore.maximumHeight
+            if item.kind.isFenced {
+                let measured = MediaView.height(of: content(for: item, available: available,
+                                                            scale: scale, dark: dark),
+                                                available: available, capHeight: cap)
+                if measured > room {
+                    folded[item.range.location] = item
+                    continue
+                }
+            }
             seen.insert(item.range.location)
             let view = mediaViews[item.range.location] ?? {
                 let fresh = MediaView()
@@ -1299,12 +1318,13 @@ final class NoteTextView: NSTextView {
             }()
             view.ink = tableInk
             view.paper = tablePaper
+            view.capHeight = cap
             lastOrigin = nil
             let content = content(for: item, available: available, scale: scale, dark: dark)
             view.origin = lastOrigin
             view.show(content)
 
-            let height = MediaView.height(of: content, available: available)
+            let height = MediaView.height(of: content, available: available, capHeight: cap)
             mediaHeights[item.range.location] = height
 
             reserveRoom(height, on: lastLine(of: item.range), in: storage)
@@ -1376,6 +1396,28 @@ final class NoteTextView: NSTextView {
     /// job: to say where the drawing came from.
     private var lastOrigin: MediaView.Origin?
 
+    /// Drawings too tall for this note, by the location of the block that
+    /// defines them. Filled in as the note is laid out and read when somebody
+    /// points at a block.
+    private(set) var folded: [Int: Media.Item] = [:]
+
+    /// How tall a drawing may be before it stops belonging on the paper.
+    ///
+    /// A screenful and a half of this note. Not one screenful: something a
+    /// little taller than the window is still perfectly good to scroll past,
+    /// and the first attempt at this — fold anything that does not fit at once
+    /// — took a two-node diagram off the paper, which is exactly the kind of
+    /// drawing a sticky note is for. What does not belong here is the one that
+    /// is five times the note, where scrolling to the other side of it is the
+    /// whole interaction.
+    ///
+    /// The visible height rather than the text's, because what is being
+    /// compared is what you can see at once.
+    private var room: CGFloat {
+        let visible = enclosingScrollView?.contentView.bounds.height ?? bounds.height
+        return max(160, visible) * 1.5
+    }
+
     private func content(for item: Media.Item, available: CGFloat, scale: CGFloat,
                          dark: Bool) -> MediaView.Content {
         switch item.kind {
@@ -1400,9 +1442,13 @@ final class NoteTextView: NSTextView {
             lastOrigin = .diagram(source)
             return .picture(image)
 
-        case .form:
-            // Never reached: a form is not drawn on the paper. See `isInline`.
-            return .missing("")
+        case .form(let source):
+            guard let image = MediaStore.form(source, available: available, scale: scale,
+                                              ink: tableInk) else {
+                return .missing("this uiSchema could not be drawn")
+            }
+            lastOrigin = .form(source)
+            return .picture(image)
         }
     }
 
@@ -1423,7 +1469,7 @@ final class NoteTextView: NSTextView {
         guard let manager = layoutManager, let container = textContainer,
               container.size.width > 1 else { return }
         manager.ensureLayout(for: container)
-        let items = Media.all(in: string).filter(\.kind.isInline)
+        let items = Media.all(in: string)
         for (location, view) in mediaViews {
             guard let item = items.first(where: { $0.range.location == location }),
                   let height = mediaHeights[location] else { continue }
@@ -1581,6 +1627,7 @@ final class NoteTextView: NSTextView {
         switch origin {
         case .file(let url): onOpenDrawing?(.picture(url))
         case .diagram(let source): onOpenDrawing?(.diagram(source))
+        case .form(let source): onOpenDrawing?(.form(source))
         }
         return true
     }
@@ -1602,6 +1649,13 @@ final class NoteTextView: NSTextView {
         case .diagram(let source):
             guard let image = MediaStore.diagramForCopying(source,
                                                            dark: effectiveAppearance.isDark)
+            else { return false }
+            pasteboard.clearContents()
+            pasteboard.writeObjects([image])
+        case .form(let source):
+            // At the size the form asks for, not at the size this note squeezed
+            // it into — what you paste into a ticket should be legible.
+            guard let image = MediaStore.formForCopying(source, ink: tableInk)
             else { return false }
             pasteboard.clearContents()
             pasteboard.writeObjects([image])
@@ -1724,10 +1778,9 @@ final class NoteTextView: NSTextView {
             codeCopy.isHidden = false
         }
 
-        // A block that defines a form gets a second mark beside the first. The
-        // form is not drawn under it — this is the only way to it.
-        let source = text.substring(with: block.body)
-        if formSource(source) != nil {
+        // A block whose drawing was folded away gets a second mark beside the
+        // first: with nothing on the paper, this is the only way to it.
+        if foldedItem(for: block.whole) != nil {
             codeLoupe.setFrameOrigin(NSPoint(x: rect.maxX - CodeCopyButton.size - LoupeButton.size - inset - 4,
                                              y: rect.minY + inset * 0.7))
             if codeLoupe.isHidden {
@@ -1740,20 +1793,18 @@ final class NoteTextView: NSTextView {
         }
     }
 
-    /// The block's text, when it is JSON with a form in it.
+    /// The drawing this block would have had, when it was too tall to draw.
     ///
-    /// Answered from a one-entry memo rather than parsed again: this is called
-    /// from `viewWillDraw`, so without it a note with a form in it would parse
-    /// its JSON on every frame the mark is visible.
-    private func formSource(_ source: String) -> String? {
-        if lastFormAnswer?.source == source { return lastFormAnswer?.isForm == true ? source : nil }
-        let isForm = source.contains("uiSchema") || source.contains("elements")
-            ? UISchema.find(in: source) != nil
-            : false
-        lastFormAnswer = (source, isForm)
-        return isForm ? source : nil
+    /// Matched by overlap rather than by an equal range: what counts as "the
+    /// block" is worked out twice, once when the note is laid out and once when
+    /// somebody points at it, and the two need not agree to the character.
+    ///
+    /// No parsing happens here — `refreshMedia` did it when the text last
+    /// changed. This is called from `viewWillDraw`, so anything expensive would
+    /// run on every frame the mark is on screen.
+    private func foldedItem(for block: NSRange) -> Media.Item? {
+        folded.values.first { NSIntersectionRange($0.range, block).length > 0 }
     }
-    private var lastFormAnswer: (source: String, isForm: Bool)?
 
     /// The block's rectangle, widened to the text container: the right margin
     /// beside a short line is still part of the block you are pointing at.
@@ -1778,13 +1829,18 @@ final class NoteTextView: NSTextView {
         hoveredBlock = nil
     }
 
-    /// The form defined by the block under the pointer, in a window of its own.
+    /// The drawing the block under the pointer stands for, in a window of its
+    /// own.
     @discardableResult
-    func openHoveredForm() -> Bool {
-        guard let storage = textStorage, let block = hoveredBlock,
-              let source = formSource((storage.string as NSString).substring(with: block.body))
-        else { return false }
-        onOpenDrawing?(.form(source))
+    func openHoveredBlockDrawing() -> Bool {
+        guard let block = hoveredBlock, let item = foldedItem(for: block.whole) else { return false }
+        switch item.kind {
+        case .form(let source): onOpenDrawing?(.form(source))
+        case .diagram(let source): onOpenDrawing?(.diagram(source))
+        case .image(let path):
+            guard let url = MediaStore.url(for: path) else { return false }
+            onOpenDrawing?(.picture(url))
+        }
         return true
     }
 

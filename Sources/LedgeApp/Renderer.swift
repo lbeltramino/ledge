@@ -197,12 +197,8 @@ enum Renderer {
     }
 
     /// A uiSchema in a note, drawn as the form it describes.
-    ///
-    /// Not in `run` yet: at 430 pt the JSON that defines the form is forty
-    /// lines of text and the drawing lands below the bottom of the card. It
-    /// becomes a README image the day a fenced block can be folded.
     static func form() -> NSImage {
-        let size = NSSize(width: 430, height: 1250)
+        let size = NSSize(width: 430, height: 900)
         return image(size: size) { _ in
             var note = Note(title: "Nueva dependencia", color: .coral)
             note.body = """
@@ -274,7 +270,8 @@ enum Renderer {
         write(diagram(), to: directory.appendingPathComponent("diagram.png"))
         write(table(), to: directory.appendingPathComponent("table.png"))
         write(outline(), to: directory.appendingPathComponent("outline.png"))
-        print("rendered 11 images into \(directory.path)")
+        write(form(), to: directory.appendingPathComponent("form.png"))
+        print("rendered 12 images into \(directory.path)")
     }
 
     enum DeckState { case rest, fanned, open }

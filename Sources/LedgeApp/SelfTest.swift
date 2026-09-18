@@ -2755,9 +2755,10 @@ enum SelfTest {
         card.layoutSubtreeIfNeeded()
         let view = card.textView
 
-        // Nothing is drawn on the paper for a form: that is the whole change.
-        check(view.debugMediaFrames.isEmpty,
-              "a form is not drawn under its block: \(view.debugMediaFrames.count) drawings")
+        // A small form fits, so it is drawn on the paper like a diagram is.
+        check(view.debugMediaFrames.count == 1,
+              "a form that fits is drawn under its block: \(view.debugMediaFrames.count) drawings")
+        check(view.codeLoupe.isHidden, "…and needs no mark on the block, the drawing carries one")
 
         guard let layoutManager = view.layoutManager, let container = view.textContainer else {
             check(false, "the text view has no layout"); return
@@ -2777,9 +2778,41 @@ enum SelfTest {
         var asked: MediaWindow.Subject?
         view.onOpenDrawing = { asked = $0 }
 
+        // Now one that cannot fit: a form of twenty fields in the same card.
+        // The drawing comes off the paper and the block offers the loupe.
+        let many = (1...20).map {
+            "\"f\($0)\": { \"type\": \"string\", \"title\": \"Field \($0)\" }"
+        }.joined(separator: ",\n            ")
+        let controls = (1...20).map {
+            "{ \"type\": \"Control\", \"scope\": \"#/properties/f\($0)\" }"
+        }.joined(separator: ",\n              ")
+        view.string = """
+        Del IDP:
+
+        ```json
+        {
+          "properties": {
+            \(many)
+          },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+              \(controls) ] }
+        }
+        ```
+
+        ```bash
+        kubectl get pods
+        ```
+
+        Después.
+        """
+        card.layoutSubtreeIfNeeded()
+        view.refreshMedia()
+        check(view.debugMediaFrames.isEmpty,
+              "a form that cannot fit is not drawn: \(view.debugMediaFrames.count) drawings")
+
         let onForm = rect("\"uiSchema\"")
         view.updateCodeCopy(at: NSPoint(x: onForm.midX, y: onForm.midY))
-        check(!view.codeLoupe.isHidden, "a JSON block with a uiSchema offers the loupe")
+        check(!view.codeLoupe.isHidden, "…and its block offers the loupe instead")
         if let whole = view.codeBlockRectForTesting, !view.codeLoupe.isHidden {
             let mark = view.codeLoupe.frame
             check(mark.maxX <= whole.maxX && mark.minX > whole.midX,

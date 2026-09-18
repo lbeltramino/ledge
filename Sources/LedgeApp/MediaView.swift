@@ -21,7 +21,7 @@ final class MediaView: NSView {
     /// copied from its file at full quality — what you want when you paste it
     /// somewhere else is the picture, not the thumbnail a note happened to
     /// draw.
-    enum Origin { case file(URL), diagram(String) }
+    enum Origin { case file(URL), diagram(String), form(String) }
     var origin: Origin?
 
     private var content: Content = .missing("")
@@ -41,10 +41,12 @@ final class MediaView: NSView {
 
     /// What this wants to be drawn at, given the room — the number the text
     /// view reserves before it puts the view anywhere.
-    static func height(of content: Content, available: CGFloat) -> CGFloat {
+    static func height(of content: Content, available: CGFloat,
+                       capHeight: CGFloat = MediaStore.maximumHeight) -> CGFloat {
         switch content {
         case .picture(let image):
-            return MediaStore.fit(image.size, into: available).height + padding * 2
+            return MediaStore.fit(image.size, into: available, capHeight: capHeight).height
+                + padding * 2
         case .missing:
             return 22
         }
@@ -54,16 +56,21 @@ final class MediaView: NSView {
 
     /// Where the picture itself is, inside this view's full-width frame — the
     /// copy mark hangs off its corner, not off the paper beside it.
+    /// How tall this one is allowed to be drawn. A picture is capped so a
+    /// photograph cannot take over the note; a drawing from a fenced block is
+    /// not, because folding decides that instead.
+    var capHeight: CGFloat = MediaStore.maximumHeight
+
     var pictureRect: NSRect? {
         guard case .picture(let image) = content else { return nil }
-        let size = MediaStore.fit(image.size, into: bounds.width)
+        let size = MediaStore.fit(image.size, into: bounds.width, capHeight: capHeight)
         return NSRect(x: 0, y: Self.padding, width: size.width, height: size.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         switch content {
         case .picture(let image):
-            let size = MediaStore.fit(image.size, into: bounds.width)
+            let size = MediaStore.fit(image.size, into: bounds.width, capHeight: capHeight)
             let box = NSRect(x: 0, y: Self.padding,
                              width: size.width, height: size.height)
             // A hairline, the way a picture on a desk has an edge. Without it a

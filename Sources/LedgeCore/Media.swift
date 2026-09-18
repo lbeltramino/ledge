@@ -19,19 +19,12 @@ public enum Media {
         /// uiSchema inside it is `UISchema`'s job, not this one's.
         case form(source: String)
 
-        /// Whether this is drawn on the paper under the markdown that asks for
-        /// it.
-        ///
-        /// A picture and a diagram are; a form is not. A form is defined by
-        /// forty lines of JSON, so drawing it under them puts it below the
-        /// bottom of the note — and unlike the other two it is a page of fields
-        /// rather than one picture, so it wants somewhere it can be made
-        /// bigger. It is opened instead, from a mark on the block that defines
-        /// it.
-        public var isInline: Bool {
+        /// Whether this lives in a fenced block, which is what gives it
+        /// somewhere to hang a mark when it is too tall to be drawn.
+        public var isFenced: Bool {
             switch self {
-            case .image, .diagram: return true
-            case .form: return false
+            case .diagram, .form: return true
+            case .image: return false
             }
         }
     }

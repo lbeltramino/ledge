@@ -204,9 +204,15 @@ enum MediaStore {
 
     /// What a picture will be drawn at, given the room. Never upscaled: a small
     /// screenshot blown up to the width of a note looks like a mistake.
-    static func fit(_ size: CGSize, into available: CGFloat) -> CGSize {
+    /// `capHeight` is what keeps a tall photograph from becoming the whole
+    /// note. A drawing that lives in a fenced block passes no cap: it is either
+    /// short enough to belong on the paper or it is folded away entirely, and
+    /// squashing one to a third of its size to make it "fit" is how a form
+    /// ended up unreadable.
+    static func fit(_ size: CGSize, into available: CGFloat,
+                    capHeight: CGFloat = maximumHeight) -> CGSize {
         guard size.width > 0, size.height > 0 else { return .zero }
-        let scale = min(available / size.width, maximumHeight / size.height, 1)
+        let scale = min(available / size.width, capHeight / size.height, 1)
         return CGSize(width: (size.width * scale).rounded(),
                       height: (size.height * scale).rounded())
     }
@@ -309,16 +315,18 @@ enum MediaStore {
     /// will appear. Cached on everything the drawing depends on, because this
     /// is asked for again on every relayout of the note.
     static func form(_ source: String, available: CGFloat, scale: CGFloat,
-                     ink: NSColor, font: NSFont) -> NSImage? {
+                     ink: NSColor) -> NSImage? {
         guard let form = UISchema.find(in: source) else { return nil }
-        let width = max(1, available)
+        // Never wider than the form asks for: a note twice as wide as the form
+        // needs should leave room around it, not blow the type up to 30 pt.
+        let width = min(FormDraw.naturalWidth(of: form), max(1, available))
         let backing = max(1, scale)
-        let key = "form|\(Int(width))|\(Int(backing))|\(Int(font.pointSize * 10))"
-            + "|\(ink.hashValue)|\(source.hashValue)" as NSString
+        let key = "form|\(Int(width))|\(Int(backing))|\(ink.hashValue)|\(source.hashValue)"
+            as NSString
         if let hit = cache.object(forKey: key) { return hit }
 
-        guard let image = FormDraw.image(form, available: width, scale: backing,
-                                         ink: ink, font: font) else { return nil }
+        guard let image = FormDraw.image(form, width: width, scale: backing, ink: ink)
+        else { return nil }
         cache.setObject(image, forKey: key,
                         cost: Int(image.size.width * backing * image.size.height * backing * 4))
         return image
@@ -326,8 +334,13 @@ enum MediaStore {
 
     /// The form at a size worth pasting into a ticket, rather than at the width
     /// of a sticky note. Same bargain as `diagramForCopying`.
-    static func formForCopying(_ source: String, ink: NSColor, font: NSFont) -> NSImage? {
+    static func formForCopying(_ source: String, ink: NSColor) -> NSImage? {
         guard let form = UISchema.find(in: source) else { return nil }
-        return FormDraw.image(form, available: 620, scale: 2, ink: ink, font: font)
+        return FormDraw.image(form, width: FormDraw.naturalWidth(of: form), scale: 2, ink: ink)
+    }
+
+    /// The width a form wants, for whoever has to decide whether it fits.
+    static func formWidth(_ source: String) -> CGFloat? {
+        UISchema.find(in: source).map(FormDraw.naturalWidth(of:))
     }
 }

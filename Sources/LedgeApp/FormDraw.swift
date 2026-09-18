@@ -24,9 +24,19 @@ enum FormDraw {
         case text(String, NSRect, NSFont, NSColor, wrap: Bool)
     }
 
+    /// Type and spacing, at the size the form is *designed* at rather than at
+    /// whatever room a note happens to have.
+    ///
+    /// The numbers are the ones swift-mermaid lays a diagram out with — 16 pt
+    /// for a node's text, 13 for a label on an edge, 16 semibold for the title
+    /// of a subgraph, 18 by 12 of padding. That is why a diagram in a note is
+    /// legible and the first version of this was not: mermaid designs big and
+    /// scales the finished drawing down to fit, and this measured itself
+    /// against the width it had and shrank the type to 10 pt to get there.
+    ///
+    /// So: laid out at these sizes, always, and scaled once at the end.
     private struct Pen {
         let ink: NSColor
-        let font: NSFont
 
         var faint: NSColor { ink.withAlphaComponent(0.42) }
         var mid: NSColor { ink.withAlphaComponent(0.62) }
@@ -38,25 +48,40 @@ enum FormDraw {
         /// allowed to shout.
         var alarm: NSColor { NSColor.systemRed.withAlphaComponent(0.85) }
 
-        var small: NSFont { .systemFont(ofSize: max(8, font.pointSize * 0.76)) }
-        var label: NSFont { .systemFont(ofSize: max(8.5, font.pointSize * 0.8), weight: .medium) }
-        var title: NSFont { .systemFont(ofSize: max(9, font.pointSize * 0.88), weight: .semibold) }
-        var value: NSFont { .systemFont(ofSize: max(9, font.pointSize * 0.86)) }
+        var small: NSFont { .systemFont(ofSize: 13) }
+        var label: NSFont { .systemFont(ofSize: 14, weight: .medium) }
+        var title: NSFont { .systemFont(ofSize: 16, weight: .semibold) }
+        var value: NSFont { .systemFont(ofSize: 14) }
     }
 
     // MARK: - the one entry point
 
-    /// The form at the width it will appear, rasterised the way a diagram is.
-    static func image(_ form: UISchema.Form, available: CGFloat, scale: CGFloat,
-                      ink: NSColor, font: NSFont) -> NSImage? {
-        let width = max(140, available)
-        let pen = Pen(ink: ink, font: font)
+    /// The form drawn to exactly `width`.
+    ///
+    /// Laid out at its natural size and then scaled to get there, the way
+    /// mermaid does — so the type keeps its proportions instead of being
+    /// squeezed, and scaling is a redraw of vectors rather than a stretched
+    /// bitmap. Under its natural width it shrinks; above it, it grows, which is
+    /// what the window that zooms one asks for.
+    static func image(_ form: UISchema.Form, width: CGFloat, scale: CGFloat,
+                      ink: NSColor) -> NSImage? {
+        // Narrow the layout before shrinking the type. Given 350 pt for a form
+        // that would like 468, laying it out at 350 gives two columns of 151 pt
+        // with the text at its proper size; laying it out at 468 and scaling
+        // gives two roomy columns of 10 pt text, which is the complaint that
+        // started all of this. Only below one usable column does the type give
+        // way.
+        let wanted = max(0.05, width)
+        let layout = max(minimumWidth, min(wanted, naturalWidth(of: form)))
+        let pen = Pen(ink: ink)
 
         var shapes: [Shape] = []
-        let height = walk(form, width: width, pen: pen, into: &shapes)
+        let height = walk(form, width: layout, pen: pen, into: &shapes)
         guard height > 1 else { return nil }
 
-        let size = NSSize(width: width, height: ceil(height))
+        let shrink = wanted / layout
+        let size = NSSize(width: (layout * shrink).rounded(),
+                          height: (height * shrink).rounded())
         let backing = max(1, scale)
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -74,6 +99,9 @@ enum FormDraw {
         flip.scaleX(by: backing, yBy: backing)
         flip.translateX(by: 0, yBy: size.height)
         flip.scaleX(by: 1, yBy: -1)
+        // …and then into the layout's own coordinates, so everything below can
+        // go on thinking in the sizes it was designed at.
+        flip.scaleX(by: shrink, yBy: shrink)
         flip.concat()
         for shape in shapes { paint(shape) }
         NSGraphicsContext.restoreGraphicsState()
@@ -117,8 +145,46 @@ enum FormDraw {
 
     // MARK: - the walk
 
-    private static let pad: CGFloat = 10
-    private static let gap: CGFloat = 8
+    // swift-mermaid's node padding, for the same reason as the fonts.
+    private static let pad: CGFloat = 18
+    private static let gap: CGFloat = 12
+
+    /// The narrowest column a field is worth drawing in, before the whole
+    /// drawing is scaled. Below this a two-column row stops being two columns
+    /// of anything.
+    private static let column: CGFloat = 210
+
+    /// One column, with its padding: narrower than this and the type has to
+    /// give way instead.
+    static var minimumWidth: CGFloat { pad * 2 + column }
+
+    /// The width this form wants, from what is in it.
+    ///
+    /// A hand-written uiSchema of four stacked fields asks for one column and
+    /// is drawn at very nearly full size in a note; the payload with three
+    /// two-column groups asks for two and is scaled down to fit. The form
+    /// decides, not the note.
+    static func naturalWidth(of form: UISchema.Form) -> CGFloat {
+        pad * 2 + column * CGFloat(columns(in: form.root)) 
+            + gap * CGFloat(columns(in: form.root) - 1)
+    }
+
+    private static func columns(in element: UISchema.Element) -> Int {
+        switch element {
+        case .horizontal(let children):
+            // A row of rows is not six columns wide: what matters is how many
+            // fields end up side by side at the widest point.
+            return max(1, children.map { max(1, columns(in: $0)) }.reduce(0, +))
+        case .vertical(let children):
+            return children.map { columns(in: $0) }.max() ?? 1
+        case .group(_, let children):
+            return children.map { columns(in: $0) }.max() ?? 1
+        case .categorization(let categories):
+            return categories.flatMap(\.elements).map { columns(in: $0) }.max() ?? 1
+        case .control, .note, .unknown:
+            return 1
+        }
+    }
 
     private static func walk(_ form: UISchema.Form, width: CGFloat, pen: Pen,
                              into shapes: inout [Shape]) -> CGFloat {
@@ -162,7 +228,7 @@ enum FormDraw {
             let column = (width - gap * (count - 1)) / count
             // A row that will not fit stacks instead. On a sticky note three
             // columns of 40 pt is not a preview of anything.
-            guard column >= 84 else {
+            guard column >= Self.column * 0.7 else {
                 return place(.vertical(children), x: x, y: y, width: width, pen: pen, into: &shapes)
             }
             var tallest: CGFloat = 0
