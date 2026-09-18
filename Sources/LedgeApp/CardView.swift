@@ -1286,6 +1286,7 @@ final class NoteTextView: NSTextView {
         let available = max(80, container.size.width - 4)
         mediaWidth = container.size.width
         folded = [:]
+        foldedHeights = [:]
         let scale = window?.backingScaleFactor ?? 2
         let dark = effectiveAppearance.isDark
         var seen: Set<Int> = []
@@ -1306,6 +1307,7 @@ final class NoteTextView: NSTextView {
                                                 available: available, capHeight: cap)
                 if measured > room {
                     folded[item.range.location] = item
+                    foldedHeights[item.range.location] = measured
                     continue
                 }
             }
@@ -1419,6 +1421,25 @@ final class NoteTextView: NSTextView {
     ///
     /// The visible height rather than the text's, because what is being
     /// compared is what you can see at once.
+    /// How tall each folded drawing would have been, so growing the note can
+    /// tell when one of them would now fit.
+    private var foldedHeights: [Int: CGFloat] = [:]
+
+    /// Whether the note has changed size enough for a drawing to change sides.
+    ///
+    /// Asked rather than comparing the room against what it was, because the
+    /// room changes continuously while a card slides open and re-drawing a
+    /// large form on every frame of that is exactly the kind of cost this app
+    /// does not pay. What matters is only whether something folded would now
+    /// fit, or something drawn no longer does.
+    private var foldingWouldChange: Bool {
+        let room = room
+        if foldedHeights.values.contains(where: { $0 <= room }) { return true }
+        return mediaHeights.contains { location, height in
+            mediaViews[location] != nil && height > room
+        }
+    }
+
     private var room: CGFloat {
         let visible = enclosingScrollView?.contentView.bounds.height ?? bounds.height
         return max(160, visible) * 1.5
@@ -1463,7 +1484,16 @@ final class NoteTextView: NSTextView {
     /// put anything, and measuring then gives every drawing a frame of zero.
     func mediaDidLayout() {
         guard let container = textContainer, container.size.width > 1 else { return }
-        if abs(container.size.width - mediaWidth) > 0.5 {
+        // The height as well as the width.
+        //
+        // Whether a drawing goes on the paper depends on how much of the note
+        // you can see at once, and that is settled the first time this is
+        // measured — which for some cards is before they have grown to their
+        // real size. Watching only the width meant the decision was never
+        // revisited: the same form drawn in one note and folded away in
+        // another, because one of the two happened to be measured while it was
+        // still short. Reported exactly that way, as "inconsistent".
+        if abs(container.size.width - mediaWidth) > 0.5 || foldingWouldChange {
             refreshMedia()
         } else {
             layoutMedia()

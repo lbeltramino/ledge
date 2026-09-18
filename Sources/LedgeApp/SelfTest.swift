@@ -2981,6 +2981,57 @@ enum SelfTest {
         window.contentView?.subviews.forEach { $0.removeFromSuperview() }
     }
 
+    /// The same form is drawn the same way in two notes of the same size.
+    ///
+    /// Reported as "created a child with the same code as the mother, and in
+    /// the child the form is not drawn — there is a loupe on the block and
+    /// clicking it shows the form. It is inconsistent."
+    ///
+    /// And it was: whether a drawing goes on the paper depends on how much of
+    /// the note you can see, that was settled the first time the note was
+    /// measured, and the only thing that caused a second measurement was a
+    /// change of width. A card measured while it was still growing kept its
+    /// answer forever.
+    static func checkFoldingFollowsTheCard() {
+        let note = """
+        Probando:
+
+        ```json
+        { "properties": {
+            \((1...7).map { "\"f\($0)\": {\"type\":\"string\",\"title\":\"Field \($0)\"}" }
+                .joined(separator: ",\n            ")) },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+            \((1...7).map { "{\"type\":\"Control\",\"scope\":\"#/properties/f\($0)\"}" }
+                .joined(separator: ",\n            ")) ] } }
+        ```
+        """
+        let record = NoteRecord(note: Note(title: "Plegado"), filename: "p.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+
+        // Short first, the way a card is before it has grown.
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 170)
+        card.layoutSubtreeIfNeeded()
+        let whenShort = card.textView.debugMediaCount
+        check(whenShort == 0, "en una card baja el formulario se pliega: \(whenShort) dibujos")
+
+        // …and then it grows, which is what actually happens.
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 900)
+        card.layoutSubtreeIfNeeded()
+        card.textView.mediaDidLayout()
+        check(card.textView.debugMediaCount == 1,
+              "y al crecer la card se dibuja, sin que cambie el ancho: "
+              + "\(card.textView.debugMediaCount) dibujos")
+
+        // And back: a card made small again folds it away rather than letting
+        // one drawing become the whole note.
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 170)
+        card.layoutSubtreeIfNeeded()
+        card.textView.mediaDidLayout()
+        check(card.textView.debugMediaCount == 0,
+              "y al achicarla vuelve a plegarse: \(card.textView.debugMediaCount) dibujos")
+    }
+
     /// Zooming redraws rather than stretches.
     ///
     /// The view on its own, with no window around it — which is also the check
@@ -4255,6 +4306,7 @@ enum SelfTest {
         checkMediaSurvivesTyping()
         checkCopyingADrawing()
         checkOpeningAForm()
+        checkFoldingFollowsTheCard()
         checkZoomingADrawing()
         checkPastingAPicture()
         checkDiagramsTheSkillPromises()
