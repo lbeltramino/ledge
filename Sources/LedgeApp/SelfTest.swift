@@ -1829,6 +1829,22 @@ enum SelfTest {
               "el formulario se dibuja en una hija igual que en cualquier nota: "
               + "\(card.textView.debugMediaCount) dibujos")
 
+        // El tamaño al que la arrastraste, que una hija tampoco recordaba:
+        // se busca en `records`, donde una hija no está, así que abría siempre
+        // con el tamaño por defecto.
+        try? await deck.debugSetGeometry(id: id, width: 380, height: 420)
+        deck.closeNote()
+        await deck.refresh()
+        deck.visit(id)
+        try? await Task.sleep(for: .milliseconds(900))
+        if let abierta = deck.debugCard {
+            check(abs(abierta.frame.width - 380) < 2 && abs(abierta.frame.height - 420) < 2,
+                  String(format: "una hija vuelve al tamaño que le diste (%.0f×%.0f)",
+                         abierta.frame.width, abierta.frame.height))
+        } else {
+            check(false, "no se reabrió la hija")
+        }
+
         // Y el botón que abre el editor grande.
         deck.debugCloseEditors()
         deck.expandCurrent()

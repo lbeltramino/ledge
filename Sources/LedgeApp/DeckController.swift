@@ -192,7 +192,7 @@ final class DeckController {
                 adoptExternal(fresh, for: record.id)
             }
         }
-        if let open = state.noteID, let record = records.first(where: { $0.id == open }) {
+        if let open = state.noteID, let record = shownRecord(open) {
             Settings.markSeen(open, at: record.updated)
         }
         rebuildTabs()
@@ -447,7 +447,7 @@ final class DeckController {
     /// is disposable — losing it on a rebuild costs nothing but the default.
     private var storedSize: NSSize? {
         guard let id = state.noteID,
-              let record = records.first(where: { $0.id == id }),
+              let record = shownRecord(id),
               let width = record.width, let height = record.height else { return nil }
         return NSSize(width: width, height: height)
     }
@@ -1016,7 +1016,7 @@ final class DeckController {
         cancelCollapse()
         commitPendingSave()
         state = .open(id)
-        if let record = records.first(where: { $0.id == id }) {
+        if let record = shownRecord(id) {
             Settings.markSeen(id, at: record.updated)
             tabs.first { $0.record.id == id }?.hasUnseen = false
         }
@@ -1492,7 +1492,7 @@ final class DeckController {
     /// afterwards, which is the reversible half of the same decision.
     private func createLinked(_ name: String, from parent: String, asChild: Bool) {
         Task {
-            let colour = records.first { $0.id == parent }?.color
+            let colour = shownRecord(parent)?.color
             if asChild {
                 _ = try? await store.createChild(title: name, of: parent, color: colour)
             } else {
@@ -1532,7 +1532,7 @@ final class DeckController {
 
     /// Archiving is reversible and quiet; deleting is neither, so it asks.
     private func confirmDelete(_ id: String) {
-        let title = records.first { $0.id == id }?.displayTitle ?? "this note"
+        let title = shownRecord(id)?.displayTitle ?? "this note"
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Delete “\(title)”?"
@@ -1760,6 +1760,9 @@ extension DeckController {
     func debugCardBody() -> String? { card?.textView.string }
     var debugCard: NoteCardView? { card }
     var debugEditorIDs: [String] { Array(editors.keys) }
+    func debugSetGeometry(id: String, width: Double, height: Double) async throws {
+        try await store.setGeometry(id: id, width: width, height: height)
+    }
     func debugCloseEditors() { editors.values.forEach { $0.close() }; editors = [:] }
     func debugFloating(_ id: String) -> FloatingNote? { floating[id] }
     var debugVisiting: String? { visiting?.id }
