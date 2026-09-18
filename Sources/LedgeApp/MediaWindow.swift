@@ -96,6 +96,31 @@ final class MediaWindow: NSPanel {
         giveBack?.makeKeyAndOrderFront(nil)
     }
 
+    /// The size keys, while a drawing is the thing in front.
+    ///
+    /// Called from the key monitor before the app-wide zoom, because that
+    /// monitor reads the event and swallows it before any window sees a
+    /// `keyDown` — so ⌘+ in here made the whole app bigger and left the form
+    /// exactly the size it was. Reported precisely that way.
+    ///
+    /// Through `ZoomKeys` rather than by comparing characters: which key sends
+    /// `+` depends on the layout, which is the entire reason that type exists.
+    static func handleKey(_ event: NSEvent) -> Bool {
+        guard let window = current, window.isVisible, window.isKeyWindow else { return false }
+        if let command = ZoomKeys.command(for: event) {
+            window.zoomView.apply(command)
+            return true
+        }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags == .command else { return false }
+        switch event.charactersIgnoringModifiers {
+        case "1": window.zoomView.zoomToActualSize()
+        case "c": window.zoomView.copyToClipboard()
+        default: return false
+        }
+        return true
+    }
+
     /// A check drives the view, never the window: creating a real panel inside
     /// `--selftest` is what hangs it.
     var debugZoomView: MediaZoomView { zoomView }
@@ -175,15 +200,13 @@ final class MediaZoomView: NSView {
         set(zoom * (1 + event.scrollingDeltaY * 0.01))
     }
 
-    override func keyDown(with event: NSEvent) {
-        guard event.modifierFlags.contains(.command) else { return super.keyDown(with: event) }
-        switch event.charactersIgnoringModifiers {
-        case "+", "=": zoomIn()
-        case "-": zoomOut()
-        case "0": zoomToFit()
-        case "1": zoomToActualSize()
-        case "c": copyToClipboard()
-        default: super.keyDown(with: event)
+    /// ⌘0 is "fit", not "actual size": on a drawing, the thing you want back is
+    /// the whole of it. ⌘1 is life size, where a picture is its own pixels.
+    func apply(_ command: ZoomKeys.Command) {
+        switch command {
+        case .bigger: zoomIn()
+        case .smaller: zoomOut()
+        case .actualSize: zoomToFit()
         }
     }
 

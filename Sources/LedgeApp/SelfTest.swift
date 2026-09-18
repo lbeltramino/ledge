@@ -2856,6 +2856,26 @@ enum SelfTest {
         for _ in 0..<80 { view.zoomOut() }
         check(view.zoom >= MediaZoomView.minimum - 0.001, "…and at \(MediaZoomView.minimum)")
 
+        // The size keys arrive as events read by the key monitor, not as a
+        // `keyDown` on this view — so the check hands it the same thing the
+        // monitor would, including the `+` a Spanish keyboard actually sends.
+        view.zoomToActualSize()
+        guard let before = view.debugContentSize else { check(false, "nothing drawn"); return }
+        for characters in ["+", "="] {
+            view.zoomToActualSize()
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.command], timestamp: 0,
+                windowNumber: 0, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: 24)
+            else { continue }
+            guard let command = ZoomKeys.command(for: event) else {
+                check(false, "⌘\(characters) was not read as a size key"); continue
+            }
+            view.apply(command)
+            check((view.debugContentSize?.width ?? 0) > before.width,
+                  "⌘\(characters) makes the drawing bigger, not the app")
+        }
+
         // ⌘C in the window takes the drawing, and takes it at a readable size
         // rather than at whatever zoom you happened to be looking at.
         view.zoomOut(); view.zoomOut()

@@ -221,6 +221,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // off the event rather than declared, because which character a
                 // keyboard sends for ⌘+ is not something a menu item can be
                 // told. See ZoomKeys.
+                // A drawing in front takes the size keys first: otherwise ⌘+
+                // makes every note bigger and leaves the drawing you are
+                // looking at alone.
+                if MediaWindow.handleKey(event) { return nil }
                 if ZoomKeys.handle(event) { return nil }
                 for deck in workspace.decks where deck.handleKey(event) { return nil }
                 return event
