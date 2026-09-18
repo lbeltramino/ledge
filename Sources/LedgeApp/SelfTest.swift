@@ -2997,6 +2997,76 @@ enum SelfTest {
         window.contentView?.subviews.forEach { $0.removeFromSuperview() }
     }
 
+    /// Escribir adentro de un bloque no le saca el formato de código.
+    ///
+    /// Reportado: "pego el json de un formulario, se ve; empiezo a editar el
+    /// json y se pierde el formato diferenciado del texto en las líneas que
+    /// estoy editando, y para recuperarlo tengo que cortar y pegar todo".
+    ///
+    /// Por el camino real —`insertText` y el resaltado que corre un turno
+    /// después— porque el que ya existía compara documentos quietos, línea por
+    /// línea, y nunca escribe nada.
+    static func checkEditingInsideAFencedBlock() async {
+        let note = """
+        Antes.
+
+        ```json
+        { "properties": { "a": { "type": "string", "title": "Alpha" } },
+          "uiSchema": { "type": "VerticalLayout", "elements": [
+            { "type": "Control", "scope": "#/properties/a" } ] } }
+        ```
+
+        Después.
+        """
+        let record = NoteRecord(note: Note(title: "Editando"), filename: "e.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 900)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+        guard let storage = view.textStorage else { check(false, "sin storage"); return }
+
+        /// La fuente y el fondo de la línea que contiene `needle`.
+        func style(of needle: String) -> (NSFont?, NSColor?) {
+            let at = (storage.string as NSString).range(of: needle)
+            guard at.location != NSNotFound else { return (nil, nil) }
+            let attrs = storage.attributes(at: at.location, effectiveRange: nil)
+            return (attrs[.font] as? NSFont, attrs[.backgroundColor] as? NSColor)
+        }
+
+        let antes = style(of: "\"uiSchema\"")
+        check(antes.0 != nil, "el bloque arranca con formato de código")
+
+        // Escribir en una línea del bloque, como se escribe.
+        let target = (storage.string as NSString).range(of: "\"title\": \"Alpha\"")
+        guard target.location != NSNotFound else { check(false, "no encontré la línea"); return }
+        view.setSelectedRange(NSRange(location: target.location, length: 0))
+        view.insertText("  ", replacementRange: view.selectedRange())
+        // El resaltado corre en el turno siguiente al de la edición.
+        try? await Task.sleep(for: .milliseconds(400))
+
+        // Y ahora tipeando de verdad: carácter por carácter, con comillas y
+        // llaves, que es lo que uno escribe editando un json, y borrando.
+        for ch in "\"extra\": {\"x\": 1}, " {
+            view.insertText(String(ch), replacementRange: view.selectedRange())
+            try? await Task.sleep(for: .milliseconds(12))
+        }
+        for _ in 0..<4 {
+            view.deleteBackward(nil)
+            try? await Task.sleep(for: .milliseconds(12))
+        }
+        view.insertText("\n", replacementRange: view.selectedRange())
+        try? await Task.sleep(for: .milliseconds(500))
+
+        let editada = style(of: "\"extra\"")
+        let vecina = style(of: "\"uiSchema\"")
+        check(editada.0 == vecina.0,
+              "la línea editada conserva la fuente del bloque: "
+              + "\(editada.0?.fontName ?? "ninguna") vs \(vecina.0?.fontName ?? "ninguna")")
+        check(editada.1 == vecina.1,
+              "…y su fondo: \(String(describing: editada.1)) vs \(String(describing: vecina.1))")
+    }
+
     /// The same form is drawn the same way in two notes of the same size.
     ///
     /// Reported as "created a child with the same code as the mother, and in
@@ -4322,6 +4392,7 @@ enum SelfTest {
         checkMediaSurvivesTyping()
         checkCopyingADrawing()
         checkOpeningAForm()
+        await checkEditingInsideAFencedBlock()
         checkFoldingFollowsTheCard()
         checkZoomingADrawing()
         checkPastingAPicture()
