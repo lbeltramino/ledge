@@ -133,7 +133,27 @@ final class MediaZoomView: NSView {
     private var ink: NSColor = .black
     private var paper: NSColor = .white
     private var dark = false
-    private var content: NSImage?
+
+    /// What is drawn, and how.
+    ///
+    /// A form is *not* held as a picture: it is painted straight into this view
+    /// every time, which costs a walk over a few hundred rectangles and no
+    /// pixels at all. Held as a bitmap it cost its whole area — a long payload
+    /// at 8× came to half a gigabyte, and the ceiling that stopped that also
+    /// stopped it being sharp. Cost is now the window's size, whatever the
+    /// zoom.
+    ///
+    /// A diagram is held as a PDF, which swift-mermaid hands over and which
+    /// stays vector at any size — the same bargain, made by somebody else. A
+    /// picture is pixels because that is what a picture is.
+    private enum Content {
+        case form(UISchema.Form)
+        case vector(NSImage)
+        case picture(NSImage)
+    }
+    private var content: Content?
+    /// What it comes to on screen, which is this view's size.
+    private var drawnSize: NSSize = .zero
 
     /// The drawing's own width: what a picture's file holds, what a form asks
     /// for, what a diagram wants. `zoom == 1` never goes past it.
@@ -175,6 +195,11 @@ final class MediaZoomView: NSView {
 
     static let minimum: CGFloat = 0.2
     static let maximum: CGFloat = 8
+
+    /// The largest a drawing may be laid out at, in square points: 24 million,
+    /// which is about 3000 by 8000 — far past anything worth reading and far
+    /// short of anything worth worrying about.
+    static let areaCeiling: CGFloat = 24_000_000
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -226,13 +251,28 @@ final class MediaZoomView: NSView {
     /// The zoom at which the whole drawing fits the window, which is what you
     /// want the moment something is taller than the screen.
     func zoomToFit() {
-        guard let clip = superview, let content, content.size.height > 0 else { return }
+        guard let clip = superview, drawnSize.height > 0 else { return }
         // Width already fits at 1×, so this is only ever about the height.
-        set(min(1, zoom * clip.bounds.height / content.size.height))
+        set(min(1, zoom * clip.bounds.height / drawnSize.height))
     }
 
     private func set(_ wanted: CGFloat) {
-        let next = min(max(wanted, Self.minimum), Self.maximum)
+        var next = min(max(wanted, Self.minimum), Self.maximum)
+
+        // And no larger than a view has any business being.
+        //
+        // Nothing is rasterised here any more, but the view itself still has a
+        // frame, and every window on macOS has been layer-backed since 10.14.
+        // A form sixty fields long at 8× is thirty thousand points tall, and
+        // whether AppKit backs that lazily is its business rather than a thing
+        // to bet on. A ceiling on the area costs nothing and settles it.
+        let area = size(of: content, width: baseWidth * next)
+        let points = area.width * area.height
+        if points > Self.areaCeiling {
+            next *= (Self.areaCeiling / points).squareRoot()
+            next = min(max(next, Self.minimum), Self.maximum)
+        }
+
         guard abs(next - zoom) > 0.001 else { return }
         zoom = next
         rebuild()
@@ -295,45 +335,67 @@ final class MediaZoomView: NSView {
         let width = baseWidth * zoom
         guard abs(width - lastDrawnAt) > 1 else { return }
         lastDrawnAt = width
-        let backing = window?.backingScaleFactor ?? 2
 
         switch subject {
         case .form(let source):
-            // Straight to the drawing: `MediaStore.form` never draws wider than
-            // the form asks for, and here going wider is the whole point.
-            content = UISchema.find(in: source).flatMap {
-                FormDraw.image($0, width: width, scale: backing, ink: ink, dark: dark)
-            }
+            content = UISchema.find(in: source).map(Content.form)
         case .diagram(let source):
-            content = MediaStore.diagram(source, available: width, scale: backing, dark: dark)
+            // The PDF once, not a raster per zoom level. Held across zooms:
+            // the scale it is drawn at is decided when it is drawn.
+            if case .vector? = content {} else {
+                content = MediaStore.diagramVector(source, dark: dark).map(Content.vector)
+            }
         case .picture(let url):
-            content = MediaStore.picture(at: url, width: width, scale: backing)
+            content = MediaStore.picture(at: url, width: width,
+                                         scale: window?.backingScaleFactor ?? 2)
+                .map(Content.picture)
         }
 
-        frame.size = content?.size ?? NSSize(width: width, height: 40)
+        drawnSize = size(of: content, width: width)
+        frame.size = drawnSize
         needsDisplay = true
+    }
+
+    private func size(of content: Content?, width: CGFloat) -> NSSize {
+        switch content {
+        case .form(let form):
+            return FormDraw.size(form, width: width) ?? NSSize(width: width, height: 40)
+        case .vector(let image), .picture(let image):
+            guard image.size.width > 0 else { return NSSize(width: width, height: 40) }
+            return NSSize(width: width,
+                          height: (image.size.height * width / image.size.width).rounded())
+        case nil:
+            return NSSize(width: width, height: 40)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
         paper.setFill()
         dirtyRect.fill()
-        guard let content else {
+        switch content {
+        case .form(let form):
+            FormDraw.paint(form, width: drawnSize.width, ink: ink, dark: dark)
+        case .vector(let image), .picture(let image):
+            image.draw(in: NSRect(origin: .zero, size: drawnSize))
+        case nil:
             let message = "nothing to draw"
             (message as NSString).draw(at: NSPoint(x: 12, y: 12), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 12),
                 .foregroundColor: ink.withAlphaComponent(0.5),
             ])
-            return
         }
-        content.draw(in: NSRect(origin: .zero, size: frame.size))
     }
 
-    var debugContentSize: NSSize? { content?.size }
-    var debugContent: NSImage? { content }
+    var debugContentSize: NSSize? { drawnSize == .zero ? nil : drawnSize }
 
-    /// What the drawing actually costs, in pixels rather than in points — the
-    /// only number that says how much memory it took.
+    /// What the drawing costs in pixels held. Zero for anything painted rather
+    /// than rasterised, which is the point of painting it.
     var debugPixels: Int? {
-        content?.representations.first.map { $0.pixelsWide * $0.pixelsHigh }
+        switch content {
+        case .form, .vector: return 0
+        case .picture(let image):
+            return image.representations.first.map { $0.pixelsWide * $0.pixelsHigh } ?? 0
+        case nil: return nil
+        }
     }
 }

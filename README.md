@@ -145,8 +145,10 @@ SQLite index beside it is a cache you can delete at any moment.
   and it opens in a window of its own that scrolls and zooms — `⌘+`, `⌘-`, `⌘0`
   to fit, `⌘1` for life size, pinch, and `⌘C` to take it. Zoom is a redraw and
   not a stretch: at 4× a form is laid out again with type four times the size
-  and a photograph is decoded from its file. Drag the window wider and the
-  drawing follows. Anything taller than a screenful and a half of the note is
+  and a photograph is decoded from its file. Nothing is rasterised to get there
+  — the form is painted into the window and the diagram comes from its own PDF
+  — so a drawing costs what the window costs, not what the drawing costs. Drag
+  the window wider and it follows. Anything taller than a screenful and a half of the note is
   not drawn on the paper at all — its block carries the mark that opens it,
   which is how a 300-line payload stays a note rather than becoming one.
 - **Paste a screenshot.** ⌘V with a picture on the clipboard writes it into
@@ -322,10 +324,12 @@ outside the process with `vmmap --summary` after eighteen idle seconds. Pictures
 and diagrams cost nothing until a note that has one is open: about 0.4 MB of
 that figure is the diagram code being mapped, and a 2000×1500 photograph adds
 1.4 MB while you are looking at it rather than the 11.4 MB it weighs decoded. A
-drawn form on a note is under 2 MB of pixels, and one never rasterises into more
-than 32 MB however far it is zoomed: a form is as tall as it needs to be and the
-window multiplies both sides, so a long one at 8× would otherwise be half a
-gigabyte in a single allocation. For comparison, on the machine that number
+drawn form on a note is under 2 MB of pixels, and in the window that zooms one
+it is no pixels at all: a form there is painted straight into the view and a
+diagram is drawn from the PDF its renderer hands over, so both cost the window
+rather than the drawing. Zooming a sixty-field payload to eight times life size
+holds nothing and stays sharp; held as a bitmap it was half a gigabyte.
+Everything cached is dropped the moment macOS says it is short of memory. For comparison, on the machine that number
 came from: Notes 103 MB, Chrome 281 MB, Safari 496 MB.
 
 `--diagnose` will tell you about 16 MB, and that is not the same measurement:

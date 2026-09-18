@@ -31,6 +31,24 @@ enum MediaStore {
         return cache
     }()
 
+    /// Hands the pixels back when the system says it is short.
+    ///
+    /// `NSCache` empties itself under pressure on iOS and does not on macOS, so
+    /// on a Mac a cache is a promise to hold megabytes until the process ends.
+    /// Everything in here can be drawn again in a few milliseconds, which makes
+    /// it exactly the kind of thing that should be first to go — the machine
+    /// wanting the memory matters more than a picture being redrawn.
+    private static let pressure: DispatchSourceMemoryPressure = {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical],
+                                                            queue: .main)
+        source.setEventHandler { empty() }
+        source.resume()
+        return source
+    }()
+
+    /// Starts listening. Called once, when the app knows where the notes are.
+    static func watchMemory() { _ = pressure }
+
     /// Drops everything. The folder changed under us, or a check wants to
     /// measure a cold read.
     static func empty() { cache.removeAllObjects() }
@@ -288,6 +306,19 @@ enum MediaStore {
 
         let image = NSImage(cgImage: raster, size: fitted)
         cache.setObject(image, forKey: key, cost: raster.height * raster.bytesPerRow)
+        return image
+    }
+
+    /// A diagram as a PDF-backed picture, which stays vector at any size.
+    ///
+    /// For the window that zooms one: a raster per zoom level is a new
+    /// allocation of the whole area every time, and this is one drawing that
+    /// scales. swift-mermaid hands the PDF over; macOS does the rest.
+    static func diagramVector(_ source: String, dark: Bool) -> NSImage? {
+        guard let scene = try? Mermaid.render(source, theme: dark ? .dark : .default),
+              scene.size.width > 0, scene.size.height > 0 else { return nil }
+        let image = NSImage(data: scene.pdfData())
+        image?.size = scene.size
         return image
     }
 

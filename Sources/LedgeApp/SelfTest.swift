@@ -2987,14 +2987,19 @@ enum SelfTest {
         let big = MediaZoomView()
         big.configure(.form(long), ink: .black, paper: .white, dark: false)
         for _ in 0..<40 { big.zoomIn() }
-        if let pixels = big.debugPixels {
-            let megabytes = Double(pixels * 4) / (1024 * 1024)
-            check(megabytes < 48,
-                  String(format: "a long form zoomed all the way stays a sane bitmap (%.0f MB)",
-                         megabytes))
-            check(megabytes > 4,
-                  String(format: "…and is still drawn large, not clipped to nothing (%.0f MB)",
-                         megabytes))
+        check(big.debugPixels == 0,
+              "a form zoomed all the way holds no pixels at all: \(big.debugPixels ?? -1)")
+        // …and is still a real drawing, at the size asked for, rather than
+        // something that quietly gave up.
+        if let drawn = big.debugContentSize {
+            check(drawn.width > 800 && drawn.height > 800,
+                  String(format: "…and is drawn large, not given up on (%.0f×%.0f)",
+                         drawn.width, drawn.height))
+            // A percent of slack: both sides are rounded to whole points after
+            // the ceiling is applied, so the product lands just past it.
+            check(drawn.width * drawn.height <= MediaZoomView.areaCeiling * 1.01,
+                  String(format: "…and stays a view rather than a wall (%.0fM square points)",
+                         drawn.width * drawn.height / 1_000_000))
         } else {
             check(false, "a long form zoomed all the way drew nothing at all")
         }

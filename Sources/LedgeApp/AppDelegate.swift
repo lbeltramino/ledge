@@ -166,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // the desk, and the big editor — without any of the three having to
             // be told.
             MediaStore.notesFolder = AppDelegate.notesFolder
+            MediaStore.watchMemory()
             let workspace = Workspace(store: store)
             self.workspace = workspace
 

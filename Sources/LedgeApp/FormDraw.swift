@@ -72,6 +72,44 @@ enum FormDraw {
 
     // MARK: - the one entry point
 
+    /// The shapes for a form drawn to exactly `width`, and the size they take.
+    ///
+    /// Separated from `image` because the window that zooms a form paints these
+    /// straight into itself: laying the form out costs a walk over a few
+    /// hundred rectangles, and rasterising it costs its whole area in pixels.
+    private static func plan(_ form: UISchema.Form, width: CGFloat, ink: NSColor,
+                             dark: Bool) -> (shapes: [Shape], size: NSSize, shrink: CGFloat)? {
+        let wanted = max(0.05, width)
+        let layout = max(minimumWidth, min(wanted, naturalWidth(of: form)))
+        var shapes: [Shape] = []
+        let height = walk(form, width: layout, pen: Pen(ink: ink, dark: dark), into: &shapes)
+        guard height > 1 else { return nil }
+        let shrink = wanted / layout
+        return (shapes, NSSize(width: (layout * shrink).rounded(),
+                               height: (height * shrink).rounded()), shrink)
+    }
+
+    /// What a form comes to at a width, without drawing anything.
+    static func size(_ form: UISchema.Form, width: CGFloat) -> NSSize? {
+        plan(form, width: width, ink: .black, dark: false)?.size
+    }
+
+    /// Paints a form into the current context, which must be a flipped view's.
+    ///
+    /// Nothing is rasterised: this is the walk and then the shapes, so what it
+    /// costs is the window rather than the drawing. A form eight times life
+    /// size is the same cost as one at life size.
+    static func paint(_ form: UISchema.Form, width: CGFloat, ink: NSColor, dark: Bool) {
+        guard let plan = plan(form, width: width, ink: ink, dark: dark),
+              let context = NSGraphicsContext.current else { return }
+        context.saveGraphicsState()
+        let scale = NSAffineTransform()
+        scale.scaleX(by: plan.shrink, yBy: plan.shrink)
+        scale.concat()
+        for shape in plan.shapes { paint(shape, flippingText: false) }
+        context.restoreGraphicsState()
+    }
+
     /// The form drawn to exactly `width`.
     ///
     /// Laid out at its natural size and then scaled to get there, the way
@@ -137,7 +175,7 @@ enum FormDraw {
         // go on thinking in the sizes it was designed at.
         flip.scaleX(by: shrink, yBy: shrink)
         flip.concat()
-        for shape in shapes { paint(shape) }
+        for shape in shapes { paint(shape, flippingText: true) }
         NSGraphicsContext.restoreGraphicsState()
 
         let image = NSImage(size: size)
@@ -145,7 +183,13 @@ enum FormDraw {
         return image
     }
 
-    private static func paint(_ shape: Shape) {
+    /// Paints into whatever context is current.
+    ///
+    /// `flippingText` is for an unflipped context — a bitmap — where every run
+    /// of text has to be turned back about its own rect or it comes out upside
+    /// down. A flipped view needs none of that: AppKit has already put the
+    /// origin at the top left and text draws the right way up.
+    private static func paint(_ shape: Shape, flippingText: Bool) {
         switch shape {
         case let .box(rect, radius, fill, stroke, dashed):
             let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
@@ -165,6 +209,11 @@ enum FormDraw {
             // Text in a flipped context comes out upside down, so each run is
             // flipped back about its own rect — which maps the rect onto itself
             // and nothing else has to move.
+            guard flippingText else {
+                (string as NSString).draw(with: rect, options: [.usesLineFragmentOrigin],
+                                          attributes: attributes)
+                return
+            }
             guard let context = NSGraphicsContext.current else { return }
             context.saveGraphicsState()
             let back = NSAffineTransform()
