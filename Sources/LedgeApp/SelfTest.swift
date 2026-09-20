@@ -457,6 +457,26 @@ enum SelfTest {
         check(inline.string == "call `foo()` here",
               "one line of code gets backticks: \(inline.string)")
 
+        // Nothing selected is the case that mattered: it used to give an empty
+        // pair of backticks, and the only way to a fenced block was pasting
+        // ticks until one stuck.
+        let empty = editor("", selection: NSRange(location: 0, length: 0))
+        MarkdownEditing.code(empty)
+        check(empty.string == "```\n\n```",
+              "con nada seleccionado sale un bloque, no un par vacío: \(empty.string.debugDescription)")
+        check(empty.selectedRange().location == 3,
+              "y el caret queda en el hueco del lenguaje: \(empty.selectedRange().location)")
+        // Which is to say: press it, type `log`, press Enter, and you are
+        // writing in a bitácora.
+        empty.insertText("log", replacementRange: empty.selectedRange())
+        check(empty.string.hasPrefix("```log\n"),
+              "escribir el tag ahí abre una bitácora: \(empty.string.debugDescription)")
+
+        let midLine = editor("un párrafo", selection: NSRange(location: 10, length: 0))
+        MarkdownEditing.code(midLine)
+        check(midLine.string == "un párrafo\n```\n\n```",
+              "y a mitad de una línea el bloque arranca en la suya: \(midLine.string.debugDescription)")
+
         let block = editor("first line\nsecond line", selection: NSRange(location: 0, length: 22))
         MarkdownEditing.code(block)
         check(block.string == "```\nfirst line\nsecond line\n```",

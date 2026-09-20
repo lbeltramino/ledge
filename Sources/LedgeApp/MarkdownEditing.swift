@@ -83,6 +83,26 @@ enum MarkdownEditing {
             return
         }
 
+        // Nothing selected: you are about to write code, and what you want is
+        // somewhere to write it.
+        //
+        // This used to give an empty pair of backticks, which is no use to
+        // anyone — and on a keyboard where the backtick is a dead key it is
+        // worse than no use. Reported as "I don't know how to type the ticks a
+        // block needs, so I open the big editor, press Code to get two, and
+        // paste them until it works", which is how a note ended up with fences
+        // of four.
+        guard !selected.isEmpty else {
+            let lineStart = text.lineRange(for: selection).location
+            let opening = (selection.location == lineStart ? "" : "\n") + "```"
+            replace(textView, range: selection, with: opening + "\n\n```")
+            // The caret in the language slot, where `log` or `python` goes.
+            // One press of Enter and you are in the body.
+            textView.setSelectedRange(
+                NSRange(location: selection.location + (opening as NSString).length, length: 0))
+            return
+        }
+
         guard selected.contains("\n") else {
             wrap(textView, with: "`")
             return
