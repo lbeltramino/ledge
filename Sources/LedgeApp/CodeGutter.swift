@@ -14,6 +14,15 @@ enum CodeGutter {
     /// work out again what the highlighter already decided.
     static let attribute = NSAttributedString.Key("ledge.gutter")
 
+    /// A way to turn the gutters off from the outside, without a build.
+    ///
+    ///     defaults write com.lisandro.Ledge SinCanales -bool YES
+    ///
+    /// Here so that a report of something visual can be settled in one round
+    /// instead of three: if it goes away with this set, it is the numbers and
+    /// the quote stroke; if it does not, it is not.
+    static var disabled: Bool { UserDefaults.standard.bool(forKey: "SinCanales") }
+
     /// Numbers start at five lines.
     ///
     /// The same bargain the outline makes by appearing only at two headings:
@@ -25,7 +34,7 @@ enum CodeGutter {
     static let inset: CGFloat = 10
 
     static func numbers(forBodyOf body: String) -> Bool {
-        lineCount(of: body) >= minimumLines
+        !disabled && lineCount(of: body) >= minimumLines
     }
 
     /// Lines in a block's body, not counting a trailing empty one — a body

@@ -3195,6 +3195,83 @@ enum SelfTest {
               + "\(view.debugLineNumbers.count) vs \(before)")
     }
 
+    /// Cuánto se redibuja por tecla, adentro y afuera de un bloque.
+    ///
+    /// Reportado: editar afuera de un bloque está bien, editar adentro hace
+    /// parpadear toda la nota. Y pasa también en la versión anterior a todo lo
+    /// de hoy, así que no lo trajo ninguna marca nueva.
+    static func checkTypingInsideABlock() async {
+        let note = """
+        Una línea de prosa para escribir afuera del bloque.
+
+        ````python
+
+        print("Hola")
+
+        # a python comment
+        # another new comment
+        # another one
+        ```
+
+        Y otra línea después.
+        """
+        let record = NoteRecord(note: Note(title: "RANDOM STUFF", color: .blue), filename: "r.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        let window = NSWindow(contentRect: card.frame, styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.contentView?.addSubview(card)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        /// Escribe tres caracteres en `where` y devuelve cuánto se pidió
+        /// redibujar y cuánto se movió el texto de abajo.
+        func typing(at where_: String) async -> (draws: Int, area: CGFloat, shifted: CGFloat) {
+            let at = (view.string as NSString).range(of: where_)
+            view.setSelectedRange(NSRange(location: NSMaxRange(at), length: 0))
+            card.displayIfNeeded()
+            let tail = (view.string as NSString).range(of: "Y otra línea después.")
+            func tailY() -> CGFloat {
+                guard let manager = view.layoutManager, let container = view.textContainer,
+                      tail.location != NSNotFound else { return 0 }
+                let glyphs = manager.glyphRange(forCharacterRange: tail, actualCharacterRange: nil)
+                return manager.boundingRect(forGlyphRange: glyphs, in: container).minY
+            }
+            NoteTextView.debugDraws = 0
+            NoteTextView.debugDrawnArea = 0
+            // El transitorio dentro de una tecla, no el neto: escribir alarga
+            // la línea y correr el texto de abajo por eso es correcto. Lo que
+            // se ve como parpadeo es que salte al escribir y vuelva cuando el
+            // resaltador corre, un turno después.
+            var worst: CGFloat = 0
+            for ch in "abc" {
+                view.insertText(String(ch), replacementRange: view.selectedRange())
+                card.displayIfNeeded()
+                let justTyped = tailY()
+                try? await Task.sleep(for: .milliseconds(150))
+                card.displayIfNeeded()
+                worst = max(worst, abs(tailY() - justTyped))
+            }
+            return (NoteTextView.debugDraws, NoteTextView.debugDrawnArea, worst)
+        }
+
+        let outside = await typing(at: "prosa para escribir")
+        let inside = await typing(at: "# another one")
+
+        check(inside.draws <= outside.draws * 3,
+              "escribir adentro no dibuja mucho más que afuera: "
+              + "\(inside.draws) contra \(outside.draws)")
+        check(inside.area <= outside.area * 4,
+              String(format: "…ni repinta mucha más superficie: %.0f contra %.0f",
+                     inside.area, outside.area))
+        check(inside.shifted < 4,
+              String(format: "y el texto de abajo no salta y vuelve en cada tecla (%.1f pt)",
+                     inside.shifted))
+
+        window.contentView?.subviews.forEach { $0.removeFromSuperview() }
+    }
+
     /// Enter adentro de una bitácora escribe la hora; afuera, no.
     static func checkEnterStampsTheTime() {
         let note = """
@@ -4643,6 +4720,7 @@ enum SelfTest {
         checkTheNewMarks()
         checkEnterStampsTheTime()
         checkGuttersKeepUpWithTyping()
+        await checkTypingInsideABlock()
         await checkEditingInsideAFencedBlock()
         checkFoldingFollowsTheCard()
         checkZoomingADrawing()

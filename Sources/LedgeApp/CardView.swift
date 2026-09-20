@@ -787,7 +787,12 @@ final class NoteTextView: NSTextView {
     ///
     /// Not `drawBackground(in:)`: these views have `drawsBackground = false` so
     /// the note's paper shows through, and AppKit never calls it.
+    nonisolated(unsafe) static var debugDraws = 0
+    nonisolated(unsafe) static var debugDrawnArea: CGFloat = 0
+
     override func draw(_ dirtyRect: NSRect) {
+        NoteTextView.debugDraws += 1
+        NoteTextView.debugDrawnArea += dirtyRect.width * dirtyRect.height
         drawMarkerStrokes(in: dirtyRect)
         for bar in quoteBars where bar.intersects(dirtyRect) {
             QuoteBar.draw(in: bar, colour: linkInk.withAlphaComponent(0.30))
@@ -814,16 +819,34 @@ final class NoteTextView: NSTextView {
     }
 
     func refreshGutters() {
-        let before = (quoteBars, numberRows.map(\.rect))
         quoteBars = []
         numberRows = []
-        defer {
-            if before.0 != quoteBars || before.1 != numberRows.map(\.rect) { needsDisplay = true }
-        }
+        guard !CodeGutter.disabled else { return }
         guard let storage = textStorage, let manager = layoutManager,
               let container = textContainer, container.size.width > 1 else { return }
-        manager.ensureLayout(for: container)
         let whole = NSRange(location: 0, length: storage.length)
+
+        // Is there anything to draw at all? Asked before the layout is forced,
+        // because on a note with no fenced block and no quote there is nothing
+        // here to place and forcing the layout of the whole container on every
+        // keystroke to find that out is a cost the app never used to pay.
+        var wanted = false
+        storage.enumerateAttribute(QuoteBar.attribute, in: whole) { value, _, stop in
+            if value != nil { wanted = true; stop.pointee = true }
+        }
+        if !wanted {
+            storage.enumerateAttribute(CodeGutter.attribute, in: whole) { value, _, stop in
+                if value != nil { wanted = true; stop.pointee = true }
+            }
+        }
+        guard wanted else { return }
+
+        // And no `needsDisplay = true`. Every caller is already a moment the
+        // view redraws — a keystroke, a relayout — and marking the whole view
+        // repainted the entire note on every key instead of the damaged line.
+        // That is what the flicker was: not a loop, and not the numbers being
+        // late, but every character redrawing everything.
+        manager.ensureLayout(for: container)
 
         storage.enumerateAttribute(QuoteBar.attribute, in: whole) { value, range, _ in
             guard value != nil else { return }
@@ -2229,13 +2252,36 @@ final class NoteTextView: NSTextView {
         // the block redrawing in a loop, but the numbers arriving late to every
         // keystroke, which looks the same from the outside.
         refreshGutters()
+        matchTypingToContext()
         offerLinks()
         onChange?()
+    }
+
+    /// What the next character you type will look like.
+    ///
+    /// Inside a fenced block it has to be the block's own font, because
+    /// otherwise the character arrives in the body's hand — which is larger —
+    /// the line grows, everything under it moves down, and a turn later the
+    /// highlighter makes it monospaced and it all moves back. Every keystroke.
+    /// Reported as the whole note flickering while typing inside a block, and
+    /// it had been there since fenced blocks were first drawn differently.
+    ///
+    /// The highlighter still decides what the text *is*; this only stops the
+    /// caret from lying about it for one frame.
+    func matchTypingToContext() {
+        let base = font ?? .systemFont(ofSize: 13)
+        let inside = Fences.containsCaret(selectedRange().location, in: string as NSString)
+        let wanted: NSFont = inside
+            ? .monospacedSystemFont(ofSize: base.pointSize * 0.78, weight: .regular)
+            : base
+        guard (typingAttributes[.font] as? NSFont) != wanted else { return }
+        typingAttributes[.font] = wanted
     }
 
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity,
                                    stillSelecting: Bool) {
         super.setSelectedRange(charRange, affinity: affinity, stillSelecting: stillSelecting)
+        matchTypingToContext()
         // Moving the caret out of a half-typed link closes the offer. Without
         // this it follows you around the note.
         if linkPicker.isOpen, !stillSelecting { offerLinks() }
