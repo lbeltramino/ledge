@@ -3112,6 +3112,69 @@ enum SelfTest {
               "quién lo dijo se dibuja más chico: \(font?.pointSize ?? -1) vs \(body?.pointSize ?? -1)")
     }
 
+    /// Los canales se ponen al día con la tecla, no un turno después.
+    ///
+    /// El parpadeo reportado no era la vista dibujándose en bucle — medido, son
+    /// cuatro dibujos para tres teclas. Era que los números se recalculaban
+    /// recién cuando corría el resaltado, que está agendado y no es inmediato,
+    /// así que la vista dibujaba una vez con las posiciones viejas y después
+    /// saltaban.
+    ///
+    /// El cercado de cuatro backticks es el de la nota donde se reportó: es
+    /// Markdown válido y la app lo escribe así cuando el contenido tiene una
+    /// línea de backticks.
+    static func checkGuttersKeepUpWithTyping() {
+        let note = """
+        ````log
+
+        16:00 Primer línea
+        16:00 Este es otro comentario
+        16:01 Distinto minuto
+        16:01 Con números de línea
+        ```
+
+        ````python
+
+        print("Hola")
+
+        # a python comment
+        # another new comment
+        # another one
+        ```
+
+        > Este es un quote
+        """
+        let record = NoteRecord(note: Note(title: "RANDOM STUFF", color: .blue), filename: "r.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        // Un cercado de cuatro backticks sigue siendo un tag: la bitácora se
+        // dibuja como bitácora y no como un bloque de código con números.
+        check(view.debugLineNumbers.isEmpty || !view.debugLineNumbers.isEmpty,
+              "hay canal que medir")
+        let storage = view.textStorage
+        let firstTime = (view.string as NSString).range(of: "16:00")
+        let alpha = (storage?.attribute(.foregroundColor, at: firstTime.location,
+                                        effectiveRange: nil) as? NSColor)?.alphaComponent
+        check(alpha != nil && alpha! < 0.7,
+              "cuatro backticks siguen abriendo una bitácora: la hora va tenue (\(alpha ?? -1))")
+
+        let before = view.debugLineNumbers.count
+        check(before > 0, "el bloque de python lleva números: \(before)")
+
+        // Escribir un renglón más adentro del bloque, y mirar enseguida — sin
+        // esperar el turno del resaltador, que es justo lo que fallaba.
+        let inside = (view.string as NSString).range(of: "# another one")
+        view.setSelectedRange(NSRange(location: NSMaxRange(inside), length: 0))
+        view.insertText("\n# y otro", replacementRange: view.selectedRange())
+        check(view.debugLineNumbers.count == before + 1,
+              "el número aparece con la tecla, no un turno después: "
+              + "\(view.debugLineNumbers.count) vs \(before)")
+    }
+
     /// Enter adentro de una bitácora escribe la hora; afuera, no.
     static func checkEnterStampsTheTime() {
         let note = """
@@ -4559,6 +4622,7 @@ enum SelfTest {
         checkOpeningAForm()
         checkTheNewMarks()
         checkEnterStampsTheTime()
+        checkGuttersKeepUpWithTyping()
         await checkEditingInsideAFencedBlock()
         checkFoldingFollowsTheCard()
         checkZoomingADrawing()

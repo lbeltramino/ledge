@@ -2221,6 +2221,14 @@ final class NoteTextView: NSTextView {
 
     override func didChangeText() {
         super.didChangeText()
+        // As soon as the text changes, not only when the highlighter next runs.
+        //
+        // That pass is a turn away — it is scheduled, not immediate — and the
+        // view draws before it. Waiting for it left the numbers where the
+        // previous layout had put them for one frame and then moved them: not
+        // the block redrawing in a loop, but the numbers arriving late to every
+        // keystroke, which looks the same from the outside.
+        refreshGutters()
         offerLinks()
         onChange?()
     }

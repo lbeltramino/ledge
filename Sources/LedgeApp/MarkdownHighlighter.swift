@@ -201,8 +201,13 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
 
             // ```yaml, ```hcl, ```go — the tag on the fence, which until now was
             // parsed and thrown away.
+            // Trimmed of backticks as well as spaces. The pattern captures the
+            // first three of the run, so a block opened with four — which is
+            // legal Markdown, and which this app's own paste writes — left the
+            // fourth on the front of the tag: "`log" is not "log", so a
+            // bitácora was drawn as an ordinary code block, numbers and all.
             let tag = (storage.string as NSString).substring(with: match.range(at: 2))
-                .trimmingCharacters(in: .whitespaces).lowercased()
+                .trimmingCharacters(in: CharacterSet(charactersIn: "`~ \t")).lowercased()
             if Log.isLogTag(tag) {
                 this.paintLog(storage, body: body)
             } else {
