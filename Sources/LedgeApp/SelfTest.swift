@@ -3076,6 +3076,25 @@ enum SelfTest {
         check(!numbered("kubectl get pods"), "uno de una línea no")
         check(!numbered("21:11 rollback"), "y una bitácora nunca, ya tiene su columna")
 
+        // Los números se calculan cuando el layout se asienta y se guardan —
+        // pedirle geometría al layout manager mientras se dibuja fuerza el
+        // layout que la tecla acababa de invalidar, y eso es un bucle que se ve
+        // como parpadeo. Lo que hay que cuidar del caché es que no quede viejo.
+        card.textView.mediaDidLayout()
+        check(card.textView.debugLineNumbers == ["1", "2", "3", "4", "5", "6"],
+              "los números salen del layout asentado: \(card.textView.debugLineNumbers)")
+        check(card.textView.debugQuoteBars == 1,
+              "y el trazo de la cita también: \(card.textView.debugQuoteBars)")
+
+        let yaml = (card.textView.string as NSString).range(of: "  replicas: 6")
+        card.textView.setSelectedRange(NSRange(location: NSMaxRange(yaml), length: 0))
+        card.textView.insertText("\n  minReadySeconds: 5", replacementRange: card.textView.selectedRange())
+        card.layoutSubtreeIfNeeded()
+        card.textView.mediaDidLayout()
+        check(card.textView.debugLineNumbers.count == 7,
+              "y una línea más en el bloque da un número más, sin esperar nada: "
+              + "\(card.textView.debugLineNumbers)")
+
         // La cita: un solo trazo para las dos líneas, no uno por línea.
         var runs = 0
         storage.enumerateAttribute(QuoteBar.attribute,

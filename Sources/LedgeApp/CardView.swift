@@ -147,7 +147,12 @@ final class NoteCardView: NSView {
         textView.strokeSeed = record.id
         textView.textStorage?.delegate = markdown
         if let storage = textView.textStorage { markdown.highlight(storage) }
-        markdown.onDidHighlight = { [weak self] in self?.textView.reserveMediaRoom() }
+        markdown.onDidHighlight = { [weak self] in
+            self?.textView.reserveMediaRoom()
+            // The numbers and the quote strokes follow what the rules just
+            // decided, and they are worked out here rather than while drawing.
+            self?.textView.refreshGutters()
+        }
         highlighter = markdown
         textView.onChange = { [weak self] in
             guard let self else { return }
@@ -784,77 +789,98 @@ final class NoteTextView: NSTextView {
     /// the note's paper shows through, and AppKit never calls it.
     override func draw(_ dirtyRect: NSRect) {
         drawMarkerStrokes(in: dirtyRect)
-        drawQuoteBars(in: dirtyRect)
+        for bar in quoteBars where bar.intersects(dirtyRect) {
+            QuoteBar.draw(in: bar, colour: linkInk.withAlphaComponent(0.30))
+        }
         super.draw(dirtyRect)
         // After the text: the numbers sit in the margin the paragraph indent
         // opened for them, and nothing is drawn over them.
         drawLineNumbers(in: dirtyRect)
     }
 
-    /// One stroke down each run of quoted lines.
-    private func drawQuoteBars(in rect: NSRect) {
+    /// Where the quote strokes and the line numbers go.
+    ///
+    /// Worked out when the layout settles and kept, never asked for while
+    /// drawing. Asking the layout manager for geometry inside `draw` forces
+    /// layout that the keystroke had just invalidated, which invalidates
+    /// again, which marks the view for display, which draws — a loop you see
+    /// as the block flickering under the caret. Reported exactly that way, for
+    /// any fenced block.
+    private var quoteBars: [NSRect] = []
+    private var numberRows: [(rect: NSRect, label: String)] = []
+
+    private var gutterFont: NSFont {
+        .monospacedSystemFont(ofSize: (font?.pointSize ?? 13) * 0.78, weight: .regular)
+    }
+
+    func refreshGutters() {
+        let before = (quoteBars, numberRows.map(\.rect))
+        quoteBars = []
+        numberRows = []
+        defer {
+            if before.0 != quoteBars || before.1 != numberRows.map(\.rect) { needsDisplay = true }
+        }
         guard let storage = textStorage, let manager = layoutManager,
-              let container = textContainer else { return }
-        let colour = linkInk.withAlphaComponent(0.30)
-        storage.enumerateAttribute(QuoteBar.attribute,
-                                   in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+              let container = textContainer, container.size.width > 1 else { return }
+        manager.ensureLayout(for: container)
+        let whole = NSRange(location: 0, length: storage.length)
+
+        storage.enumerateAttribute(QuoteBar.attribute, in: whole) { value, range, _ in
             guard value != nil else { return }
             let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             var box = manager.boundingRect(forGlyphRange: glyphs, in: container)
-            box.origin.x = textContainerOrigin.x
-            box.origin.y += textContainerOrigin.y
-            guard box.intersects(rect), box.height > 1 else { return }
-            QuoteBar.draw(in: box, colour: colour)
+            box.origin.x = self.textContainerOrigin.x
+            box.origin.y += self.textContainerOrigin.y
+            guard box.height > 1 else { return }
+            self.quoteBars.append(box)
         }
-    }
 
-    /// The numbers beside a fenced block long enough to have earned them.
-    ///
-    /// A line that wrapped gets no number: only the fragment that starts a
-    /// logical line is numbered. On a note this is the ordinary case rather
-    /// than an edge one — at this width nearly every line of yaml wraps — and
-    /// it is the detail that makes an implementation look broken.
-    private func drawLineNumbers(in rect: NSRect) {
-        guard let storage = textStorage, let manager = layoutManager,
-              let container = textContainer else { return }
         let text = storage.string as NSString
-        let font = NSFont.monospacedSystemFont(ofSize: (self.font?.pointSize ?? 13) * 0.78,
-                                               weight: .regular)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: tableInk.withAlphaComponent(0.38),
-        ]
+        let width = CodeGutter.numberWidth(for: gutterFont, lines: 99)
 
-        storage.enumerateAttribute(CodeGutter.attribute,
-                                   in: NSRange(location: 0, length: storage.length)) { value, block, _ in
-            guard value != nil else { return }
-            let width = CodeGutter.numberWidth(for: font, lines: 99)
-
-            // The body only: the two fence lines are not line one and line N.
+        // The attribute says *whether* a block is numbered; the text says how
+        // far it runs. They disagree for one turn after every keystroke —
+        // the attribute is a turn behind, since the highlighter runs after the
+        // edit — and walking the stale range counted the wrong number of lines
+        // and drew it before the right one arrived.
+        for block in Fences.ranges(in: text) {
+            let marked = NSIntersectionRange(block, whole).length > 0
+                && storage.attribute(CodeGutter.attribute,
+                                     at: min(block.location, max(0, storage.length - 1)),
+                                     effectiveRange: nil) != nil
+            guard marked else { continue }
             var cursor = NSMaxRange(text.lineRange(for: NSRange(location: block.location, length: 0)))
             let closing = text.lineRange(for: NSRange(location: max(block.location,
                                                                    NSMaxRange(block) - 1), length: 0))
             var number = 1
-
             while cursor < closing.location {
                 let line = text.lineRange(for: NSRange(location: cursor, length: 0))
                 let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
                 var fragment = manager.lineFragmentUsedRect(forGlyphAt: glyphs.location,
                                                             effectiveRange: nil)
-                fragment.origin.y += textContainerOrigin.y
-
-                if fragment.intersects(rect) {
-                    let label = String(number) as NSString
-                    let size = label.size(withAttributes: attributes)
-                    label.draw(at: NSPoint(x: textContainerOrigin.x + CodeGutter.inset
-                                              + width - 10 - size.width,
-                                           y: fragment.minY + (fragment.height - size.height) / 2),
-                               withAttributes: attributes)
-                }
+                fragment.origin.y += self.textContainerOrigin.y
+                self.numberRows.append((NSRect(x: self.textContainerOrigin.x + CodeGutter.inset,
+                                               y: fragment.minY, width: width - 10,
+                                               height: fragment.height), String(number)))
                 number += 1
                 guard NSMaxRange(line) > cursor else { break }
                 cursor = NSMaxRange(line)
             }
+        }
+    }
+
+    private func drawLineNumbers(in rect: NSRect) {
+        guard !numberRows.isEmpty else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: gutterFont,
+            .foregroundColor: tableInk.withAlphaComponent(0.38),
+        ]
+        for row in numberRows where row.rect.intersects(rect) {
+            let label = row.label as NSString
+            let size = label.size(withAttributes: attributes)
+            label.draw(at: NSPoint(x: row.rect.maxX - size.width,
+                                   y: row.rect.minY + (row.rect.height - size.height) / 2),
+                       withAttributes: attributes)
         }
     }
 
@@ -1563,6 +1589,8 @@ final class NoteTextView: NSTextView {
     /// as the tables: before the text container has a size there is nowhere to
     /// put anything, and measuring then gives every drawing a frame of zero.
     func mediaDidLayout() {
+        // The gutters settle with everything else that is drawn from layout.
+        refreshGutters()
         guard let container = textContainer, container.size.width > 1 else { return }
         // The height as well as the width.
         //
@@ -1823,6 +1851,8 @@ final class NoteTextView: NSTextView {
     }
 
     var debugMediaCount: Int { mediaViews.count }
+    var debugLineNumbers: [String] { numberRows.map(\.label) }
+    var debugQuoteBars: Int { quoteBars.count }
     var debugMediaViews: [MediaView] { Array(mediaViews.values) }
     var debugMediaFrames: [NSRect] { mediaViews.values.map(\.frame) }
 
