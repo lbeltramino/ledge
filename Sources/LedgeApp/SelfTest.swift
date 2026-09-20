@@ -2997,6 +2997,152 @@ enum SelfTest {
         window.contentView?.subviews.forEach { $0.removeFromSuperview() }
     }
 
+    /// Las tres marcas nuevas: bitácora, números de línea y cita.
+    ///
+    /// Sobre los atributos y no sobre píxeles. El renderizador dibuja a un
+    /// bitmap antes de que el layout absorba un cambio de atributos, así que
+    /// mirar el PNG dice cuándo se dibujó, no qué dice el texto.
+    static func checkTheNewMarks() {
+        let note = """
+        Antes.
+
+        ```log
+        21:04 alertó la latencia
+        21:04 confirmo, p99 en 2.4s
+        21:11 rollback del ESM
+        ```
+
+        > Autentican por IAM, no hay password.
+        > — en #infra, martes
+
+        ```yaml
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: gateway
+        spec:
+          replicas: 6
+        ```
+
+        ```bash
+        kubectl get pods
+        ```
+        """
+        let record = NoteRecord(note: Note(title: "Marcas", color: .butter), filename: "m.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 900)
+        card.layoutSubtreeIfNeeded()
+        guard let storage = card.textView.textStorage else { check(false, "sin storage"); return }
+        let text = storage.string as NSString
+
+        func alpha(at needle: String, occurrence: Int = 1) -> CGFloat? {
+            var search = NSRange(location: 0, length: text.length)
+            var at = NSRange(location: NSNotFound, length: 0)
+            for _ in 0..<occurrence {
+                at = text.range(of: needle, options: [], range: search)
+                guard at.location != NSNotFound else { return nil }
+                search = NSRange(location: NSMaxRange(at), length: text.length - NSMaxRange(at))
+            }
+            return (storage.attribute(.foregroundColor, at: at.location,
+                                      effectiveRange: nil) as? NSColor)?.alphaComponent
+        }
+
+        // La bitácora: la hora se ve tenue, y la que repite el minuto de arriba
+        // no se dibuja — pero sigue en el archivo.
+        let first = alpha(at: "21:04", occurrence: 1)
+        let second = alpha(at: "21:04", occurrence: 2)
+        check(first != nil && first! > 0.2 && first! < 0.7,
+              "la hora se dibuja tenue: \(String(describing: first))")
+        check(second == 0, "la hora repetida no se dibuja: \(String(describing: second))")
+        check(text.contains("21:04 confirmo"), "…y sigue estando en el texto")
+
+        // La prosa cuelga de su columna, así que una línea que se parte no se
+        // mete abajo del reloj.
+        let line = text.range(of: "rollback del ESM")
+        let style = storage.attribute(.paragraphStyle, at: line.location,
+                                      effectiveRange: nil) as? NSParagraphStyle
+        check((style?.headIndent ?? 0) > (style?.firstLineHeadIndent ?? 0),
+              "la prosa cuelga: headIndent \(style?.headIndent ?? -1) "
+              + "vs primera \(style?.firstLineHeadIndent ?? -1)")
+
+        // Los números: el bloque largo se los gana, el corto no, y el log nunca.
+        func numbered(_ needle: String) -> Bool {
+            let at = text.range(of: needle)
+            guard at.location != NSNotFound else { return false }
+            return storage.attribute(CodeGutter.attribute, at: at.location, effectiveRange: nil) != nil
+        }
+        check(numbered("apiVersion"), "un bloque de seis líneas lleva números")
+        check(!numbered("kubectl get pods"), "uno de una línea no")
+        check(!numbered("21:11 rollback"), "y una bitácora nunca, ya tiene su columna")
+
+        // La cita: un solo trazo para las dos líneas, no uno por línea.
+        var runs = 0
+        storage.enumerateAttribute(QuoteBar.attribute,
+                                   in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+            if value != nil { runs += 1 }
+        }
+        check(runs == 1, "las dos líneas de la cita son un solo trazo: \(runs)")
+
+        // Y la atribución se aparta: tipografía de interfaz, no la del cuerpo.
+        let said = text.range(of: "— en #infra")
+        let font = storage.attribute(.font, at: said.location, effectiveRange: nil) as? NSFont
+        let body = storage.attribute(.font, at: text.range(of: "Antes.").location,
+                                     effectiveRange: nil) as? NSFont
+        check(font != nil && body != nil && font!.pointSize < body!.pointSize,
+              "quién lo dijo se dibuja más chico: \(font?.pointSize ?? -1) vs \(body?.pointSize ?? -1)")
+    }
+
+    /// Enter adentro de una bitácora escribe la hora; afuera, no.
+    static func checkEnterStampsTheTime() {
+        let note = """
+        Antes.
+
+        ```log
+        21:04 alertó la latencia
+        ```
+
+        Después.
+        """
+        let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 400))
+        view.configureForNotes()
+        view.string = note
+        let text = view.string as NSString
+        // Un reloj fijo: la hora de la máquina no es algo sobre lo que asertar.
+        let clock = Calendar(identifier: .gregorian)
+        var parts = DateComponents()
+        parts.year = 2026; parts.month = 9; parts.day = 20; parts.hour = 9; parts.minute = 7
+        guard let nine07 = clock.date(from: parts) else { check(false, "sin reloj"); return }
+
+        // Al final de una línea del bloque.
+        let inside = text.range(of: "alertó la latencia")
+        view.setSelectedRange(NSRange(location: NSMaxRange(inside), length: 0))
+        check(MarkdownEditing.continueLog(view, now: nine07), "Enter en una bitácora lo maneja la app")
+        check(view.string.contains("\n09:07 "),
+              "y escribe la hora, con cero adelante: \(view.string.suffix(40).debugDescription)")
+
+        // Afuera del bloque, Enter es Enter.
+        let outside = (view.string as NSString).range(of: "Después.")
+        view.setSelectedRange(NSRange(location: outside.location, length: 0))
+        check(!MarkdownEditing.continueLog(view, now: nine07),
+              "afuera del bloque no escribe nada")
+
+        // Y sobre el cercado de cierre tampoco: ahí Enter te saca del bloque.
+        let closing = (view.string as NSString).range(of: "```\n\nDespués")
+        view.setSelectedRange(NSRange(location: closing.location + 2, length: 0))
+        check(!MarkdownEditing.continueLog(view, now: nine07),
+              "sobre el cercado de cierre tampoco")
+
+        // Un bloque que no es log no se toca.
+        let plain = NoteTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 400))
+        plain.configureForNotes()
+        plain.string = "```bash\nkubectl get pods\n```"
+        let cmd = (plain.string as NSString).range(of: "get pods")
+        plain.setSelectedRange(NSRange(location: NSMaxRange(cmd), length: 0))
+        check(!MarkdownEditing.continueLog(plain, now: nine07),
+              "un bloque de shell no se lleva la hora")
+    }
+
     /// Escribir adentro de un bloque no le saca el formato de código.
     ///
     /// Reportado: "pego el json de un formulario, se ve; empiezo a editar el
@@ -4392,6 +4538,8 @@ enum SelfTest {
         checkMediaSurvivesTyping()
         checkCopyingADrawing()
         checkOpeningAForm()
+        checkTheNewMarks()
+        checkEnterStampsTheTime()
         await checkEditingInsideAFencedBlock()
         checkFoldingFollowsTheCard()
         checkZoomingADrawing()

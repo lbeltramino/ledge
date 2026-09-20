@@ -120,11 +120,45 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         }
 
         // > quote
+        //
+        // In a note at work a quote is nearly always something somebody said —
+        // in the incident channel, in the ticket — so the thing worth designing
+        // is not the indent, it is the attribution. A line inside the quote
+        // that opens with an em dash is set in the interface face, small, which
+        // is what makes the quote worth coming back to in three weeks.
         rule("^[ \\t]*(>)[ \\t]?([^\\n]*)$") { storage, match, this in
-            this.fade(storage, match.range(at: 1), 0.35)
+            // The marker stays text — it is what you edit — but it is drawn as
+            // faintly as a bullet's dash, because the rule down the side is
+            // what says "quote" now.
+            this.fade(storage, match.range(at: 1), 0.18)
+
+            let words = match.range(at: 2)
             storage.addAttribute(.foregroundColor,
-                                 value: this.ink.withAlphaComponent(0.72),
-                                 range: match.range(at: 2))
+                                 value: this.ink.withAlphaComponent(0.72), range: words)
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.firstLineHeadIndent = 13
+            paragraph.headIndent = 13
+            paragraph.tailIndent = -8
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
+            // The newline too, so two quoted lines in a row are one run and one
+            // stroke. Without it every line is its own range and the rule down
+            // the side comes out as a ladder of dashes.
+            let withNewline = NSRange(location: match.range.location,
+                                      length: min(match.range.length + 1,
+                                                  storage.length - match.range.location))
+            storage.addAttribute(QuoteBar.attribute, value: true, range: withNewline)
+
+            // — who said it
+            let said = (storage.string as NSString).substring(with: words)
+                .trimmingCharacters(in: .whitespaces)
+            if said.hasPrefix("—") || said.hasPrefix("--") {
+                storage.addAttribute(.font,
+                                     value: NSFont.systemFont(ofSize: this.baseFont.pointSize * 0.66),
+                                     range: words)
+                storage.addAttribute(.foregroundColor,
+                                     value: this.ink.withAlphaComponent(0.45), range: words)
+            }
         }
 
         // **bold**
@@ -169,7 +203,27 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             // parsed and thrown away.
             let tag = (storage.string as NSString).substring(with: match.range(at: 2))
                 .trimmingCharacters(in: .whitespaces).lowercased()
-            this.paintCode(storage, body: body, language: tag)
+            if Log.isLogTag(tag) {
+                this.paintLog(storage, body: body)
+            } else {
+                this.paintCode(storage, body: body, language: tag)
+            }
+
+            // Room for the numbers, when this block is long enough to earn
+            // them. Set here rather than where they are drawn, because the
+            // indent and the gutter have to be the same number and there is
+            // only one place that can decide it.
+            // Never on a log: it already has a column of its own, and two
+            // gutters on one block is one too many.
+            if !Log.isLogTag(tag),
+               CodeGutter.numbers(forBodyOf: (storage.string as NSString).substring(with: body)) {
+                let numbered = NSMutableParagraphStyle()
+                numbered.firstLineHeadIndent = CodeGutter.textIndent(for: this.mono())
+                numbered.headIndent = CodeGutter.textIndent(for: this.mono())
+                numbered.tailIndent = -10
+                storage.addAttribute(.paragraphStyle, value: numbered, range: whole)
+                storage.addAttribute(CodeGutter.attribute, value: true, range: whole)
+            }
         }
 
         // An indented code block: four spaces or a tab after a blank line.
@@ -235,6 +289,39 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
             if let link = URL(string: (storage.string as NSString).substring(with: match.range)) {
                 storage.addAttribute(.link, value: link, range: match.range)
             }
+        }
+    }
+
+    /// A ```` ```log ```` block: the time dimmed, the prose in a column of its
+    /// own, and a time that repeats the line above left undrawn.
+    ///
+    /// Undrawn rather than deleted: the file keeps every stamp, so a second
+    /// editor — or `grep` — sees all of them. What is saved is ink.
+    private func paintLog(_ storage: NSTextStorage, body: NSRange) {
+        guard body.length > 0 else { return }
+        let source = (storage.string as NSString).substring(with: body)
+        let indent = CodeGutter.logIndent(for: mono())
+
+        for entry in Log.entries(in: source) {
+            let line = NSRange(location: body.location + entry.line.location,
+                               length: entry.line.length)
+            guard NSMaxRange(line) <= storage.length else { continue }
+
+            // Every line hangs at the prose column, so a line without a time
+            // and the wrapped tail of one with a time both line up under the
+            // words rather than under the clock.
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.firstLineHeadIndent = 10
+            paragraph.headIndent = indent
+            paragraph.tailIndent = -10
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: line)
+
+            guard let stamp = entry.time else { continue }
+            let range = NSRange(location: body.location + stamp.location, length: stamp.length)
+            guard NSMaxRange(range) <= storage.length else { continue }
+            storage.addAttribute(.foregroundColor,
+                                 value: ink.withAlphaComponent(entry.repeatsPrevious ? 0 : 0.42),
+                                 range: range)
         }
     }
 

@@ -360,9 +360,17 @@ final class NoteCardView: NSView {
         highlighter?.ink = ink
         highlighter?.accent = Palette.tab(color).blended(withFraction: 0.4, of: ink) ?? ink
         highlighter?.highlight = MarkerStroke.colour(for: color, dark: dark)
-        if let storage = textView.textStorage { highlighter?.highlight(storage) }
         titleField.textColor = ink
+        // Before the highlighter runs, not after.
+        //
+        // Setting `textColor` on a text view paints every character in the
+        // storage, so doing it afterwards wiped everything the rules had just
+        // decided — every fenced block flat, every dimmed time back to full
+        // ink. In the app it was invisible, because the pass that runs a turn
+        // after the next keystroke put it all back; on a note you opened and
+        // did not touch, and in anything that draws without typing, it was not.
         textView.textColor = ink.withAlphaComponent(0.92)
+        if let storage = textView.textStorage { highlighter?.highlight(storage) }
         textView.codeCopy.ink = ink
         textView.mediaCopy.ink = ink
         textView.codeLoupe.ink = ink
@@ -776,7 +784,78 @@ final class NoteTextView: NSTextView {
     /// the note's paper shows through, and AppKit never calls it.
     override func draw(_ dirtyRect: NSRect) {
         drawMarkerStrokes(in: dirtyRect)
+        drawQuoteBars(in: dirtyRect)
         super.draw(dirtyRect)
+        // After the text: the numbers sit in the margin the paragraph indent
+        // opened for them, and nothing is drawn over them.
+        drawLineNumbers(in: dirtyRect)
+    }
+
+    /// One stroke down each run of quoted lines.
+    private func drawQuoteBars(in rect: NSRect) {
+        guard let storage = textStorage, let manager = layoutManager,
+              let container = textContainer else { return }
+        let colour = linkInk.withAlphaComponent(0.30)
+        storage.enumerateAttribute(QuoteBar.attribute,
+                                   in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard value != nil else { return }
+            let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var box = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            box.origin.x = textContainerOrigin.x
+            box.origin.y += textContainerOrigin.y
+            guard box.intersects(rect), box.height > 1 else { return }
+            QuoteBar.draw(in: box, colour: colour)
+        }
+    }
+
+    /// The numbers beside a fenced block long enough to have earned them.
+    ///
+    /// A line that wrapped gets no number: only the fragment that starts a
+    /// logical line is numbered. On a note this is the ordinary case rather
+    /// than an edge one — at this width nearly every line of yaml wraps — and
+    /// it is the detail that makes an implementation look broken.
+    private func drawLineNumbers(in rect: NSRect) {
+        guard let storage = textStorage, let manager = layoutManager,
+              let container = textContainer else { return }
+        let text = storage.string as NSString
+        let font = NSFont.monospacedSystemFont(ofSize: (self.font?.pointSize ?? 13) * 0.78,
+                                               weight: .regular)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: tableInk.withAlphaComponent(0.38),
+        ]
+
+        storage.enumerateAttribute(CodeGutter.attribute,
+                                   in: NSRange(location: 0, length: storage.length)) { value, block, _ in
+            guard value != nil else { return }
+            let width = CodeGutter.numberWidth(for: font, lines: 99)
+
+            // The body only: the two fence lines are not line one and line N.
+            var cursor = NSMaxRange(text.lineRange(for: NSRange(location: block.location, length: 0)))
+            let closing = text.lineRange(for: NSRange(location: max(block.location,
+                                                                   NSMaxRange(block) - 1), length: 0))
+            var number = 1
+
+            while cursor < closing.location {
+                let line = text.lineRange(for: NSRange(location: cursor, length: 0))
+                let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
+                var fragment = manager.lineFragmentUsedRect(forGlyphAt: glyphs.location,
+                                                            effectiveRange: nil)
+                fragment.origin.y += textContainerOrigin.y
+
+                if fragment.intersects(rect) {
+                    let label = String(number) as NSString
+                    let size = label.size(withAttributes: attributes)
+                    label.draw(at: NSPoint(x: textContainerOrigin.x + CodeGutter.inset
+                                              + width - 10 - size.width,
+                                           y: fragment.minY + (fragment.height - size.height) / 2),
+                               withAttributes: attributes)
+                }
+                number += 1
+                guard NSMaxRange(line) > cursor else { break }
+                cursor = NSMaxRange(line)
+            }
+        }
     }
 
     private func drawMarkerStrokes(in rect: NSRect) {
@@ -870,6 +949,7 @@ final class NoteTextView: NSTextView {
 
     /// Enter inside a list continues it, the way every editor worth using does.
     override func insertNewline(_ sender: Any?) {
+        if MarkdownEditing.continueLog(self) { return }
         if MarkdownEditing.continueList(self) { return }
         super.insertNewline(sender)
     }

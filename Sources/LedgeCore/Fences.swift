@@ -24,6 +24,22 @@ public enum Fences {
 
     public static func ranges(in text: String) -> [NSRange] { ranges(in: text as NSString) }
 
+    /// The tag on the fence that opens the block a caret sits in — `mermaid`,
+    /// `json`, `log` — or nil when the caret is not inside one.
+    ///
+    /// Lowercased and trimmed, because a tag is a name and not a spelling.
+    public static func tag(at location: Int, in text: NSString) -> String? {
+        guard let block = ranges(in: text).first(where: { NSLocationInRange(location, $0) })
+        else { return nil }
+        let opening = text.lineRange(for: NSRange(location: block.location, length: 0))
+        // The caret on the opening line is not yet inside the block: the tag is
+        // still being typed.
+        guard location >= NSMaxRange(opening) else { return nil }
+        let line = text.substring(with: opening).trimmingCharacters(in: .whitespacesAndNewlines)
+        let ticks = line.prefix { $0 == "`" || $0 == "~" }.count
+        return String(line.dropFirst(ticks)).trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
     /// Is this range inside a block where Markdown does not apply?
     public static func contains(_ range: NSRange, in text: NSString) -> Bool {
         ranges(in: text).contains { NSIntersectionRange($0, range).length > 0 }

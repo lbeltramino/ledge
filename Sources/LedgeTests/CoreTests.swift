@@ -1566,6 +1566,52 @@ enum CoreTests {
             }
         }
 
+        Runner.suite("Log — una bitácora dentro de un bloque")
+
+        await Runner.test("cada línea lleva su hora, y la repetida se marca") { c in
+            let body = """
+            21:04 alertó la latencia
+            21:04 confirmo, p99 en 2.4s
+            21:11 rollback del ESM
+            sin hora, sigue la anterior
+            21:11 otra vez las once
+            """
+            let entries = Log.entries(in: body)
+            c.equal(entries.count, 5, "una entrada por línea")
+            guard entries.count == 5 else { return }
+            c.expect(entries[0].time != nil, "la primera tiene hora")
+            c.expect(!entries[0].repeatsPrevious, "y no repite nada")
+            c.expect(entries[1].repeatsPrevious, "la segunda repite el minuto de la primera")
+            c.expect(!entries[2].repeatsPrevious, "la tercera cambia de minuto")
+            c.expect(entries[3].time == nil, "una línea sin hora no inventa una")
+            c.expect(!entries[3].repeatsPrevious, "…ni repite")
+            // La de atrás sin hora no rompe la cuenta: 21:11 ya se dibujó.
+            c.expect(entries[4].repeatsPrevious,
+                     "la quinta repite el último minuto visto, aunque haya una línea sin hora en el medio")
+        }
+
+        await Runner.test("una hora que no es una hora no cuenta") { c in
+            for bad in ["9:7 mal", "24:00 mal", "99:99 mal", "2104 mal", "21:04mal"] {
+                let entries = Log.entries(in: bad)
+                c.expect(entries.first?.time == nil, "\(bad) no debería ser una hora")
+            }
+            for good in ["9:07 bien", "23:59 bien", "00:00 bien"] {
+                let entries = Log.entries(in: good)
+                c.expect(entries.first?.time != nil, "\(good) sí")
+            }
+        }
+
+        await Runner.test("el tag del cercado donde está el caret") { c in
+            let note = "antes\n\n```log\n21:04 algo\n```\n\ndespués" as NSString
+            let inside = note.range(of: "21:04").location
+            c.equal(Fences.tag(at: inside, in: note), "log")
+            let outside = note.range(of: "después").location
+            c.expect(Fences.tag(at: outside, in: note) == nil, "afuera no hay tag")
+            // En la línea de apertura todavía estás escribiendo el tag.
+            let onOpening = note.range(of: "```log").location + 4
+            c.expect(Fences.tag(at: onOpening, in: note) == nil, "la línea de apertura no cuenta")
+        }
+
         Runner.suite("UISchema — a form read out of a block of JSON")
 
         let bare = """

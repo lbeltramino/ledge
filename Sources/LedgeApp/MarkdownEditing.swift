@@ -199,6 +199,32 @@ enum MarkdownEditing {
 
     /// Enter inside a list continues the list; Enter on an empty item ends it.
     /// Returns true when it handled the key.
+    /// Enter inside a ```` ```log ```` block starts the next line with the time.
+    ///
+    /// The time is written into the file, because that is what it is: something
+    /// that happened at a moment, which has to survive being read anywhere
+    /// else. Outside such a block Enter is Enter — this is the only place in
+    /// the app where a keystroke writes something you did not type, and it is
+    /// confined to a block you opened by naming it.
+    ///
+    /// Takes the clock so a check can pin it; the app passes the real one.
+    @discardableResult
+    static func continueLog(_ textView: NSTextView, now: Date = Date()) -> Bool {
+        guard let storage = textView.textStorage else { return false }
+        let text = storage.string as NSString
+        let caret = textView.selectedRange()
+        guard caret.length == 0, Fences.tag(at: caret.location, in: text).map(Log.isLogTag) == true
+        else { return false }
+
+        // Not on the closing fence: Enter there leaves the block, and stamping
+        // the line after it would put a time on ordinary prose.
+        let line = text.substring(with: text.lineRange(for: NSRange(location: caret.location, length: 0)))
+        guard !line.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```") else { return false }
+
+        replace(textView, range: caret, with: "\n" + Log.stamp(now) + " ")
+        return true
+    }
+
     static func continueList(_ textView: NSTextView) -> Bool {
         guard let storage = textView.textStorage else { return false }
         let text = storage.string as NSString

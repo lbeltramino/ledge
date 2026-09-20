@@ -227,6 +227,39 @@ enum Renderer {
         }
     }
 
+    /// Una bitácora, números de línea y una cita, para mirarlas.
+    static func marks() -> NSImage {
+        let size = NSSize(width: 430, height: 620)
+        return image(size: size) { _ in
+            var note = Note(title: "Incidente 4/9", color: .butter)
+            note.body = """
+            El gateway tiraba 502 después del deploy.
+
+            ```log
+            21:04 alertó la latencia del gateway
+            21:04 confirmo, p99 en 2.4s
+            21:11 rollback del ESM, tarda un rato en propagarse
+            21:12 kubectl rollout undo deploy/gateway
+            ```
+
+            Pregunté en el canal antes de tocar nada:
+
+            > Los usuarios autentican por IAM, no hay password.
+            > — en #infra, martes
+
+            ```yaml
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: gateway
+            spec:
+              replicas: 6
+            ```
+            """
+            draw(card(note, size: size, filename: "Incidente.md"), at: .zero)
+        }
+    }
+
     /// A card laid out the way the app lays one out, ready to be drawn.
     ///
     /// The extra pass is not ceremony: tables, drawings and the outline are all
@@ -261,7 +294,8 @@ enum Renderer {
         write(table(), to: directory.appendingPathComponent("table.png"))
         write(outline(), to: directory.appendingPathComponent("outline.png"))
         write(form(), to: directory.appendingPathComponent("form.png"))
-        print("rendered 12 images into \(directory.path)")
+        write(marks(), to: directory.appendingPathComponent("marks.png"))
+        print("rendered 13 images into \(directory.path)")
     }
 
     enum DeckState { case rest, fanned, open }
