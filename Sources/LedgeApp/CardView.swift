@@ -790,9 +790,69 @@ final class NoteTextView: NSTextView {
     nonisolated(unsafe) static var debugDraws = 0
     nonisolated(unsafe) static var debugDrawnArea: CGFloat = 0
 
+    /// Cuenta lo que pasa mientras alguien escribe de verdad, cuando una
+    /// reproducción sintética no alcanza:
+    ///
+    ///     defaults write com.lisandro.Ledge Diagnostico -bool YES
+    ///
+    /// Escribe una línea por dibujo en el que la altura de la línea del caret
+    /// cambió, que es exactamente lo que se ve como parpadeo.
+    nonisolated(unsafe) private static var lastReported: CGFloat = -1
+    nonisolated(unsafe) private static let reporting =
+        UserDefaults.standard.bool(forKey: "Diagnostico")
+
+    static func report(height: CGFloat, at glyph: Int, in manager: NSLayoutManager,
+                       of view: NoteTextView) {
+        guard reporting, abs(height - lastReported) > 0.2 else { return }
+        lastReported = height
+        guard let storage = view.textStorage else { return }
+        let line = (view.string as NSString)
+            .lineRange(for: NSRange(location: max(0, view.selectedRange().location - 1), length: 0))
+
+        // Todo lo que hay en la línea, que es lo que decide su altura: la
+        // altura de una línea es el máximo de sus corridas, así que basta con
+        // que una sola cambie.
+        var fuentes: Set<String> = []
+        var espacios: Set<String> = []
+        storage.enumerateAttributes(in: line) { attrs, _, _ in
+            if let f = attrs[.font] as? NSFont {
+                fuentes.insert("\(f.fontName)@\(String(format: "%.1f", f.pointSize))")
+            } else {
+                fuentes.insert("sin-fuente")
+            }
+            if let p = attrs[.paragraphStyle] as? NSParagraphStyle {
+                espacios.insert(String(format: "int%.1f/min%.1f/max%.1f/esp%.1f",
+                                       p.lineSpacing, p.minimumLineHeight,
+                                       p.maximumLineHeight, p.paragraphSpacing))
+            } else {
+                espacios.insert("sin-párrafo")
+            }
+        }
+        let stamp = String(format: "%.3f", Date().timeIntervalSince1970
+                           .truncatingRemainder(dividingBy: 1000))
+        let linea = "\(stamp) alto=\(String(format: "%.1f", height)) "
+            + "fuentes=\(fuentes.sorted()) párrafo=\(espacios.sorted())\n"
+        FileHandle.standardError.write(Data(linea.utf8))
+    }
+
+    /// El alto de la línea del caret, tal como está en el momento de dibujar.
+    /// Es el único instante que importa: lo que se ve como parpadeo es una
+    /// altura que existió para un cuadro y desapareció.
+    nonisolated(unsafe) static var debugLineHeights: [CGFloat] = []
+
     override func draw(_ dirtyRect: NSRect) {
         NoteTextView.debugDraws += 1
         NoteTextView.debugDrawnArea += dirtyRect.width * dirtyRect.height
+        if let manager = layoutManager, selectedRange().location > 0,
+           selectedRange().location <= (string as NSString).length {
+            let line = (string as NSString)
+                .lineRange(for: NSRange(location: selectedRange().location - 1, length: 0))
+            let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
+            let height = manager.lineFragmentRect(forGlyphAt: glyphs.location,
+                                                  effectiveRange: nil).height
+            NoteTextView.debugLineHeights.append(height)
+            NoteTextView.report(height: height, at: glyphs.location, in: manager, of: self)
+        }
         drawMarkerStrokes(in: dirtyRect)
         for bar in quoteBars where bar.intersects(dirtyRect) {
             QuoteBar.draw(in: bar, colour: linkInk.withAlphaComponent(0.30))
@@ -814,8 +874,15 @@ final class NoteTextView: NSTextView {
     private var quoteBars: [NSRect] = []
     private var numberRows: [(rect: NSRect, label: String)] = []
 
+    /// The highlighter, which is this storage's delegate — the one place that
+    /// knows what a fenced block is set in.
+    private var highlighter: MarkdownHighlighter? {
+        textStorage?.delegate as? MarkdownHighlighter
+    }
+
     private var gutterFont: NSFont {
-        .monospacedSystemFont(ofSize: (font?.pointSize ?? 13) * 0.78, weight: .regular)
+        highlighter?.codeFont
+            ?? .monospacedSystemFont(ofSize: (font?.pointSize ?? 13) * 0.78, weight: .regular)
     }
 
     func refreshGutters() {
@@ -2271,9 +2338,10 @@ final class NoteTextView: NSTextView {
     func matchTypingToContext() {
         let base = font ?? .systemFont(ofSize: 13)
         let inside = Fences.containsCaret(selectedRange().location, in: string as NSString)
-        let wanted: NSFont = inside
-            ? .monospacedSystemFont(ofSize: base.pointSize * 0.78, weight: .regular)
-            : base
+        // The highlighter's font, not one worked out again from this view's
+        // own: they are built from different bases, and the difference — 15.6
+        // against 13.3 — was a line that grew for one frame on every key.
+        let wanted: NSFont = inside ? (highlighter?.codeFont ?? base) : base
         guard (typingAttributes[.font] as? NSFont) != wanted else { return }
         typingAttributes[.font] = wanted
     }

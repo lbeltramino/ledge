@@ -3244,20 +3244,60 @@ enum SelfTest {
             // la línea y correr el texto de abajo por eso es correcto. Lo que
             // se ve como parpadeo es que salte al escribir y vuelva cuando el
             // resaltador corre, un turno después.
+            /// La altura de la línea donde está el caret.
+            func caretLineHeight() -> CGFloat {
+                guard let manager = view.layoutManager else { return 0 }
+                let line = (view.string as NSString)
+                    .lineRange(for: NSRange(location: max(0, view.selectedRange().location - 1),
+                                            length: 0))
+                let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
+                return manager.lineFragmentRect(forGlyphAt: glyphs.location,
+                                                effectiveRange: nil).height
+            }
+
+            NoteTextView.debugLineHeights = []
             var worst: CGFloat = 0
             for ch in "abc" {
                 view.insertText(String(ch), replacementRange: view.selectedRange())
                 card.displayIfNeeded()
-                let justTyped = tailY()
+                let typed = (tail: tailY(), line: caretLineHeight(), frame: view.frame.height)
                 try? await Task.sleep(for: .milliseconds(150))
+                card.layoutSubtreeIfNeeded()
                 card.displayIfNeeded()
-                worst = max(worst, abs(tailY() - justTyped))
+                let settled = (tail: tailY(), line: caretLineHeight(), frame: view.frame.height)
+                worst = max(worst, abs(settled.tail - typed.tail))
+                worst = max(worst, abs(settled.line - typed.line))
+                worst = max(worst, abs(settled.frame - typed.frame))
+                if abs(settled.line - typed.line) > 0.5 || abs(settled.frame - typed.frame) > 0.5 {
+                    print(String(format: "  al tipear: línea %.1f marco %.1f — "
+                                + "asentado: línea %.1f marco %.1f",
+                                typed.line, typed.frame, settled.line, settled.frame))
+                }
             }
             return (NoteTextView.debugDraws, NoteTextView.debugDrawnArea, worst)
         }
 
         let outside = await typing(at: "prosa para escribir")
+        let alturasAfuera = Set(NoteTextView.debugLineHeights.map { ($0 * 10).rounded() })
         let inside = await typing(at: "# another one")
+        let alturasAdentro = Set(NoteTextView.debugLineHeights.map { ($0 * 10).rounded() })
+        print("  alturas dibujadas afuera: \(alturasAfuera.sorted())")
+        print("  alturas dibujadas adentro: \(alturasAdentro.sorted())")
+        check(alturasAdentro.count <= 1,
+              "la línea se dibuja siempre con la misma altura: \(alturasAdentro.sorted())")
+
+        // Y la razón por la que no lo era: dos tamaños de monoespaciada en la
+        // misma línea, porque el caret calculaba el suyo desde otra base.
+        // 13.3 contra 15.6 es un punto y medio, que es un renglón creciendo y
+        // encogiendo en cada tecla.
+        let at = (view.string as NSString).range(of: "# another one")
+        view.setSelectedRange(NSRange(location: NSMaxRange(at), length: 0))
+        let tipeo = (view.typingAttributes[.font] as? NSFont)
+        let texto = view.textStorage?.attribute(.font, at: at.location,
+                                                effectiveRange: nil) as? NSFont
+        check(tipeo != nil && texto != nil && abs(tipeo!.pointSize - texto!.pointSize) < 0.01,
+              "lo que tipeás adentro de un bloque tiene el tamaño del bloque: "
+              + "\(tipeo?.pointSize ?? -1) contra \(texto?.pointSize ?? -1)")
 
         check(inside.draws <= outside.draws * 3,
               "escribir adentro no dibuja mucho más que afuera: "

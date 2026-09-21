@@ -380,6 +380,15 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         return NSFontManager.shared.convert(sized, toHaveTrait: .boldFontMask)
     }
 
+    /// The font a fenced block is set in.
+    ///
+    /// Anything that needs to agree with the inside of a block — the caret's
+    /// typing attributes, the gutter's numbers — asks here. Working it out a
+    /// second time from a second base is how a character came to be typed in
+    /// 15.6 point inside a block set in 13.3, which grew the line for one frame
+    /// on every keystroke.
+    var codeFont: NSFont { mono() }
+
     private func mono() -> NSFont {
         .monospacedSystemFont(ofSize: baseFont.pointSize * 0.78, weight: .regular)
     }
