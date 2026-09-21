@@ -378,12 +378,17 @@ enum SelfTest {
 
         let blockFont = attribute(.font, at: "let answer = 42") as? NSFont
         check(blockFont?.isFixedPitch == true, "a ``` block is monospaced")
-        check(attribute(.backgroundColor, at: "let answer = 42") != nil,
-              "a ``` block gets a background so it reads as a block")
-        check(attribute(.backgroundColor, at: "```swift") != nil,
+        // The panel a block sits on is drawn by the view now, not painted on
+        // the characters — see `CodePanel`. What the highlighter still owns is
+        // the font and the indent, and the fences being part of the block
+        // rather than three separately styled lines.
+        check((attribute(.font, at: "```swift") as? NSFont)?.isFixedPitch == true,
               "the fences are part of the block, not three separate lines")
         let blockParagraph = attribute(.paragraphStyle, at: "let answer = 42") as? NSParagraphStyle
         check((blockParagraph?.headIndent ?? 0) > 0, "a ``` block is indented")
+        check(attribute(.backgroundColor, at: "let answer = 42") == nil,
+              "and no background on the characters: the panel is one rectangle, "
+              + "so a gutter drawn on it cannot land half off")
     }
 
     /// Squeezes the controls row at every width down to absurd, without needing
@@ -505,11 +510,12 @@ enum SelfTest {
             let range = (source as NSString).range(of: needle)
             guard range.location != NSNotFound else { return (nil, nil) }
             return (storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont,
-                    storage.attribute(.backgroundColor, at: range.location, effectiveRange: nil))
+                    storage.attribute(.paragraphStyle, at: range.location, effectiveRange: nil))
         }
 
         let tilde = attributesOf("~~~\nlet a = 1\n~~~", at: "let a = 1")
-        check(tilde.0?.isFixedPitch == true && tilde.1 != nil,
+        check(tilde.0?.isFixedPitch == true
+              && ((tilde.1 as? NSParagraphStyle)?.headIndent ?? 0) > 0,
               "a ~~~ fence is a code block too — Markdown's other fence")
 
         let indented = attributesOf("text\n\n    let b = 2\n", at: "let b = 2")
@@ -3103,6 +3109,80 @@ enum SelfTest {
               "quién lo dijo se dibuja más chico: \(font?.pointSize ?? -1) vs \(body?.pointSize ?? -1)")
     }
 
+    /// Los números viven adentro del panel del bloque, siempre.
+    ///
+    /// Que es la invariante que faltaba la primera vez. Entonces el panel era
+    /// un color de fondo sobre cada carácter, así que su borde izquierdo lo
+    /// decidía la sangría del texto y el canal quedaba a veces adentro y a
+    /// veces afuera. Ahora el panel es un rectángulo que dibuja la vista y los
+    /// números se ubican desde ese mismo rectángulo, así que no hay dos
+    /// opiniones que puedan discrepar.
+    static func checkNumbersLiveOnThePanel() async {
+        let note = """
+        Antes.
+
+        ````python
+
+        print("Hola")
+
+        # un comentario
+        # otro comentario
+        # y otro más
+        ```
+
+        Después.
+        """
+        let record = NoteRecord(note: Note(title: "Números", color: .blue), filename: "n.md",
+                                mtime: 0, size: 0, hash: "")
+        let card = NoteCardView(record: record, body: note)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        card.layoutSubtreeIfNeeded()
+        let view = card.textView
+
+        check(view.debugLineNumbers == ["1", "2", "3", "4", "5", "6"],
+              "un bloque de seis líneas lleva sus seis números: \(view.debugLineNumbers)")
+        check(view.debugNumbersOnPanel.allSatisfy { $0 },
+              "y todos caen adentro del panel: \(view.debugNumbersOnPanel)")
+        check(view.debugCodePanels == 1, "un panel, uno solo: \(view.debugCodePanels)")
+
+        // Y sigue siendo cierto mientras escribís, que es cuando se rompía.
+        let at = (view.string as NSString).range(of: "# otro comentario")
+        view.setSelectedRange(NSRange(location: NSMaxRange(at), length: 0))
+        for ch in "xyz" {
+            view.insertText(String(ch), replacementRange: view.selectedRange())
+            check(view.debugNumbersOnPanel.allSatisfy { $0 },
+                  "…también con la tecla apretada: \(view.debugNumbersOnPanel)")
+        }
+        view.insertText("\n# una línea más", replacementRange: view.selectedRange())
+        check(view.debugLineNumbers == ["1", "2", "3", "4", "5", "6", "7"],
+              "y una línea más es un número más, en el acto, sin reiniciar: "
+              + "\(view.debugLineNumbers)")
+        check(view.debugNumbersOnPanel.allSatisfy { $0 },
+              "…que también cae adentro: \(view.debugNumbersOnPanel)")
+
+        // El texto nunca se mete abajo de los números.
+        let style = view.textStorage?.attribute(.paragraphStyle, at: at.location,
+                                                effectiveRange: nil) as? NSParagraphStyle
+        check((style?.firstLineHeadIndent ?? 0) > CodePanel.inset + 8,
+              "el código arranca pasando el canal: \(style?.firstLineHeadIndent ?? -1)")
+
+        // Un bloque corto no se gana números, y una bitácora nunca.
+        let corto = NoteCardView(record: record, body: "```bash\nkubectl get pods\n```")
+        corto.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
+        corto.layoutSubtreeIfNeeded()
+        check(corto.textView.debugLineNumbers.isEmpty,
+              "un bloque de una línea no: \(corto.textView.debugLineNumbers)")
+        check(corto.textView.debugCodePanels == 1, "pero sí tiene panel")
+
+        let log = NoteCardView(record: record,
+                               body: "```log\n" + (1...6).map { "16:0\($0) algo" }
+                                   .joined(separator: "\n") + "\n```")
+        log.frame = NSRect(x: 0, y: 0, width: 420, height: 400)
+        log.layoutSubtreeIfNeeded()
+        check(log.textView.debugLineNumbers.isEmpty,
+              "y una bitácora nunca, ya tiene su columna: \(log.textView.debugLineNumbers)")
+    }
+
     /// Un cercado de cuatro backticks sigue siendo un tag.
     ///
     /// Es el de la nota donde se reportó todo esto: Markdown válido, y lo que
@@ -4694,6 +4774,7 @@ enum SelfTest {
         checkTheNewMarks()
         checkEnterStampsTheTime()
         checkFourBackticksStillTag()
+        await checkNumbersLiveOnThePanel()
         await checkTypingInsideABlock()
         await checkEditingInsideAFencedBlock()
         checkFoldingFollowsTheCard()

@@ -806,11 +806,36 @@ final class NoteTextView: NSTextView {
             NoteTextView.debugLineHeights.append(
                 manager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).height)
         }
+        // The panel first, then what goes on it, then the text over both.
+        for panel in codePanels where panel.rect.intersects(dirtyRect) {
+            CodePanel.fill(panel.rect, ink: tableInk)
+        }
+        drawNumbers(in: dirtyRect)
         drawMarkerStrokes(in: dirtyRect)
         for bar in quoteBars where bar.intersects(dirtyRect) {
             QuoteBar.draw(in: bar, colour: linkInk.withAlphaComponent(0.30))
         }
         super.draw(dirtyRect)
+    }
+
+    private func drawNumbers(in rect: NSRect) {
+        guard !numberRows.isEmpty else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: gutterFont,
+            .foregroundColor: tableInk.withAlphaComponent(0.35),
+        ]
+        for row in numberRows where row.rect.intersects(rect) {
+            let label = row.label as NSString
+            let size = label.size(withAttributes: attributes)
+            label.draw(at: NSPoint(x: row.rect.maxX - size.width,
+                                   y: row.rect.minY + (row.rect.height - size.height) / 2),
+                       withAttributes: attributes)
+        }
+    }
+
+    private var gutterFont: NSFont {
+        highlighter?.codeFont
+            ?? .monospacedSystemFont(ofSize: (font?.pointSize ?? 13) * 0.78, weight: .regular)
     }
 
     /// Where the quote strokes and the line numbers go.
@@ -822,6 +847,8 @@ final class NoteTextView: NSTextView {
     /// as the block flickering under the caret. Reported exactly that way, for
     /// any fenced block.
     private var quoteBars: [NSRect] = []
+    private var codePanels: [(rect: NSRect, numbered: Bool)] = []
+    private var numberRows: [(rect: NSRect, label: String)] = []
 
     /// The highlighter, which is this storage's delegate — the one place that
     /// knows what a fenced block is set in.
@@ -831,6 +858,8 @@ final class NoteTextView: NSTextView {
 
     func refreshGutters() {
         quoteBars = []
+        codePanels = []
+        numberRows = []
         guard let storage = textStorage, let manager = layoutManager,
               let container = textContainer, container.size.width > 1 else { return }
         let whole = NSRange(location: 0, length: storage.length)
@@ -839,9 +868,11 @@ final class NoteTextView: NSTextView {
         // because on a note with no fenced block and no quote there is nothing
         // here to place and forcing the layout of the whole container on every
         // keystroke to find that out is a cost the app never used to pay.
-        var wanted = false
-        storage.enumerateAttribute(QuoteBar.attribute, in: whole) { value, _, stop in
-            if value != nil { wanted = true; stop.pointee = true }
+        var wanted = !Fences.ranges(in: storage.string as NSString).isEmpty
+        if !wanted {
+            storage.enumerateAttribute(QuoteBar.attribute, in: whole) { value, _, stop in
+                if value != nil { wanted = true; stop.pointee = true }
+            }
         }
         guard wanted else { return }
 
@@ -862,6 +893,61 @@ final class NoteTextView: NSTextView {
             self.quoteBars.append(box)
         }
 
+        // One rectangle per block, the full width of the text, fence lines
+        // included. Everything on the panel is positioned from this same rect,
+        // so there is no second opinion about where its left edge is.
+        //
+        // Worked out from the text and not from the attribute that marks a
+        // block. The attribute is a turn behind — the highlighter runs after
+        // the edit — so a character typed into a block splits its run in three
+        // and the numbering starts again from one in the middle. The text is
+        // never behind itself.
+        let text = storage.string as NSString
+        let font = gutterFont
+        let gutter = CodePanel.gutterWidth(for: font)
+        for block in Fences.ranges(in: text) {
+            let opening = text.lineRange(for: NSRange(location: block.location, length: 0))
+            let closing = text.lineRange(for: NSRange(location: max(block.location,
+                                                                   NSMaxRange(block) - 1),
+                                                      length: 0))
+            guard NSMaxRange(opening) <= closing.location else { continue }
+            let bodyRange = NSRange(location: NSMaxRange(opening),
+                                    length: closing.location - NSMaxRange(opening))
+
+            let glyphs = manager.glyphRange(forCharacterRange: block, actualCharacterRange: nil)
+            var box = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            box.origin.x = textContainerOrigin.x
+            box.origin.y += textContainerOrigin.y
+            box.size.width = container.size.width
+            guard box.height > 1 else { continue }
+
+            let tag = Fences.tag(at: NSMaxRange(opening), in: text) ?? ""
+            let numbered = !Log.isLogTag(tag)
+                && CodePanel.numbers(forBodyOf: text.substring(with: bodyRange))
+            codePanels.append((box, numbered))
+            guard numbered else { continue }
+
+            // A number per line of the body, at that line's own fragment. A
+            // line that wrapped gets none: only the fragment that starts a
+            // logical line is numbered, which at this width is the ordinary
+            // case rather than an edge one.
+            var cursor = bodyRange.location
+            var number = 1
+            while cursor < closing.location {
+                let line = text.lineRange(for: NSRange(location: cursor, length: 0))
+                let lineGlyphs = manager.glyphRange(forCharacterRange: line,
+                                                    actualCharacterRange: nil)
+                var fragment = manager.lineFragmentUsedRect(forGlyphAt: lineGlyphs.location,
+                                                            effectiveRange: nil)
+                fragment.origin.y += textContainerOrigin.y
+                numberRows.append(
+                    (NSRect(x: box.minX + CodePanel.inset, y: fragment.minY,
+                            width: gutter - 8, height: fragment.height), String(number)))
+                number += 1
+                guard NSMaxRange(line) > cursor else { break }
+                cursor = NSMaxRange(line)
+            }
+        }
     }
 
     private func drawMarkerStrokes(in rect: NSRect) {
@@ -1832,6 +1918,15 @@ final class NoteTextView: NSTextView {
 
     var debugMediaCount: Int { mediaViews.count }
     var debugQuoteBars: Int { quoteBars.count }
+    var debugLineNumbers: [String] { numberRows.map(\.label) }
+    var debugCodePanels: Int { codePanels.count }
+    /// Cada número, y si cae adentro del panel de su bloque. Lo que se rompió
+    /// la primera vez fue exactamente esto.
+    var debugNumbersOnPanel: [Bool] {
+        numberRows.map { row in
+            codePanels.contains { $0.rect.contains(row.rect.insetBy(dx: 1, dy: 1)) }
+        }
+    }
     var debugMediaViews: [MediaView] { Array(mediaViews.values) }
     var debugMediaFrames: [NSRect] { mediaViews.values.map(\.frame) }
 

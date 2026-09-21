@@ -183,31 +183,42 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         rule("^(```|~~~)([^\n]*)\n([\\s\\S]*?)^\\1[ \t]*$") { storage, match, this in
             let whole = match.range
             storage.addAttribute(.font, value: this.mono(), range: whole)
-            storage.addAttribute(.backgroundColor,
-                                 value: this.ink.withAlphaComponent(0.07), range: whole)
+
+            // The panel is drawn, not painted on the characters. A background
+            // attribute starts where the glyphs start, so making room for a
+            // gutter by indenting the text moves the panel's edge with it and
+            // the numbers end up half on and half off. One rectangle, drawn by
+            // the view, has no such argument with itself.
+            let body = match.range(at: 3)
+
+            // ```yaml, ```hcl, ```go — the tag on the fence.
+            //
+            // Trimmed of backticks as well as spaces: the pattern captures the
+            // first three of the run, so a block opened with four — legal
+            // Markdown, and what this app's own paste writes — left the fourth
+            // on the front of the tag. "`log" is not "log", and a bitácora was
+            // drawn as an ordinary code block, numbers and all.
+            let tag = (storage.string as NSString).substring(with: match.range(at: 2))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "`~ \t")).lowercased()
+
+            // A bitácora has a column of its own; two gutters on one block is
+            // one too many.
+            let numbered = !Log.isLogTag(tag) && CodePanel.numbers(
+                forBodyOf: (storage.string as NSString).substring(with: body))
             let paragraph = NSMutableParagraphStyle()
-            paragraph.firstLineHeadIndent = 10
-            paragraph.headIndent = 10
-            paragraph.tailIndent = -10
+            let indent = CodePanel.textIndent(for: this.mono(), numbered: numbered)
+            paragraph.firstLineHeadIndent = indent
+            paragraph.headIndent = indent
+            paragraph.tailIndent = -CodePanel.inset
             storage.addAttribute(.paragraphStyle, value: paragraph, range: whole)
             storage.addAttribute(.foregroundColor, value: this.ink.withAlphaComponent(0.88),
                                  range: match.range(at: 3))
 
-            let body = match.range(at: 3)
             this.fade(storage, NSRange(location: whole.location,
                                        length: max(0, body.location - whole.location)), 0.30)
             this.fade(storage, NSRange(location: body.upperBound,
                                        length: max(0, whole.upperBound - body.upperBound)), 0.30)
 
-            // ```yaml, ```hcl, ```go — the tag on the fence, which until now was
-            // parsed and thrown away.
-            // Trimmed of backticks as well as spaces. The pattern captures the
-            // first three of the run, so a block opened with four — which is
-            // legal Markdown, and which this app's own paste writes — left the
-            // fourth on the front of the tag: "`log" is not "log", so a
-            // bitácora was drawn as an ordinary code block, numbers and all.
-            let tag = (storage.string as NSString).substring(with: match.range(at: 2))
-                .trimmingCharacters(in: CharacterSet(charactersIn: "`~ \t")).lowercased()
             if Log.isLogTag(tag) {
                 this.paintLog(storage, body: body)
             } else {
@@ -293,7 +304,7 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
         // Where the prose starts: past the widest a time can be. The same
         // number the fenced rule indents by, plus that width.
         let clock = (Log.widestTime as NSString).size(withAttributes: [.font: mono()]).width
-        let indent = 10 + ceil(clock)
+        let indent = CodePanel.inset + ceil(clock)
 
         for entry in Log.entries(in: source) {
             let line = NSRange(location: body.location + entry.line.location,
