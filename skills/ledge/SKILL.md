@@ -130,6 +130,30 @@ turned out to be different from what anyone expected. A diagram on every append
 is decoration, and the rule below about not writing a transcript applies to
 pictures too.
 
+## When what you are reporting happened at a time
+
+A ```` ```log ```` block is a line of prose with the time in front of it, drawn
+in a column of its own. For an agent this is the right shape for anything with
+an order to it — what you tried, what it did, when it started working — and it
+beats a paragraph because it can be skimmed.
+
+````bash
+ledge append "$ID" <<'EOF'
+```log
+14:02 arranqué la migración
+14:09 3 filas fallaron la validación
+14:11 reintenté con el backfill acotado
+```
+EOF
+````
+
+Write `HH:MM` yourself, zero-padded — the app only fills it in for a person
+pressing Enter. A line without a time is fine and lines up under the words.
+Repeating the same minute is fine too: the note draws the stamp once and the
+file keeps both.
+
+Use it for a sequence. A single event is an ordinary append.
+
 ## When the answer is a form, draw that
 
 A block of JSON with a JSONForms `uiSchema` in it is **drawn as the form it

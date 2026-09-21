@@ -161,6 +161,32 @@ SQLite index beside it is a cache you can delete at any moment.
   clipboard: a picture at the quality of its file, a diagram redrawn at its own
   size and twice the density, because what you paste into a ticket should be
   worth looking at.
+- **A block that is a log.** A ```` ```log ```` block is a line of prose with
+  the time it happened in front of it. Enter writes the time for you — the only
+  place in the app where a key writes something you did not type, and it is
+  confined to a block you opened by naming it. The stamp goes in the file,
+  because it is information; what is drawn is the rest: the time dimmed, the
+  prose hanging in a column of its own so a wrapped line lands under the words
+  rather than under the clock, and a time repeating the minute above left
+  undrawn while the file keeps it, the way `journalctl` does.
+- **Line numbers, on the block and not in it.** A fenced block of five lines or
+  more is numbered down its left. The numbers are never in the file — there
+  they would be vandalism, and copying the block would give you code that does
+  not compile — so the block sits on a drawn panel and the numbers sit on that
+  panel with it. A line that wrapped gets none, which on a note is the ordinary
+  case. Shorter blocks go unnumbered: chrome is earned, and two lines of
+  `kubectl` with numbers beside them look like an IDE.
+- **Quotes worth using.** In a note at work a quote is nearly always something
+  somebody said, so what is worth designing is not the indent — it is the
+  attribution. A line inside the quote that opens with an em dash is set small,
+  in the interface face, which is what makes the quote worth coming back to
+  three weeks later. One stroke runs down the whole quote in the note's own
+  accent, so it is a different colour on each of the five papers.
+
+<p align="center">
+  <img src="docs/marks.png" width="430" alt="A note with a timestamped log block, a quote with its attribution, and a numbered yaml block">
+</p>
+
 - **Tables, drawn.** A Markdown table is rendered while you are reading it —
   ruled, aligned, the header set apart — and the note still says pipes and
   dashes. It is locked: a click is not an edit. Press the padlock and it becomes
@@ -363,7 +389,7 @@ different Mac were both wrong.
 ## Tests
 
 ```sh
-swift run ledge-tests                               # 243 unit tests
+swift run ledge-tests                               # 246 unit tests
 ./build/Ledge.app/Contents/MacOS/Ledge --selftest   # the geometry, on this screen
 ```
 
@@ -500,7 +526,8 @@ change for that to work.
 | `⌥⌘L` | The archive |
 | `⌥⌘D` | Show or hide the deck |
 | `⌘↩` | Open the note in the full editor |
-| `⌘B` `⌘I` `⌘E` `⌘K` | Bold, italic, code, link |
+| `⌘B` `⌘I` `⌘K` | Bold, italic, link |
+| `⌘E` | Code — a fenced block, or backticks around what is selected |
 | `⌘⇧T` | Turn lines into tasks, or back |
 | `⌘⇧H` | Highlight the selection |
 | `⌘⇧C` | Copy the code block the caret is in |
@@ -527,7 +554,8 @@ change for that to work.
 
 Headings, bold, italic, quotes, bullets, numbered lists, tasks, tags, links
 between notes, links out, tables, and — drawn rather than highlighted —
-` ```mermaid ` blocks and JSON with a JSONForms `uiSchema` in it. For code, all three of Markdown's forms: inline
+` ```mermaid ` blocks, ` ```log ` blocks, and JSON with a JSONForms `uiSchema`
+in it. For code, all three of Markdown's forms: inline
 `` ` ``, fenced ``` ``` ``` and `~~~`, and four-space indented blocks — which is
 what you get from pasting a terminal. A nested list item also starts with four
 spaces and is deliberately not treated as code.
