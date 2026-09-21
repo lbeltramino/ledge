@@ -30,7 +30,7 @@ public enum Frontmatter {
     /// another, and typing duplicated the line below. So `parse` uses this too,
     /// and the two cannot drift apart because there is only one of them.
     public static func normalizedBody(_ body: String) -> String {
-        let body = trimmed(body)
+        let body = trimmed(newlines(body))
         // A note whose last line is a picture or a diagram has nowhere to type:
         // the drawing is painted in the room after that line, and there is no
         // line after it. One newline is kept so there always is somewhere to go.
@@ -38,6 +38,24 @@ public enum Frontmatter {
               NSMaxRange(last.range) >= (body as NSString).length,
               !body.isEmpty else { return body }
         return body + "\n"
+    }
+
+    /// One kind of line ending, and it is `\n`.
+    ///
+    /// A note is a text file, and everything that reads one here splits it on
+    /// newlines: a fenced block, a task, a heading, a log's stamps. Text
+    /// pasted from somewhere that ends its lines with a carriage return — a
+    /// terminal, a Windows tool, an older Mac — arrives as one enormous line,
+    /// and every one of those readers sees a single line that happens to start
+    /// with three backticks. A whole mermaid diagram went undrawn that way and
+    /// looked, from the outside, exactly like the renderer being broken.
+    ///
+    /// Normalised where the body is normalised, so it is fixed in the file the
+    /// first time the note is saved rather than worked around in ten readers.
+    public static func newlines(_ body: String) -> String {
+        guard body.contains("\r") else { return body }
+        return body.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
     }
 
     static func trimmed(_ body: String) -> String {

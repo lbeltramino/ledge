@@ -3166,6 +3166,17 @@ enum SelfTest {
         check((style?.firstLineHeadIndent ?? 0) > CodePanel.inset + 8,
               "el código arranca pasando el canal: \(style?.firstLineHeadIndent ?? -1)")
 
+        // Un bloque que ya dibuja algo abajo tampoco: la definición de un
+        // diagrama con números al costado es chrome sobre chrome.
+        let mermaid = NoteCardView(
+            record: record,
+            body: "```mermaid\nflowchart LR\n  A[uno] --> B[dos]\n  B --> C[tres]\n  C --> D[cuatro]\n```")
+        mermaid.frame = NSRect(x: 0, y: 0, width: 420, height: 600)
+        mermaid.layoutSubtreeIfNeeded()
+        check(mermaid.textView.debugMediaCount == 1, "el diagrama se dibuja")
+        check(mermaid.textView.debugLineNumbers.isEmpty,
+              "y su definición no lleva números: \(mermaid.textView.debugLineNumbers)")
+
         // Un bloque corto no se gana números, y una bitácora nunca.
         let corto = NoteCardView(record: record, body: "```bash\nkubectl get pods\n```")
         corto.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
@@ -3181,6 +3192,38 @@ enum SelfTest {
         log.layoutSubtreeIfNeeded()
         check(log.textView.debugLineNumbers.isEmpty,
               "y una bitácora nunca, ya tiene su columna: \(log.textView.debugLineNumbers)")
+    }
+
+    /// Pegar un diagrama copiado de otra app lo dibuja, aunque venga con
+    /// retornos de carro.
+    ///
+    /// Reportado: "lo copié de una nota en mi Mac y lo pegué, y no se dibuja".
+    /// No era el renderizador ni el mermaid: el texto llegaba con `\r` en vez
+    /// de `\n`, y todo lo que lee una nota parte por `\n`, así que el diagrama
+    /// entero era una línea que casualmente empezaba con tres backticks.
+    static func checkPastingCarriageReturns() {
+        let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 500))
+        view.configureForNotes()
+        view.string = "Antes.\n\n"
+        view.setSelectedRange(NSRange(location: (view.string as NSString).length, length: 0))
+
+        // Nunca la general: vaciar lo que alguien tenía copiado no es algo que
+        // una corrida de checks deba hacer.
+        let board = NSPasteboard(name: .init("ledge.selftest.cr"))
+        view.pasteboard = board
+        let conCR = "```mermaid\rgraph LR\r    A[uno] --> |eti| B\r    B[dos]\r```"
+        board.clearContents()
+        board.setString(conCR, forType: .string)
+
+        view.paste(nil)
+        check(!view.string.contains("\r"), "lo pegado no deja un solo retorno de carro")
+        check(Media.all(in: view.string).count == 1,
+              "y el diagrama se reconoce: \(Media.all(in: view.string).count)")
+        check(view.debugMediaCount >= 0, "la vista sobrevive")
+
+        // Y la copia de la app sigue intacta: no le tocamos el portapapeles.
+        check(board.string(forType: .string) == conCR,
+              "el portapapeles del usuario queda como estaba")
     }
 
     /// Un cercado de cuatro backticks sigue siendo un tag.
@@ -4773,6 +4816,7 @@ enum SelfTest {
         checkOpeningAForm()
         checkTheNewMarks()
         checkEnterStampsTheTime()
+        checkPastingCarriageReturns()
         checkFourBackticksStillTag()
         await checkNumbersLiveOnThePanel()
         await checkTypingInsideABlock()

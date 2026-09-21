@@ -161,10 +161,17 @@ public enum Media {
         }
     }
 
+    /// A line of three or more backticks and nothing else.
+    ///
+    /// Not "at least as many as opened it", which is what CommonMark says and
+    /// what this used to check: the app's own paste opens with four when the
+    /// snippet holds a line of backticks, and a person closes with three, so
+    /// requiring the longer run stopped drawing the diagrams in notes that had
+    /// been drawing them for weeks.
     private static func isClosingFence(_ line: String, opener: Int) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        let ticks = trimmed.prefix { $0 == "`" }.count
-        return ticks >= opener && trimmed.dropFirst(ticks).isEmpty
+        let ticks = trimmed.prefix { $0 == "`" || $0 == "~" }.count
+        return ticks >= 3 && trimmed.dropFirst(ticks).isEmpty
     }
 
     private static func drawableFence(_ trimmed: String) -> Fence? {

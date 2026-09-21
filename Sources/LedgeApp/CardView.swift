@@ -921,8 +921,15 @@ final class NoteTextView: NSTextView {
             box.size.width = container.size.width
             guard box.height > 1 else { continue }
 
+            // Not a bitácora, which has a column of its own, and not a block
+            // that is already drawing something underneath — a diagram or a
+            // form is a definition with its picture right below it, and
+            // numbering the definition is chrome on chrome.
             let tag = Fences.tag(at: NSMaxRange(opening), in: text) ?? ""
-            let numbered = !Log.isLogTag(tag)
+            let draws = Media.all(in: text as String).contains {
+                NSIntersectionRange($0.range, block).length > 0
+            }
+            let numbered = !Log.isLogTag(tag) && !draws
                 && CodePanel.numbers(forBodyOf: text.substring(with: bodyRange))
             codePanels.append((box, numbered))
             guard numbered else { continue }
@@ -1170,6 +1177,13 @@ final class NoteTextView: NSTextView {
 
     /// Typing a bracket or a quote with a selection wraps it.
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        // A carriage return is a line ending here like any other. Typing never
+        // makes one; a drag from another app, or anything that inserts text
+        // without going through `paste`, can.
+        if let raw = string as? String, raw.contains("\r") {
+            super.insertText(Frontmatter.newlines(raw), replacementRange: replacementRange)
+            return
+        }
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string
         if let typed, replacementRange.location == NSNotFound,
            MarkdownEditing.wrapSelection(self, typing: typed) { return }
@@ -2175,13 +2189,40 @@ final class NoteTextView: NSTextView {
         // to reach for `.general` regardless, so a check that handed this view
         // a picture was still measuring whatever the machine had copied.
         if pasteImage(from: pasteboard) { return }
-        if MarkdownEditing.pasteLink(self, from: pasteboard) { return }
-        let code = MarkdownEditing.pasteCode(self, from: pasteboard)
+
+        // One kind of line ending, cleaned at the door.
+        //
+        // Text copied out of Notes, a terminal, or anything Windows-shaped can
+        // end its lines with a carriage return, and everything that reads a
+        // note splits on newlines — so a pasted mermaid diagram arrived as one
+        // enormous line that happened to start with three backticks, and drew
+        // nothing. Saving and reading the note fixes it, but not until then,
+        // and the note you are looking at is the one that is wrong.
+        //
+        // Into a scratch clipboard, because the one you copied to is yours.
+        let board = normalisedClipboard() ?? pasteboard
+
+        if MarkdownEditing.pasteLink(self, from: board) { return }
+        let code = MarkdownEditing.pasteCode(self, from: board)
         if code.did {
             if let title = code.title { onSuggestedTitle?(title) }
             return
         }
+        // `super.paste` would read the real clipboard again and put the
+        // carriage returns back, so the cleaned text goes in from here.
+        if board !== pasteboard, let text = board.string(forType: .string) {
+            insertText(text, replacementRange: selectedRange())
+            return
+        }
         super.paste(sender)
+    }
+
+    private func normalisedClipboard() -> NSPasteboard? {
+        guard let text = pasteboard.string(forType: .string), text.contains("\r") else { return nil }
+        let scratch = NSPasteboard(name: .init("ledge.paste.normalised"))
+        scratch.clearContents()
+        scratch.setString(Frontmatter.newlines(text), forType: .string)
+        return scratch
     }
 
     override func mouseDown(with event: NSEvent) {

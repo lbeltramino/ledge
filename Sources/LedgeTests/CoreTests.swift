@@ -1760,6 +1760,26 @@ enum CoreTests {
             }
         }
 
+        await Runner.test("un retorno de carro solo es un salto de línea") { c in
+            // Pegar desde una terminal, una herramienta de Windows o un Mac
+            // viejo trae líneas terminadas en \r. Todo lo que lee una nota
+            // parte por \n, así que el texto llegaba como una sola línea
+            // enorme y un diagrama entero quedaba sin dibujar — visto desde
+            // afuera, idéntico a que el renderizador estuviera roto.
+            let pegado = "```mermaid\rgraph LR\r    A[uno] --> B[dos]\r```"
+            c.equal(Media.all(in: pegado).count, 0, "sin normalizar es una sola línea")
+
+            let sano = Frontmatter.normalizedBody(pegado)
+            c.expect(!sano.contains("\r"), "no queda un solo retorno de carro")
+            c.equal(Media.all(in: sano).count, 1, "y el diagrama aparece")
+
+            // Y el archivo queda arreglado, no parcheado en cada lector.
+            let note = Frontmatter.parse("---\nid: 01K2F3QW8N4Z7YB0PMRTXAGH5J\ntitle: x\n---\n"
+                                         + pegado, fallbackTitle: "x")
+            c.expect(!note.body.contains("\r"), "leer la nota ya lo corrige")
+            c.equal(Media.all(in: note.body).count, 1, "y ahí también dibuja")
+        }
+
         await Runner.test("a note with CRLF endings still draws its blocks") { c in
             // A file that came through anything Windows-shaped. `\r` is not in
             // `.whitespaces`, so "```json\r" was never "```json" and nothing in
@@ -1791,6 +1811,25 @@ enum CoreTests {
             if let item = items.first {
                 c.expect(!(note as NSString).substring(with: item.range).contains("después"),
                          "el bloque termina en su cierre, no al final de la nota")
+            }
+        }
+
+        await Runner.test("un cercado de cuatro cierra con tres, que es lo que la app escribe") { c in
+            // La app abre con cuatro cuando el contenido tiene una línea de
+            // backticks; una persona cierra con tres. Exigir el cierre largo
+            // —que es lo que dice CommonMark— dejó sin dibujar los diagramas
+            // de notas que venían dibujándolos hacía semanas.
+            for (abre, cierra) in [("````", "```"), ("```", "```"),
+                                   ("````", "````"), ("```", "````")] {
+                let note = "antes\n\n\(abre)mermaid\ngraph TD\n  A --> B\n\(cierra)\n\ndespués"
+                let items = Media.all(in: note)
+                c.equal(items.count, 1, "\(abre) … \(cierra) debería dibujar")
+                if let item = items.first {
+                    c.expect(!(note as NSString).substring(with: item.range).contains("después"),
+                             "\(abre) … \(cierra): el bloque termina en su cierre")
+                }
+                c.equal(Fences.ranges(in: note).count, 1,
+                        "\(abre) … \(cierra): y Fences ve el mismo bloque")
             }
         }
 

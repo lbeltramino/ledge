@@ -11,8 +11,18 @@ import Foundation
 /// links both ask this.
 public enum Fences {
 
+    /// A run of three or more, closed by a run of three or more on a line of
+    /// its own.
+    ///
+    /// Forgiving on purpose, and in both directions. CommonMark says a fence
+    /// closes on a run at least as long as the one that opened it, and holding
+    /// to that broke every note this app had already written: its own paste
+    /// opens with four backticks when the snippet contains a line of them, and
+    /// a person closing the block by hand writes three. Those notes exist, and
+    /// a reader that will not read what the writer wrote is the wrong half to
+    /// be strict in.
     private static let regex = try? NSRegularExpression(
-        pattern: "^(```|~~~)[^\n]*\n[\\s\\S]*?^\\1[ \t]*$",
+        pattern: "^(?:`{3,}|~{3,})[^\n]*\n[\\s\\S]*?^(?:`{3,}|~{3,})[ \t]*$",
         options: [.anchorsMatchLines])
 
     public static func ranges(in text: NSString) -> [NSRange] {
