@@ -790,51 +790,6 @@ final class NoteTextView: NSTextView {
     nonisolated(unsafe) static var debugDraws = 0
     nonisolated(unsafe) static var debugDrawnArea: CGFloat = 0
 
-    /// Cuenta lo que pasa mientras alguien escribe de verdad, cuando una
-    /// reproducción sintética no alcanza:
-    ///
-    ///     defaults write com.lisandro.Ledge Diagnostico -bool YES
-    ///
-    /// Escribe una línea por dibujo en el que la altura de la línea del caret
-    /// cambió, que es exactamente lo que se ve como parpadeo.
-    nonisolated(unsafe) private static var lastReported: CGFloat = -1
-    nonisolated(unsafe) private static let reporting =
-        UserDefaults.standard.bool(forKey: "Diagnostico")
-
-    static func report(height: CGFloat, at glyph: Int, in manager: NSLayoutManager,
-                       of view: NoteTextView) {
-        guard reporting, abs(height - lastReported) > 0.2 else { return }
-        lastReported = height
-        guard let storage = view.textStorage else { return }
-        let line = (view.string as NSString)
-            .lineRange(for: NSRange(location: max(0, view.selectedRange().location - 1), length: 0))
-
-        // Todo lo que hay en la línea, que es lo que decide su altura: la
-        // altura de una línea es el máximo de sus corridas, así que basta con
-        // que una sola cambie.
-        var fuentes: Set<String> = []
-        var espacios: Set<String> = []
-        storage.enumerateAttributes(in: line) { attrs, _, _ in
-            if let f = attrs[.font] as? NSFont {
-                fuentes.insert("\(f.fontName)@\(String(format: "%.1f", f.pointSize))")
-            } else {
-                fuentes.insert("sin-fuente")
-            }
-            if let p = attrs[.paragraphStyle] as? NSParagraphStyle {
-                espacios.insert(String(format: "int%.1f/min%.1f/max%.1f/esp%.1f",
-                                       p.lineSpacing, p.minimumLineHeight,
-                                       p.maximumLineHeight, p.paragraphSpacing))
-            } else {
-                espacios.insert("sin-párrafo")
-            }
-        }
-        let stamp = String(format: "%.3f", Date().timeIntervalSince1970
-                           .truncatingRemainder(dividingBy: 1000))
-        let linea = "\(stamp) alto=\(String(format: "%.1f", height)) "
-            + "fuentes=\(fuentes.sorted()) párrafo=\(espacios.sorted())\n"
-        FileHandle.standardError.write(Data(linea.utf8))
-    }
-
     /// El alto de la línea del caret, tal como está en el momento de dibujar.
     /// Es el único instante que importa: lo que se ve como parpadeo es una
     /// altura que existió para un cuadro y desapareció.
@@ -848,19 +803,14 @@ final class NoteTextView: NSTextView {
             let line = (string as NSString)
                 .lineRange(for: NSRange(location: selectedRange().location - 1, length: 0))
             let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
-            let height = manager.lineFragmentRect(forGlyphAt: glyphs.location,
-                                                  effectiveRange: nil).height
-            NoteTextView.debugLineHeights.append(height)
-            NoteTextView.report(height: height, at: glyphs.location, in: manager, of: self)
+            NoteTextView.debugLineHeights.append(
+                manager.lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil).height)
         }
         drawMarkerStrokes(in: dirtyRect)
         for bar in quoteBars where bar.intersects(dirtyRect) {
             QuoteBar.draw(in: bar, colour: linkInk.withAlphaComponent(0.30))
         }
         super.draw(dirtyRect)
-        // After the text: the numbers sit in the margin the paragraph indent
-        // opened for them, and nothing is drawn over them.
-        drawLineNumbers(in: dirtyRect)
     }
 
     /// Where the quote strokes and the line numbers go.
@@ -872,7 +822,6 @@ final class NoteTextView: NSTextView {
     /// as the block flickering under the caret. Reported exactly that way, for
     /// any fenced block.
     private var quoteBars: [NSRect] = []
-    private var numberRows: [(rect: NSRect, label: String)] = []
 
     /// The highlighter, which is this storage's delegate — the one place that
     /// knows what a fenced block is set in.
@@ -880,15 +829,8 @@ final class NoteTextView: NSTextView {
         textStorage?.delegate as? MarkdownHighlighter
     }
 
-    private var gutterFont: NSFont {
-        highlighter?.codeFont
-            ?? .monospacedSystemFont(ofSize: (font?.pointSize ?? 13) * 0.78, weight: .regular)
-    }
-
     func refreshGutters() {
         quoteBars = []
-        numberRows = []
-        guard !CodeGutter.disabled else { return }
         guard let storage = textStorage, let manager = layoutManager,
               let container = textContainer, container.size.width > 1 else { return }
         let whole = NSRange(location: 0, length: storage.length)
@@ -900,11 +842,6 @@ final class NoteTextView: NSTextView {
         var wanted = false
         storage.enumerateAttribute(QuoteBar.attribute, in: whole) { value, _, stop in
             if value != nil { wanted = true; stop.pointee = true }
-        }
-        if !wanted {
-            storage.enumerateAttribute(CodeGutter.attribute, in: whole) { value, _, stop in
-                if value != nil { wanted = true; stop.pointee = true }
-            }
         }
         guard wanted else { return }
 
@@ -925,53 +862,6 @@ final class NoteTextView: NSTextView {
             self.quoteBars.append(box)
         }
 
-        let text = storage.string as NSString
-        let width = CodeGutter.numberWidth(for: gutterFont, lines: 99)
-
-        // The attribute says *whether* a block is numbered; the text says how
-        // far it runs. They disagree for one turn after every keystroke —
-        // the attribute is a turn behind, since the highlighter runs after the
-        // edit — and walking the stale range counted the wrong number of lines
-        // and drew it before the right one arrived.
-        for block in Fences.ranges(in: text) {
-            let marked = NSIntersectionRange(block, whole).length > 0
-                && storage.attribute(CodeGutter.attribute,
-                                     at: min(block.location, max(0, storage.length - 1)),
-                                     effectiveRange: nil) != nil
-            guard marked else { continue }
-            var cursor = NSMaxRange(text.lineRange(for: NSRange(location: block.location, length: 0)))
-            let closing = text.lineRange(for: NSRange(location: max(block.location,
-                                                                   NSMaxRange(block) - 1), length: 0))
-            var number = 1
-            while cursor < closing.location {
-                let line = text.lineRange(for: NSRange(location: cursor, length: 0))
-                let glyphs = manager.glyphRange(forCharacterRange: line, actualCharacterRange: nil)
-                var fragment = manager.lineFragmentUsedRect(forGlyphAt: glyphs.location,
-                                                            effectiveRange: nil)
-                fragment.origin.y += self.textContainerOrigin.y
-                self.numberRows.append((NSRect(x: self.textContainerOrigin.x + CodeGutter.inset,
-                                               y: fragment.minY, width: width - 10,
-                                               height: fragment.height), String(number)))
-                number += 1
-                guard NSMaxRange(line) > cursor else { break }
-                cursor = NSMaxRange(line)
-            }
-        }
-    }
-
-    private func drawLineNumbers(in rect: NSRect) {
-        guard !numberRows.isEmpty else { return }
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: gutterFont,
-            .foregroundColor: tableInk.withAlphaComponent(0.38),
-        ]
-        for row in numberRows where row.rect.intersects(rect) {
-            let label = row.label as NSString
-            let size = label.size(withAttributes: attributes)
-            label.draw(at: NSPoint(x: row.rect.maxX - size.width,
-                                   y: row.rect.minY + (row.rect.height - size.height) / 2),
-                       withAttributes: attributes)
-        }
     }
 
     private func drawMarkerStrokes(in rect: NSRect) {
@@ -1941,7 +1831,6 @@ final class NoteTextView: NSTextView {
     }
 
     var debugMediaCount: Int { mediaViews.count }
-    var debugLineNumbers: [String] { numberRows.map(\.label) }
     var debugQuoteBars: Int { quoteBars.count }
     var debugMediaViews: [MediaView] { Array(mediaViews.values) }
     var debugMediaFrames: [NSRect] { mediaViews.values.map(\.frame) }

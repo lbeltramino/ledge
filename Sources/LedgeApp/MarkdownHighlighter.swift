@@ -214,21 +214,6 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
                 this.paintCode(storage, body: body, language: tag)
             }
 
-            // Room for the numbers, when this block is long enough to earn
-            // them. Set here rather than where they are drawn, because the
-            // indent and the gutter have to be the same number and there is
-            // only one place that can decide it.
-            // Never on a log: it already has a column of its own, and two
-            // gutters on one block is one too many.
-            if !Log.isLogTag(tag),
-               CodeGutter.numbers(forBodyOf: (storage.string as NSString).substring(with: body)) {
-                let numbered = NSMutableParagraphStyle()
-                numbered.firstLineHeadIndent = CodeGutter.textIndent(for: this.mono())
-                numbered.headIndent = CodeGutter.textIndent(for: this.mono())
-                numbered.tailIndent = -10
-                storage.addAttribute(.paragraphStyle, value: numbered, range: whole)
-                storage.addAttribute(CodeGutter.attribute, value: true, range: whole)
-            }
         }
 
         // An indented code block: four spaces or a tab after a blank line.
@@ -305,7 +290,10 @@ final class MarkdownHighlighter: NSObject, @preconcurrency NSTextStorageDelegate
     private func paintLog(_ storage: NSTextStorage, body: NSRange) {
         guard body.length > 0 else { return }
         let source = (storage.string as NSString).substring(with: body)
-        let indent = CodeGutter.logIndent(for: mono())
+        // Where the prose starts: past the widest a time can be. The same
+        // number the fenced rule indents by, plus that width.
+        let clock = (Log.widestTime as NSString).size(withAttributes: [.font: mono()]).width
+        let indent = 10 + ceil(clock)
 
         for entry in Log.entries(in: source) {
             let line = NSRange(location: body.location + entry.line.location,

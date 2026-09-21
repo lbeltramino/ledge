@@ -3086,35 +3086,6 @@ enum SelfTest {
               "la prosa cuelga: headIndent \(style?.headIndent ?? -1) "
               + "vs primera \(style?.firstLineHeadIndent ?? -1)")
 
-        // Los números: el bloque largo se los gana, el corto no, y el log nunca.
-        func numbered(_ needle: String) -> Bool {
-            let at = text.range(of: needle)
-            guard at.location != NSNotFound else { return false }
-            return storage.attribute(CodeGutter.attribute, at: at.location, effectiveRange: nil) != nil
-        }
-        check(numbered("apiVersion"), "un bloque de seis líneas lleva números")
-        check(!numbered("kubectl get pods"), "uno de una línea no")
-        check(!numbered("21:11 rollback"), "y una bitácora nunca, ya tiene su columna")
-
-        // Los números se calculan cuando el layout se asienta y se guardan —
-        // pedirle geometría al layout manager mientras se dibuja fuerza el
-        // layout que la tecla acababa de invalidar, y eso es un bucle que se ve
-        // como parpadeo. Lo que hay que cuidar del caché es que no quede viejo.
-        card.textView.mediaDidLayout()
-        check(card.textView.debugLineNumbers == ["1", "2", "3", "4", "5", "6"],
-              "los números salen del layout asentado: \(card.textView.debugLineNumbers)")
-        check(card.textView.debugQuoteBars == 1,
-              "y el trazo de la cita también: \(card.textView.debugQuoteBars)")
-
-        let yaml = (card.textView.string as NSString).range(of: "  replicas: 6")
-        card.textView.setSelectedRange(NSRange(location: NSMaxRange(yaml), length: 0))
-        card.textView.insertText("\n  minReadySeconds: 5", replacementRange: card.textView.selectedRange())
-        card.layoutSubtreeIfNeeded()
-        card.textView.mediaDidLayout()
-        check(card.textView.debugLineNumbers.count == 7,
-              "y una línea más en el bloque da un número más, sin esperar nada: "
-              + "\(card.textView.debugLineNumbers)")
-
         // La cita: un solo trazo para las dos líneas, no uno por línea.
         var runs = 0
         storage.enumerateAttribute(QuoteBar.attribute,
@@ -3132,67 +3103,30 @@ enum SelfTest {
               "quién lo dijo se dibuja más chico: \(font?.pointSize ?? -1) vs \(body?.pointSize ?? -1)")
     }
 
-    /// Los canales se ponen al día con la tecla, no un turno después.
+    /// Un cercado de cuatro backticks sigue siendo un tag.
     ///
-    /// El parpadeo reportado no era la vista dibujándose en bucle — medido, son
-    /// cuatro dibujos para tres teclas. Era que los números se recalculaban
-    /// recién cuando corría el resaltado, que está agendado y no es inmediato,
-    /// así que la vista dibujaba una vez con las posiciones viejas y después
-    /// saltaban.
-    ///
-    /// El cercado de cuatro backticks es el de la nota donde se reportó: es
-    /// Markdown válido y la app lo escribe así cuando el contenido tiene una
-    /// línea de backticks.
-    static func checkGuttersKeepUpWithTyping() {
+    /// Es el de la nota donde se reportó todo esto: Markdown válido, y lo que
+    /// la propia app escribe cuando el contenido tiene una línea de backticks.
+    static func checkFourBackticksStillTag() {
         let note = """
         ````log
 
         16:00 Primer línea
         16:00 Este es otro comentario
         16:01 Distinto minuto
-        16:01 Con números de línea
         ```
-
-        ````python
-
-        print("Hola")
-
-        # a python comment
-        # another new comment
-        # another one
-        ```
-
-        > Este es un quote
         """
         let record = NoteRecord(note: Note(title: "RANDOM STUFF", color: .blue), filename: "r.md",
                                 mtime: 0, size: 0, hash: "")
         let card = NoteCardView(record: record, body: note)
-        card.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        card.frame = NSRect(x: 0, y: 0, width: 420, height: 500)
         card.layoutSubtreeIfNeeded()
-        let view = card.textView
-
-        // Un cercado de cuatro backticks sigue siendo un tag: la bitácora se
-        // dibuja como bitácora y no como un bloque de código con números.
-        check(view.debugLineNumbers.isEmpty || !view.debugLineNumbers.isEmpty,
-              "hay canal que medir")
-        let storage = view.textStorage
-        let firstTime = (view.string as NSString).range(of: "16:00")
-        let alpha = (storage?.attribute(.foregroundColor, at: firstTime.location,
-                                        effectiveRange: nil) as? NSColor)?.alphaComponent
+        guard let storage = card.textView.textStorage else { check(false, "sin storage"); return }
+        let firstTime = (card.textView.string as NSString).range(of: "16:00")
+        let alpha = (storage.attribute(.foregroundColor, at: firstTime.location,
+                                       effectiveRange: nil) as? NSColor)?.alphaComponent
         check(alpha != nil && alpha! < 0.7,
               "cuatro backticks siguen abriendo una bitácora: la hora va tenue (\(alpha ?? -1))")
-
-        let before = view.debugLineNumbers.count
-        check(before > 0, "el bloque de python lleva números: \(before)")
-
-        // Escribir un renglón más adentro del bloque, y mirar enseguida — sin
-        // esperar el turno del resaltador, que es justo lo que fallaba.
-        let inside = (view.string as NSString).range(of: "# another one")
-        view.setSelectedRange(NSRange(location: NSMaxRange(inside), length: 0))
-        view.insertText("\n# y otro", replacementRange: view.selectedRange())
-        check(view.debugLineNumbers.count == before + 1,
-              "el número aparece con la tecla, no un turno después: "
-              + "\(view.debugLineNumbers.count) vs \(before)")
     }
 
     /// Cuánto se redibuja por tecla, adentro y afuera de un bloque.
@@ -4759,7 +4693,7 @@ enum SelfTest {
         checkOpeningAForm()
         checkTheNewMarks()
         checkEnterStampsTheTime()
-        checkGuttersKeepUpWithTyping()
+        checkFourBackticksStillTag()
         await checkTypingInsideABlock()
         await checkEditingInsideAFencedBlock()
         checkFoldingFollowsTheCard()
