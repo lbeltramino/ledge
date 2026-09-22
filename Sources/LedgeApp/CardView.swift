@@ -921,15 +921,22 @@ final class NoteTextView: NSTextView {
             box.size.width = container.size.width
             guard box.height > 1 else { continue }
 
-            // Not a bitácora, which has a column of its own, and not a block
-            // that is already drawing something underneath — a diagram or a
-            // form is a definition with its picture right below it, and
-            // numbering the definition is chrome on chrome.
+            // Not a bitácora, which has a column of its own, and not a mermaid
+            // block, whose source is a handful of lines with the picture right
+            // under it — numbering that is chrome on chrome.
+            //
+            // A form is not excluded, and that was wrong for a day: a JSON
+            // payload with a uiSchema in it is a form, so it lost its numbers —
+            // and a payload long enough to want them is long enough to be
+            // folded away, leaving neither the drawing nor the numbers. Thirty
+            // lines of JSON you have to read by eye is exactly the case
+            // numbers are for.
             let tag = Fences.tag(at: NSMaxRange(opening), in: text) ?? ""
-            let draws = Media.all(in: text as String).contains {
-                NSIntersectionRange($0.range, block).length > 0
+            let isDiagram = Media.all(in: text as String).contains { item in
+                guard case .diagram = item.kind else { return false }
+                return NSIntersectionRange(item.range, block).length > 0
             }
-            let numbered = !Log.isLogTag(tag) && !draws
+            let numbered = !Log.isLogTag(tag) && !isDiagram
                 && CodePanel.numbers(forBodyOf: text.substring(with: bodyRange))
             codePanels.append((box, numbered))
             guard numbered else { continue }

@@ -3177,6 +3177,25 @@ enum SelfTest {
         check(mermaid.textView.debugLineNumbers.isEmpty,
               "y su definición no lleva números: \(mermaid.textView.debugLineNumbers)")
 
+        // Un formulario SÍ los lleva. Un payload con un uiSchema adentro es un
+        // formulario, y si es largo se pliega — así que sin esto te quedabas
+        // sin el dibujo y sin los números, que es justo cuando más hacen falta.
+        let payload = """
+        ```json
+        { "uiSchema": { "type": "VerticalLayout", "elements": [
+        \((1...12).map { "  { \"type\": \"Control\", \"scope\": \"#/properties/f\($0)\" }," }
+            .joined(separator: "\n"))
+          { "type": "Control", "scope": "#/properties/z" } ] } }
+        ```
+        """
+        let form = NoteCardView(record: record, body: payload)
+        form.frame = NSRect(x: 0, y: 0, width: 420, height: 320)
+        form.layoutSubtreeIfNeeded()
+        check(form.textView.debugMediaCount == 0,
+              "el formulario es muy alto para esta nota y se pliega")
+        check(!form.textView.debugLineNumbers.isEmpty,
+              "…y su JSON lleva números igual: \(form.textView.debugLineNumbers.count)")
+
         // Un bloque corto no se gana números, y una bitácora nunca.
         let corto = NoteCardView(record: record, body: "```bash\nkubectl get pods\n```")
         corto.frame = NSRect(x: 0, y: 0, width: 420, height: 300)
