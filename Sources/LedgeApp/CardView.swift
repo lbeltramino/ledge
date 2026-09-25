@@ -1207,6 +1207,14 @@ final class NoteTextView: NSTextView {
     /// A function rather than an initialiser: NSTextView has two designated
     /// ones, and overriding them to set four flags costs more than it saves.
     func configureForNotes() {
+        // A note is plain markdown, and this is the property that says so.
+        //
+        // It was set by each of the two surfaces that build one of these, and
+        // not here — so anything else that configured a notes view got a rich
+        // text view, where AppKit reads the markdown on the clipboard and
+        // pastes the *result*: the heading without its hash, the bold without
+        // its stars, the fence gone. The markers are the note.
+        isRichText = false
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
@@ -2215,9 +2223,15 @@ final class NoteTextView: NSTextView {
             if let title = code.title { onSuggestedTitle?(title) }
             return
         }
-        // `super.paste` would read the real clipboard again and put the
-        // carriage returns back, so the cleaned text goes in from here.
-        if board !== pasteboard, let text = board.string(forType: .string) {
+        // The last step reads the same clipboard as the other three.
+        //
+        // `super.paste` goes to `NSPasteboard.general` whatever this view was
+        // told to use. In the app they are the same object and nothing shows;
+        // in a check they are not, so a check that handed this view a document
+        // was quietly measuring whatever the machine had copied — which is how
+        // a probe came back with somebody else's text in it. And it is the
+        // step that would put the carriage returns back.
+        if let text = board.string(forType: .string) {
             insertText(text, replacementRange: selectedRange())
             return
         }

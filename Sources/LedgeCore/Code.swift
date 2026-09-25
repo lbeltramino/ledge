@@ -125,6 +125,16 @@ public enum Code {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return nil }
 
+        // A document is not a snippet, and asking "which language is this?" of
+        // a Markdown document gets an answer — the wrong one.
+        //
+        // A design proposal pasted out of a chat came back wrapped in ```yaml:
+        // it had a yaml block inside it, `- ` lists, and `**Estado:** …` lines,
+        // which is enough key-shaped text to convince the detector. The whole
+        // document became one code block. So the first question is whether
+        // this is Markdown, and only then which language it might be.
+        guard !looksLikeMarkdown(Lines(body)) else { return nil }
+
         if let language = language(of: body) {
             return Detection(language: language, title: title(of: body, language: language))
         }
@@ -316,6 +326,22 @@ public enum Code {
     /// For everything the detectors miss — a Groovy pipeline, a C header, a
     /// snippet of Rust. Two independent signals, so an indented quotation or a
     /// list of file names does not qualify.
+    /// Whether this is a Markdown document rather than a snippet of code.
+    ///
+    /// Only signals that code does not produce. A fence is the strongest: a
+    /// file of yaml does not contain ``` and a document routinely does. A
+    /// table's separator row is the same kind of evidence. A heading on its
+    /// own is not enough — `# comment` opens half the config files there are —
+    /// so it counts only alongside a link or a quote.
+    static func looksLikeMarkdown(_ lines: Lines) -> Bool {
+        if lines.any("^[ \t]*(```|~~~)") { return true }
+        if lines.any("^[ \t]*\\|?[ \t]*:?-{3,}:?[ \t]*\\|") { return true }
+
+        let heading = lines.any("^#{1,6}[ \t]+\\S")
+        guard heading else { return false }
+        return lines.any("\\[[^\\]]+\\]\\([^)]+\\)") || lines.any("^[ \t]*>[ \t]")
+    }
+
     public static func looksLikeCode(_ text: String) -> Bool {
         let lines = Lines(text)
         guard lines.all.count >= 2 else { return false }

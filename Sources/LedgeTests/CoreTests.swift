@@ -1760,6 +1760,58 @@ enum CoreTests {
             }
         }
 
+        await Runner.test("un documento markdown no es un snippet de código") { c in
+            // Reportado con una propuesta de diseño pegada desde un chat: tenía
+            // un bloque de yaml adentro, listas con guiones y líneas
+            // `**Estado:** …`, que es suficiente texto con forma de clave para
+            // convencer al detector. El documento entero volvía envuelto en
+            // ```yaml.
+            let propuesta = """
+            # Platform Automation Gateway
+
+            > **Estado:** Propuesta · **Equipo:** PLATSD
+
+            ## 1. Contexto
+
+            - **Auth por secreto compartido**: cualquiera que lo tenga llama todo.
+
+            ```yaml
+            routes:
+              - path: /v1/argocd/workloads/*
+                methods: [POST, DELETE]
+                backend: argocd-manager
+            ```
+
+            | Variante | ¿Aplica? |
+            |---|---|
+            | Gateway Routing | Sí |
+            """
+            c.expect(Code.detect(propuesta) == nil,
+                     "no debería cercarse: \(Code.detect(propuesta)?.language ?? "sin lenguaje")")
+
+            // Las tres señales, cada una por su cuenta.
+            c.expect(Code.detect("# Título\n\n```yaml\na: 1\nb: 2\n```") == nil,
+                     "un cercado adentro lo delata como documento")
+            c.expect(Code.detect("| a | b |\n|---|---|\n| 1 | 2 |\nx: 1\ny: 2") == nil,
+                     "una tabla también")
+            c.expect(Code.detect("# Título\n\nver [esto](https://x.com)\n\na: 1\nb: 2") == nil,
+                     "un encabezado con un enlace también")
+
+            // Y lo que sí es código sigue siéndolo: un yaml de verdad tiene
+            // comentarios con # y no deja de ser yaml por eso.
+            let manifiesto = """
+            # el puerto que expone el gateway
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: gateway
+            spec:
+              replicas: 6
+            """
+            c.equal(Code.detect(manifiesto)?.language, "yaml",
+                    "un manifiesto con un comentario sigue siendo yaml")
+        }
+
         await Runner.test("un retorno de carro solo es un salto de línea") { c in
             // Pegar desde una terminal, una herramienta de Windows o un Mac
             // viejo trae líneas terminadas en \r. Todo lo que lee una nota

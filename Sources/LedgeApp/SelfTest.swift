@@ -3245,6 +3245,81 @@ enum SelfTest {
               "el portapapeles del usuario queda como estaba")
     }
 
+    /// Un documento markdown se pega tal cual, carácter por carácter.
+    ///
+    /// Reportado con un caso real: una propuesta de diseño generada en un chat,
+    /// pegada en una nota, "se mezclan algunas cosas al formatear el markdown".
+    /// Tenía un bloque de yaml adentro, listas con guiones y líneas
+    /// `**Estado:** …`, y el detector la declaraba yaml — así que el documento
+    /// entero volvía envuelto en un cercado.
+    static func checkPastingADocument() {
+        let doc = """
+        # Platform Automation Gateway — Propuesta
+
+        > **Estado:** Propuesta · **Equipo:** PLATSD
+        >
+        > **Objetivo:** un gateway único, **sin lógica de negocio**.
+
+        ---
+
+        ## 1. Contexto
+
+        - **Auth por secreto compartido**: cualquiera que lo tenga llama todo.
+        - **Acoplamiento entre ambientes**: el provisioning pasa por prod.
+
+        | Variante | ¿Aplica? |
+        |---|---|
+        | Gateway Routing | ✅ Sí |
+        | Gateway Aggregation | ❌ **No** |
+
+        ## 2. Rutas
+
+        ```yaml
+        routes:
+          - path: /v1/argocd/workloads/*
+            methods: [POST, DELETE]
+            backend: argocd-manager-{env}
+            exposure: [private]
+        ```
+
+        Ver [la guía](https://example.com/api-gateway) para el detalle.
+        """
+        let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 700))
+        view.configureForNotes()
+        view.string = ""
+
+        // Nunca la general: pegar acá no debe depender de lo que alguien tenga
+        // copiado, ni dejarle nada.
+        let board = NSPasteboard(name: .init("ledge.selftest.doc"))
+        board.clearContents()
+        board.setString(doc, forType: .string)
+        view.pasteboard = board
+        view.paste(nil)
+
+        check(view.string == doc,
+              "el documento se pega tal cual: entraron \(doc.count), "
+              + "quedaron \(view.string.count)")
+        check(!view.string.hasPrefix("```"),
+              "no lo envuelve en un cercado: \(view.string.prefix(20).debugDescription)")
+        check(view.string.hasPrefix("# Platform"),
+              "y el encabezado conserva su almohadilla: "
+              + "\(view.string.prefix(20).debugDescription)")
+
+        // Y lo que sí es código sigue cercándose, que es la mitad que importa
+        // no romper.
+        let snippet = NoteTextView(frame: NSRect(x: 0, y: 0, width: 520, height: 400))
+        snippet.configureForNotes()
+        snippet.string = ""
+        board.clearContents()
+        board.setString("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: gateway",
+                        forType: .string)
+        snippet.pasteboard = board
+        snippet.paste(nil)
+        check(snippet.string.contains("```yaml"),
+              "un manifiesto pegado sigue llegando cercado: "
+              + "\(snippet.string.prefix(24).debugDescription)")
+    }
+
     /// Un cercado de cuatro backticks sigue siendo un tag.
     ///
     /// Es el de la nota donde se reportó todo esto: Markdown válido, y lo que
@@ -4836,6 +4911,7 @@ enum SelfTest {
         checkTheNewMarks()
         checkEnterStampsTheTime()
         checkPastingCarriageReturns()
+        checkPastingADocument()
         checkFourBackticksStillTag()
         await checkNumbersLiveOnThePanel()
         await checkTypingInsideABlock()
